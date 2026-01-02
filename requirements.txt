@@ -1,0 +1,22 @@
+# PRISM Dependencies
+# Plasma Research Integrated System for Multi-diagnostics
+#
+# Install: pip install -r requirements.txt
+
+# Core scientific libraries
+numpy>=1.20.0
+scipy>=1.7.0
+matplotlib>=3.4.0
+
+# Image processing (for TV tab)
+Pillow>=8.0.0
+
+# MDS+ connection (may require separate installation)
+# MDSplus>=7.0.0
+
+# GUI (usually comes with Python)
+# tkinter is part of standard library
+
+# Optional: for development
+# pytest>=7.0.0
+# black>=22.0.0
