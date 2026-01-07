@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **User Settings Persistence**
   - Automatic save/restore of user settings across sessions
-  - Settings stored in ~/.prism/settings.json
+  - Settings stored in ~/.config/prism/settings.json
 - **Update Notification Popup**
   - Shows changelog on first launch after update
   - "Do not show again" option
