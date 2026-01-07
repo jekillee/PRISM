@@ -289,7 +289,7 @@ class BaseTab(ABC):
             label = f'{node_prefix}{ch:02d}'
             ax.annotate(label, (x, y), textcoords='offset points', 
                        xytext=(0, 5), ha='center', fontsize=7, alpha=0.8,
-                       clip_on=True)
+                       clip_on=True, annotation_clip=True)
     
     def _clear_channel_labels(self, ax):
         """Clear existing channel label annotations"""
@@ -399,7 +399,7 @@ class BaseTab(ABC):
                     closest_time = efit_data.time[time_idx]
                     
                     if abs(closest_time - time_point) > 0.05:
-                        print(f"   -> Skipping {entry}: No EFIT within ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±50ms")
+                        print(f"   -> Skipping {entry}: No EFIT within ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±50ms")
                         continue
                     
                     valid_entries.append(entry)

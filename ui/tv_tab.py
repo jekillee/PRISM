@@ -22,6 +22,7 @@ from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
     ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_SHORT
 )
+from config.user_settings import get_tab_settings, set_tab_settings
 
 
 class TVTab:
@@ -93,6 +94,9 @@ class TVTab:
         self._create_frame_controls(control_frame)
         self._create_playback_controls(control_frame)
         self._create_draw_line_controls(control_frame)
+        
+        # Load saved settings
+        self.load_settings()
     
     def _create_file_controls(self, parent):
         """Create file loading section"""
@@ -101,12 +105,22 @@ class TVTab:
         
         frame.grid_columnconfigure(1, weight=1)
         
-        # Row 0: Shot input and Search button
+        # Row 0: Shot input with up/down buttons and Search button
         ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='center').grid(
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='ew')
-        self.shot_entry = ttk.Entry(frame, width=20)
-        self.shot_entry.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        
+        shot_frame = ttk.Frame(frame)
+        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        shot_frame.grid_columnconfigure(0, weight=1)
+        
+        self.shot_entry = ttk.Entry(shot_frame, width=18)
+        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
         self.shot_entry.bind('<Return>', lambda e: self._search_available_tvs())
+        
+        ttk.Button(shot_frame, text='\u25B2', width=2, 
+                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Button(shot_frame, text='\u25BC', width=2, 
+                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
         
         ttk.Button(frame, text='Search', command=self._search_available_tvs, 
                   width=BUTTON_WIDTH_MEDIUM).grid(
@@ -134,6 +148,21 @@ class TVTab:
         
         # File label
         self.file_label = ttk.Label(frame, text="No file loaded", wraplength=360)
+        self.file_label.grid(row=3, column=0, columnspan=3, padx=PAD_X, pady=2, sticky='w')
+        
+        # Loading status label
+        self.status_label = ttk.Label(frame, text="", foreground='blue')
+        self.status_label.grid(row=4, column=0, columnspan=3, padx=PAD_X, pady=2, sticky='w')
+    
+    def _adjust_shot(self, delta):
+        """Adjust shot number by delta"""
+        try:
+            current = int(self.shot_entry.get())
+            new_shot = max(1, current + delta)
+            self.shot_entry.delete(0, tk.END)
+            self.shot_entry.insert(0, str(new_shot))
+        except ValueError:
+            pass
         self.file_label.grid(row=3, column=0, columnspan=3, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         # Loading status label
@@ -414,7 +443,9 @@ class TVTab:
     
     def _get_year_from_shot(self, shot_number):
         """Get year from shot number (KSTAR shot ranges)"""
-        if shot_number > 37741:
+        if shot_number >= 40464:
+            return 2026
+        elif shot_number > 37741:
             return 2025
         elif shot_number > 34836:
             return 2024
@@ -756,7 +787,11 @@ class TVTab:
         else:
             self.im.set_data(img_array)
         
-        self.ax.set_title(f"Frame {frame_idx + 1}/{self.total_frames}: {filename}")
+        # Calculate time: t = frame_number / fps - offset
+        # fps = 210, offset = 0.1s (trigger starts 100ms before t=0)
+        # Note: May drift for long pulses due to processing delays
+        time_sec = (frame_idx + 1) / 210.0 - 0.1
+        self.ax.set_title(f"Frame {frame_idx + 1}/{self.total_frames} | t = {time_sec:.3f} s")
         
         # Use blit-like approach for faster rendering
         self.canvas.draw_idle()
@@ -968,3 +1003,18 @@ class TVTab:
                 pass
             self.zip_file = None
         self.cache.clear()
+    
+    def save_settings(self):
+        """Save current tab settings"""
+        settings = {
+            "shot": self.shot_entry.get()
+        }
+        set_tab_settings("tv", settings)
+    
+    def load_settings(self):
+        """Load and apply saved settings"""
+        settings = get_tab_settings("tv")
+        
+        if settings.get("shot"):
+            self.shot_entry.delete(0, tk.END)
+            self.shot_entry.insert(0, settings["shot"])

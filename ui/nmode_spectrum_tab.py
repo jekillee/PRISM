@@ -19,6 +19,88 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from MDSplus import Connection
 
 from ui.ui_constants import CONTROL_PANEL_WIDTH, PAD_X, PAD_Y
+from config.user_settings import get_tab_settings, set_tab_settings
+
+
+# Example script for loading n-mode spectrum NPZ file
+NMODE_EXAMPLE_SCRIPT = '''"""
+Example script for loading and plotting PRISM n-mode spectrum NPZ file
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load NPZ file
+filepath = 'nmode_XXXXXX_3.0-5.0s.npz'
+data = np.load(filepath, allow_pickle=True)
+
+# Extract data
+time = data['time']                   # Time array [s]
+frequency = data['frequency']         # Frequency array [kHz]
+mode_spectrum = data['mode_spectrum'] # Mode number array (time, freq)
+amplitude = data['amplitude']         # Amplitude evolution (2*nmodes, time)
+
+# Get metadata
+metadata = data['metadata'].item()
+print(f"Shot: {metadata['shot']}")
+print(f"Time range: {metadata['time_range']} s")
+print(f"Freq range: {metadata['freq_range']} kHz")
+print(f"n-modes: {metadata['n_modes']}")
+print(f"n_modes_list: {metadata['n_modes_list']}")
+print(f"Sign: {metadata['sign']}")
+
+# Define mode colors (matching PRISM)
+def get_mode_color(n):
+    colors = ['#000000', '#FF0000', '#00FF00', '#0000FF', '#FF9100',
+              '#1f78b4', '#b2df8a', '#33a02c', '#ffffb3', '#b3bada']
+    return colors[abs(n) % len(colors)]
+
+# Plot settings
+n_modes_list = metadata['n_modes_list']
+fmin, fmax = metadata['freq_range']
+tmin, tmax = metadata['time_range']
+
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+
+# Plot n-mode spectrum with colors for each mode
+for n in n_modes_list:
+    if n == 0:
+        continue
+    color = get_mode_color(abs(n))
+    
+    # Create masked array for this mode
+    mode_mask = (mode_spectrum == n)
+    if not np.any(mode_mask):
+        continue
+    
+    # Get positions where this mode exists
+    t_idx, f_idx = np.where(mode_mask)
+    if len(t_idx) == 0:
+        continue
+    
+    ax1.scatter(time[t_idx], frequency[f_idx], c=color, s=1, label=f'n={n}')
+
+ax1.set_ylabel('Frequency [kHz]')
+ax1.set_xlim(tmin, tmax)
+ax1.set_ylim(fmin, fmax)
+ax1.set_title(f"Shot #{metadata['shot']} n-mode spectrum ({metadata['sign']})")
+ax1.legend(loc='upper right', fontsize=8, markerscale=5)
+ax1.grid(True, alpha=0.3)
+
+# Plot amplitude evolution with matching colors
+for i, n in enumerate(n_modes_list):
+    color = get_mode_color(abs(n))
+    ax2.plot(time, amplitude[i], color=color, label=f'n={n}')
+
+ax2.set_xlabel('Time [s]')
+ax2.set_ylabel('Amplitude [a.u.]')
+ax2.set_xlim(tmin, tmax)
+ax2.legend(loc='upper right', fontsize=8)
+ax2.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+'''
 
 
 # =============================================================================
@@ -672,6 +754,9 @@ class NModeSpectrumTab:
         self._create_parameters_panel(control_frame)
         self._create_plot_options_panel(control_frame)
         self._create_save_controls(control_frame)
+        
+        # Load saved settings
+        self.load_settings()
     
     def _create_parameters_panel(self, parent):
         """Create parameters panel"""
@@ -683,12 +768,22 @@ class NModeSpectrumTab:
         
         row = 0
         
-        # Shot
+        # Shot with up/down buttons in same row
         tk.Label(frame, text='Shot').grid(row=row, column=0, padx=5, pady=5, sticky='w')
+        
+        shot_frame = tk.Frame(frame)
+        shot_frame.grid(row=row, column=1, padx=5, pady=5, sticky='w')
+        
         self.shot_var = tk.StringVar(value=str(NModeConfig.DEFAULT_SHOT))
-        self.shot_entry = tk.Entry(frame, textvariable=self.shot_var, width=12)
-        self.shot_entry.grid(row=row, column=1, padx=5, pady=5, sticky='w')
+        self.shot_entry = tk.Entry(shot_frame, textvariable=self.shot_var, width=10)
+        self.shot_entry.pack(side=tk.LEFT)
         self.shot_entry.bind('<Return>', lambda e: self._run_calculation())
+        
+        tk.Button(shot_frame, text='\u25B2', width=2, 
+                  command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
+        tk.Button(shot_frame, text='\u25BC', width=2, 
+                  command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
+        
         row += 1
         
         # Time range
@@ -811,6 +906,92 @@ class NModeSpectrumTab:
         self.save_button = ttk.Button(frame, text='Save as NPZ', 
                                        command=self._save_data, state='disabled')
         self.save_button.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        
+        ttk.Button(frame, text='Show Example Script', 
+                   command=self._show_example_script).pack(fill='x', padx=PAD_X, pady=(0, PAD_Y))
+    
+    def _show_example_script(self):
+        """Show example script for loading NPZ file with syntax highlighting"""
+        script = NMODE_EXAMPLE_SCRIPT
+        
+        popup = tk.Toplevel(self.frame)
+        popup.title("Example Script - N-Mode Spectrum NPZ")
+        popup.geometry("700x550")
+        
+        text_frame = tk.Frame(popup)
+        text_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        scrollbar_y = tk.Scrollbar(text_frame, orient='vertical')
+        scrollbar_y.pack(side=tk.RIGHT, fill='y')
+        
+        scrollbar_x = tk.Scrollbar(text_frame, orient='horizontal')
+        scrollbar_x.pack(side=tk.BOTTOM, fill='x')
+        
+        text_widget = tk.Text(text_frame, wrap='none', font=('Courier', 10),
+                              yscrollcommand=scrollbar_y.set,
+                              xscrollcommand=scrollbar_x.set,
+                              bg='#19232d', fg='#ffffff',
+                              insertbackground='white')
+        text_widget.pack(side=tk.LEFT, fill='both', expand=True)
+        
+        scrollbar_y.config(command=text_widget.yview)
+        scrollbar_x.config(command=text_widget.xview)
+        
+        # Define syntax highlighting tags (Spyder dark theme)
+        text_widget.tag_configure('keyword', foreground='#c670e0')
+        text_widget.tag_configure('builtin', foreground='#fab16c')
+        text_widget.tag_configure('string', foreground='#b0e686')
+        text_widget.tag_configure('comment', foreground='#999999')
+        text_widget.tag_configure('number', foreground='#faed5c')
+        
+        text_widget.insert('1.0', script)
+        
+        # Apply syntax highlighting
+        self._apply_syntax_highlighting(text_widget)
+        
+        text_widget.config(state='disabled')
+        
+        btn_frame = tk.Frame(popup)
+        btn_frame.pack(fill='x', padx=10, pady=(0, 10))
+        
+        def copy_to_clipboard():
+            popup.clipboard_clear()
+            popup.clipboard_append(script)
+            messagebox.showinfo("Copied", "Script copied to clipboard")
+        
+        tk.Button(btn_frame, text="Copy to Clipboard", command=copy_to_clipboard).pack(side=tk.LEFT)
+        tk.Button(btn_frame, text="Close", command=popup.destroy).pack(side=tk.RIGHT)
+    
+    def _apply_syntax_highlighting(self, text_widget):
+        """Apply Python syntax highlighting to text widget"""
+        import re
+        
+        content = text_widget.get('1.0', 'end')
+        
+        # Keywords
+        keywords = r'\b(import|from|as|def|class|if|elif|else|for|while|try|except|with|return|yield|lambda|and|or|not|in|is|None|True|False|print|continue)\b'
+        # Builtins
+        builtins = r'\b(np|plt|data|metadata|time|frequency|mode_spectrum|amplitude|fig|ax1|ax2|im)\b'
+        # Strings
+        strings = r'(\"\"\"[\s\S]*?\"\"\"|\'\'\'[\s\S]*?\'\'\'|\"[^\"]*\"|\'[^\']*\'|f\"[^\"]*\"|f\'[^\']*\')'
+        # Comments
+        comments = r'(#[^\n]*)'
+        # Numbers
+        numbers = r'\b(\d+\.?\d*)\b'
+        
+        patterns = [
+            (comments, 'comment'),
+            (strings, 'string'),
+            (keywords, 'keyword'),
+            (builtins, 'builtin'),
+            (numbers, 'number'),
+        ]
+        
+        for pattern, tag in patterns:
+            for match in re.finditer(pattern, content):
+                start_idx = f"1.0+{match.start()}c"
+                end_idx = f"1.0+{match.end()}c"
+                text_widget.tag_add(tag, start_idx, end_idx)
     
     def _save_data(self):
         """Save n-mode spectrum data to NPZ file"""
@@ -888,6 +1069,15 @@ class NModeSpectrumTab:
     def _on_nmodes_changed(self, value):
         """Update nmodes label"""
         self.nmodes_label.config(text=str(int(float(value))))
+    
+    def _adjust_shot(self, delta):
+        """Adjust shot number by delta"""
+        try:
+            current = int(self.shot_var.get())
+            new_shot = max(1, current + delta)
+            self.shot_var.set(str(new_shot))
+        except ValueError:
+            pass
     
     def _run_calculation(self):
         """Run complete workflow"""
@@ -1008,3 +1198,70 @@ class NModeSpectrumTab:
             self.canvas.draw()
         except Exception as e:
             messagebox.showerror("Error", f"Plot failed: {str(e)}")
+    
+    def save_settings(self):
+        """Save current tab settings"""
+        settings = {
+            "shot": self.shot_var.get(),
+            "tmin": self.tmin_var.get(),
+            "tmax": self.tmax_var.get(),
+            "tinterval": self.tinterval_var.get(),
+            "fmin": self.fmin_var.get(),
+            "fmax": self.fmax_var.get(),
+            "nmodes": self.nmodes_var.get(),
+            "tolerance": self.tol_var.get(),
+            "fraction": self.frac_var.get(),
+            "sign": self.msign_var.get(),
+            "integrate": self.integrate_var.get(),
+            "detrend": self.detrend_var.get(),
+            "plot_type": self.plot_type_var.get(),
+            "contour_levels": self.numc_var.get()
+        }
+        set_tab_settings("nmode", settings)
+    
+    def load_settings(self):
+        """Load and apply saved settings"""
+        settings = get_tab_settings("nmode")
+        
+        if settings.get("shot"):
+            self.shot_var.set(settings["shot"])
+        
+        if settings.get("tmin"):
+            self.tmin_var.set(settings["tmin"])
+        
+        if settings.get("tmax"):
+            self.tmax_var.set(settings["tmax"])
+        
+        if settings.get("tinterval"):
+            self.tinterval_var.set(settings["tinterval"])
+        
+        if settings.get("fmin"):
+            self.fmin_var.set(settings["fmin"])
+        
+        if settings.get("fmax"):
+            self.fmax_var.set(settings["fmax"])
+        
+        if settings.get("nmodes") is not None:
+            self.nmodes_var.set(settings["nmodes"])
+            self.nmodes_label.config(text=str(settings["nmodes"]))
+        
+        if settings.get("tolerance"):
+            self.tol_var.set(settings["tolerance"])
+        
+        if settings.get("fraction"):
+            self.frac_var.set(settings["fraction"])
+        
+        if settings.get("sign") is not None:
+            self.msign_var.set(settings["sign"])
+        
+        if settings.get("integrate") is not None:
+            self.integrate_var.set(settings["integrate"])
+        
+        if settings.get("detrend") is not None:
+            self.detrend_var.set(settings["detrend"])
+        
+        if settings.get("plot_type"):
+            self.plot_type_var.set(settings["plot_type"])
+        
+        if settings.get("contour_levels"):
+            self.numc_var.set(settings["contour_levels"])

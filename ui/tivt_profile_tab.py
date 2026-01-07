@@ -118,7 +118,7 @@ class TiVTProfileTab(BaseTab):
         ces_loaded = False
         xics_loaded = False
         
-        # Try to load CES data
+        # Try to load CES data with selected analysis type only
         try:
             data = self.data_loader.load_data(shot_number, analysis_type)
             cache_key = f'{shot_number}_{analysis_type}'
@@ -142,7 +142,7 @@ class TiVTProfileTab(BaseTab):
         
         # Check if any data loaded
         if not ces_loaded and not xics_loaded:
-            messagebox.showerror("Error", f"No CES or XICS data available for shot #{shot_number}")
+            messagebox.showerror("Error", f"No CES ({analysis_type}) or XICS data available for shot #{shot_number}")
             return
         
         # Update listbox

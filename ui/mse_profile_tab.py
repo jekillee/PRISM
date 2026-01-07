@@ -379,6 +379,10 @@ class MSEProfileTab(BaseTab):
                                  fmt='o-', capsize=3, markersize=5, color=color,
                                  linewidth=0.8, label=label)
                 
+                # Add channel labels for TGAMMA
+                raw_channels = [j+1 for j in range(len(good_mask)) if good_mask[j]]
+                self._add_channel_labels(self.ax1, x_raw, tgamma, 'TGAMMA', raw_channels)
+                
                 gamma_min = min(gamma_min, np.nanpercentile(tgamma, 2))
                 gamma_max = max(gamma_max, np.nanpercentile(tgamma, 98))
                 
@@ -394,6 +398,12 @@ class MSEProfileTab(BaseTab):
                 self.ax2.errorbar(x_prof, param_data, yerr=param_err,
                                  fmt='o-', capsize=3, markersize=5, color=color,
                                  label=label)
+                
+                # Add channel labels for profile
+                n_prof = len(R_prof)
+                prof_channels = list(range(1, n_prof + 1))
+                node_prefix = 'pmse_qv' if param == 'q' else 'pmse_jv'
+                self._add_channel_labels(self.ax2, x_prof, param_data, node_prefix, prof_channels)
                 
                 param_max = max(param_max, np.nanmax(param_data))
                 param_min = min(param_min, np.nanmin(param_data))

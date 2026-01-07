@@ -258,10 +258,12 @@ class NeTeProfileTab(BaseTab):
                                 lbl = f'TS_EDGE{ch_idx - 14 + 1}'
                             self.ax1.annotate(lbl, (R_data[ch_idx], Te_profile[ch_idx]), 
                                              textcoords='offset points',
-                                             xytext=(0, 5), ha='center', fontsize=7, alpha=0.8)
+                                             xytext=(0, 5), ha='center', fontsize=7, alpha=0.8,
+                                             clip_on=True, annotation_clip=True)
                             self.ax2.annotate(lbl, (R_data[ch_idx], ne_profile[ch_idx]), 
                                              textcoords='offset points',
-                                             xytext=(0, 5), ha='center', fontsize=7, alpha=0.8)
+                                             xytext=(0, 5), ha='center', fontsize=7, alpha=0.8,
+                                             clip_on=True, annotation_clip=True)
                     
                     # Plot ECE data only for "TS+ECE" mode
                     if source == 'TS+ECE':
@@ -435,6 +437,23 @@ class NeTeProfileTab(BaseTab):
                                      fmt='o', capsize=5, label=label,
                                      color=color, markersize=5, zorder=10)
                     
+                    # Add Thomson channel labels
+                    n_channels = len(x_data)
+                    for ch_idx in range(n_channels):
+                        if self.show_channel_var.get():
+                            if ch_idx < 14:
+                                lbl = f'TS_CORE{ch_idx + 1}'
+                            else:
+                                lbl = f'TS_EDGE{ch_idx - 14 + 1}'
+                            self.ax1.annotate(lbl, (x_data[ch_idx], Te_profile[ch_idx]), 
+                                             textcoords='offset points',
+                                             xytext=(0, 5), ha='center', fontsize=7, alpha=0.8,
+                                             clip_on=True, annotation_clip=True)
+                            self.ax2.annotate(lbl, (x_data[ch_idx], ne_profile[ch_idx]), 
+                                             textcoords='offset points',
+                                             xytext=(0, 5), ha='center', fontsize=7, alpha=0.8,
+                                             clip_on=True, annotation_clip=True)
+                    
                     # Plot ECE data only for "TS+ECE" mode
                     if source == 'TS+ECE':
                         ece_cache_key = self._get_ece_cache_key(shot_number)
@@ -459,6 +478,14 @@ class NeTeProfileTab(BaseTab):
                                          's', color=color, markersize=5,
                                          markerfacecolor='none', markeredgewidth=1.5,
                                          label=ece_label, zorder=5)
+                            
+                            # Add ECE channel labels
+                            ece_channels = ece_data.measurements['Te'].get('channels', 
+                                           list(range(1, len(ece_data.radius) + 1)))
+                            valid_x = ece_x_data[valid_mask]
+                            valid_Te = ece_Te_profile[valid_mask]
+                            valid_ch = [ece_channels[i] for i in range(len(valid_mask)) if valid_mask[i]]
+                            self._add_channel_labels(self.ax1, valid_x, valid_Te, 'ECE', valid_ch)
                 
                 elif source == 'ECE':
                     cache_key = self._get_ece_cache_key(shot_number)
@@ -484,6 +511,14 @@ class NeTeProfileTab(BaseTab):
                                      's', color=color, markersize=5,
                                      markerfacecolor='none', markeredgewidth=1.5,
                                      label=label, zorder=5)
+                        
+                        # Add ECE channel labels
+                        ece_channels = ece_data.measurements['Te'].get('channels', 
+                                       list(range(1, len(ece_data.radius) + 1)))
+                        valid_x = x_data[valid_mask]
+                        valid_Te = Te_profile[valid_mask]
+                        valid_ch = [ece_channels[i] for i in range(len(valid_mask)) if valid_mask[i]]
+                        self._add_channel_labels(self.ax1, valid_x, valid_Te, 'ECE', valid_ch)
                 
             except Exception as e:
                 print(f"Error plotting {entry}: {str(e)}")

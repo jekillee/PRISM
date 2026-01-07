@@ -169,8 +169,8 @@ class ThomsonLoader(BaseDiagnosticLoader):
             if ip_fault_time is None:
                 raise RuntimeError(f"Shot {shot_number}: Ip did not exceed 100 kA (failed shot)")
             
-            # Mask time range: 0 < time <= ip_fault_time
-            valid_time_mask = (times > 0) & (times <= ip_fault_time)
+            # Mask time range: 0 < time <= ip_fault_time + 0.5s
+            valid_time_mask = (times > 0) & (times <= ip_fault_time + 0.5)
             times = times[valid_time_mask]
             temperature = temperature[:, valid_time_mask]
             density = density[:, valid_time_mask]
@@ -179,7 +179,7 @@ class ThomsonLoader(BaseDiagnosticLoader):
             density_error_upper = density_error_upper[:, valid_time_mask]
             density_error_lower = density_error_lower[:, valid_time_mask]
             
-            print(f"  Data masked to IP fault time: {ip_fault_time:.3f} s")
+            print(f"  Data masked to IP fault time + 0.5s: {ip_fault_time + 0.5:.3f} s")
             
             measurements = {
                 'Te': {

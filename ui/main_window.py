@@ -11,6 +11,9 @@ import os
 
 from config.app_config import AppConfig, VERSION
 from config.diagnostic_config import get_enabled_diagnostics
+from config.user_settings import (
+    load_settings, save_settings, show_update_popup
+)
 from data_loaders.efit_loader import EFITLoader
 from plotting.plot_manager import PlotManager
 from ui.tab_factory import TabFactory
@@ -24,6 +27,9 @@ class PRISMApp:
         self.config = AppConfig()
         self.efit_loader = EFITLoader(self.config)
         self.plot_manager = PlotManager(self.config)
+        
+        # Load user settings
+        load_settings()
         
         self.root = tk.Tk()
         self.root.title(f'PRISM v{VERSION} - Plasma Research Integrated System for Multi-diagnostics')
@@ -46,6 +52,12 @@ class PRISMApp:
         if self.tab_configs:
             self._create_tab_content(0)
             self._on_tab_changed(None)
+        
+        # Show update popup if new version
+        show_update_popup(self.root)
+        
+        # Bind window close event
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
     
     def _create_widgets(self):
         """Create main application widgets with placeholder frames"""
@@ -250,6 +262,16 @@ class PRISMApp:
         print()
         print("=" * 64)
         print()
+    
+    def _on_close(self):
+        """Handle window close event"""
+        # Save settings for all created tabs
+        for tab_index, tab in self.tab_cache.items():
+            if hasattr(tab, 'save_settings'):
+                tab.save_settings()
+        
+        save_settings()
+        self.root.destroy()
     
     def run(self):
         """Start the application main loop"""

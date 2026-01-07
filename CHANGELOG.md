@@ -5,6 +5,39 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-01-07
+
+### Added
+- **User Settings Persistence**
+  - Automatic save/restore of user settings across sessions
+  - Settings stored in ~/.prism/settings.json
+- **Update Notification Popup**
+  - Shows changelog on first launch after update
+  - "Do not show again" option
+- **NPZ Data Export with Example Scripts**
+  - Spectrogram: Save data as NPZ with Python plotting example
+  - N-Mode Spectrum: Save mode analysis results with example script
+  - IRVB: Save 2D Prad data with equilibrium overlay example
+  - Syntax-highlighted code display (Spyder dark theme)
+- **TV Tab Enhancements**
+  - 2026 campaign support (new file path structure)
+  - Time display on frames: t = frame/210 - 0.1s
+  - Shot number up/down buttons (▲/▼)
+- **Shot Navigation Buttons**
+  - Added ▲/▼ buttons for Spectrogram, N-Mode Spectrum, IRVB, TV tabs
+- **TCI IP Fault Masking**
+  - Automatic data masking after IP fault time + 0.5s
+  - Consistent with Thomson scattering masking
+
+### Changed
+- IP fault masking extended to fault_time + 0.5s (Thomson, TCI)
+- Improved CES error messages for missing data
+
+### Fixed
+- Show Nodes annotation clipping (no longer affects figure size)
+- neTe profile figure size consistency with other tabs
+- TV tab status_label error on load
+
 ## [1.0.0] - 2026-01-02
 
 ### Added

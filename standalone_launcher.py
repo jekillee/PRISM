@@ -9,6 +9,9 @@ from tkinter import ttk
 
 from config.app_config import AppConfig, VERSION
 from config.diagnostic_config import DIAGNOSTICS
+from config.user_settings import (
+    load_settings, save_settings, show_update_popup
+)
 from data_loaders.efit_loader import EFITLoader
 from plotting.plot_manager import PlotManager
 from ui.widgets.custom_toolbar import QuietNavigationToolbar
@@ -48,6 +51,9 @@ class StandaloneLauncher:
         self.config = AppConfig()
         self.efit_loader = EFITLoader(self.config)
         self.plot_manager = PlotManager(self.config)
+        
+        # Load user settings
+        load_settings()
     
     def run(self, mode):
         """Run standalone viewer for specified mode"""
@@ -92,19 +98,25 @@ class StandaloneLauncher:
         else:
             # Single tab mode
             tab_type = mode_config['tabs'][0]
-            tab = self._create_single_tab(tab_type)
+            self.single_tab = self._create_single_tab(tab_type)
             
-            if tab:
-                tab.frame.pack(expand=True, fill='both')
+            if self.single_tab:
+                self.single_tab.frame.pack(expand=True, fill='both')
                 
                 # Create bottom bar
                 self._create_bottom_bar()
                 
                 # Setup toolbar
-                if hasattr(tab, 'canvas'):
-                    self.toolbar = QuietNavigationToolbar(tab.canvas, self.toolbar_frame_container)
+                if hasattr(self.single_tab, 'canvas'):
+                    self.toolbar = QuietNavigationToolbar(self.single_tab.canvas, self.toolbar_frame_container)
                     self.toolbar.update()
-                    tab.toolbar = self.toolbar
+                    self.single_tab.toolbar = self.toolbar
+        
+        # Show update popup if new version
+        show_update_popup(self.root)
+        
+        # Bind window close event
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         
         self.root.mainloop()
     
@@ -351,6 +363,21 @@ class StandaloneLauncher:
             text="Developed by Jekil Lee (jklee@kfe.re.kr)"
         )
         developer_label.pack(side=tk.RIGHT, padx=5)
+    
+    def _on_close(self):
+        """Handle window close event"""
+        # Save settings for all created tabs
+        if hasattr(self, 'tab_cache'):
+            for tab_index, tab in self.tab_cache.items():
+                if hasattr(tab, 'save_settings'):
+                    tab.save_settings()
+        
+        if hasattr(self, 'single_tab') and self.single_tab:
+            if hasattr(self.single_tab, 'save_settings'):
+                self.single_tab.save_settings()
+        
+        save_settings()
+        self.root.destroy()
     
     def _print_startup_message(self, mode, title):
         """Print startup message"""

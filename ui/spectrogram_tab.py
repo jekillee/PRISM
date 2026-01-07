@@ -18,9 +18,47 @@ from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
     ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_SHORT
 )
+from config.user_settings import get_tab_settings, set_tab_settings
 from data_loaders.ecei_loader import ECEILoader
 from data_loaders.ece_loader import ECELoader
 from data_loaders.bes_loader import BESLoader
+
+
+# Example script for loading spectrogram NPZ file
+SPECTROGRAM_EXAMPLE_SCRIPT = '''"""
+Example script for loading and plotting PRISM spectrogram NPZ file
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load NPZ file
+filepath = 'spectrogram_XXXXXX_ECEYY_0.0-10.0s.npz'
+data = np.load(filepath, allow_pickle=True)
+
+# Extract data
+time = data['time']           # Time array [s]
+frequency = data['frequency'] # Frequency array [kHz]
+power = data['power']         # Power array (time, freq) [log10 scale]
+
+# Get metadata
+metadata = data['metadata'].item()
+print(f"Shot: {metadata['shot']}")
+print(f"Channel: {metadata['channel']}")
+print(f"Diagnostic: {metadata['diagnostic']}")
+print(f"Time range: {metadata['time_range']} s")
+print(f"Freq range: {metadata['freq_range']} kHz")
+
+# Plot spectrogram
+fig, ax = plt.subplots(figsize=(10, 6))
+im = ax.pcolormesh(time, frequency, power.T, shading='auto')
+ax.set_xlabel('Time [s]')
+ax.set_ylabel('Frequency [kHz]')
+ax.set_title(f"Shot #{metadata['shot']} - {metadata['channel']}")
+plt.colorbar(im, ax=ax, label='log$_{10}$(Power) [a.u.]')
+plt.tight_layout()
+plt.show()
+'''
 
 
 class SpectrogramTab:
@@ -89,9 +127,12 @@ class SpectrogramTab:
         
         # Initially disable signal selection
         self._set_signal_selection_state('disabled')
+        
+        # Load saved settings
+        self.load_settings()
     
     def _create_shot_input(self, parent):
-        """Create shot input section"""
+        """Create shot input section with up/down buttons"""
         frame = ttk.LabelFrame(parent, text="1. Load Shot", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
         
@@ -99,13 +140,34 @@ class SpectrogramTab:
         
         ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='center').grid(
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='ew')
-        self.shot_entry = ttk.Entry(frame, width=ENTRY_WIDTH_SHOT)
-        self.shot_entry.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        
+        # Shot entry with up/down buttons in same row
+        shot_frame = ttk.Frame(frame)
+        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        shot_frame.grid_columnconfigure(0, weight=1)
+        
+        self.shot_entry = ttk.Entry(shot_frame, width=ENTRY_WIDTH_SHOT)
+        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
         self.shot_entry.bind('<Return>', lambda e: self._load_shot_info())
+        
+        ttk.Button(shot_frame, text='\u25B2', width=2, 
+                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Button(shot_frame, text='\u25BC', width=2, 
+                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
         
         self.fetch_button = ttk.Button(frame, text='Fetch', command=self._load_shot_info, 
                                        width=BUTTON_WIDTH_MEDIUM)
         self.fetch_button.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='e')
+    
+    def _adjust_shot(self, delta):
+        """Adjust shot number by delta"""
+        try:
+            current = int(self.shot_entry.get())
+            new_shot = max(1, current + delta)
+            self.shot_entry.delete(0, tk.END)
+            self.shot_entry.insert(0, str(new_shot))
+        except ValueError:
+            pass
     
     def _create_signal_selection(self, parent):
         """Create signal selection section"""
@@ -237,6 +299,96 @@ class SpectrogramTab:
         self.save_button = ttk.Button(frame, text='Save as NPZ', 
                                        command=self._save_data, state='disabled')
         self.save_button.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        
+        ttk.Button(frame, text='Show Example Script', 
+                   command=self._show_example_script).pack(fill='x', padx=PAD_X, pady=(0, PAD_Y))
+    
+    def _show_example_script(self):
+        """Show example script for loading NPZ file with syntax highlighting"""
+        script = SPECTROGRAM_EXAMPLE_SCRIPT
+        
+        popup = tk.Toplevel(self.frame)
+        popup.title("Example Script - Spectrogram NPZ")
+        popup.geometry("650x500")
+        
+        text_frame = tk.Frame(popup)
+        text_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        scrollbar_y = tk.Scrollbar(text_frame, orient='vertical')
+        scrollbar_y.pack(side=tk.RIGHT, fill='y')
+        
+        scrollbar_x = tk.Scrollbar(text_frame, orient='horizontal')
+        scrollbar_x.pack(side=tk.BOTTOM, fill='x')
+        
+        text_widget = tk.Text(text_frame, wrap='none', font=('Courier', 10),
+                              yscrollcommand=scrollbar_y.set,
+                              xscrollcommand=scrollbar_x.set,
+                              bg='#19232d', fg='#ffffff',
+                              insertbackground='white')
+        text_widget.pack(side=tk.LEFT, fill='both', expand=True)
+        
+        scrollbar_y.config(command=text_widget.yview)
+        scrollbar_x.config(command=text_widget.xview)
+        
+        # Define syntax highlighting tags (Spyder dark theme)
+        text_widget.tag_configure('keyword', foreground='#c670e0')
+        text_widget.tag_configure('builtin', foreground='#fab16c')
+        text_widget.tag_configure('string', foreground='#b0e686')
+        text_widget.tag_configure('comment', foreground='#999999')
+        text_widget.tag_configure('number', foreground='#faed5c')
+        text_widget.tag_configure('definition', foreground='#57d6e4')
+        text_widget.tag_configure('instance', foreground='#ee6772')
+        
+        text_widget.insert('1.0', script)
+        
+        # Apply syntax highlighting
+        self._apply_syntax_highlighting(text_widget)
+        
+        text_widget.config(state='disabled')
+        
+        btn_frame = tk.Frame(popup)
+        btn_frame.pack(fill='x', padx=10, pady=(0, 10))
+        
+        def copy_to_clipboard():
+            popup.clipboard_clear()
+            popup.clipboard_append(script)
+            messagebox.showinfo("Copied", "Script copied to clipboard")
+        
+        tk.Button(btn_frame, text="Copy to Clipboard", command=copy_to_clipboard).pack(side=tk.LEFT)
+        tk.Button(btn_frame, text="Close", command=popup.destroy).pack(side=tk.RIGHT)
+    
+    def _apply_syntax_highlighting(self, text_widget):
+        """Apply Python syntax highlighting to text widget"""
+        import re
+        
+        content = text_widget.get('1.0', 'end')
+        
+        # Keywords
+        keywords = r'\b(import|from|as|def|class|if|elif|else|for|while|try|except|with|return|yield|lambda|and|or|not|in|is|None|True|False|print)\b'
+        # Builtins
+        builtins = r'\b(np|plt|data|metadata|time|frequency|power|fig|ax|im)\b'
+        # Strings
+        strings = r'(\"\"\"[\s\S]*?\"\"\"|\'\'\'[\s\S]*?\'\'\'|\"[^\"]*\"|\'[^\']*\'|f\"[^\"]*\"|f\'[^\']*\')'
+        # Comments
+        comments = r'(#[^\n]*)'
+        # Numbers
+        numbers = r'\b(\d+\.?\d*)\b'
+        # Function calls
+        functions = r'\b(\w+)\s*\('
+        
+        patterns = [
+            (comments, 'comment'),
+            (strings, 'string'),
+            (keywords, 'keyword'),
+            (builtins, 'builtin'),
+            (numbers, 'number'),
+        ]
+        
+        for pattern, tag in patterns:
+            for match in re.finditer(pattern, content):
+                start_idx = f"1.0+{match.start()}c"
+                end_idx = f"1.0+{match.end()}c"
+                text_widget.tag_add(tag, start_idx, end_idx)
     
     def _save_data(self):
         """Save spectrogram data to NPZ file (only selected time/freq range)"""
@@ -728,3 +880,47 @@ class SpectrogramTab:
         
         # Enable save button
         self.save_button.config(state='normal')
+    
+    def save_settings(self):
+        """Save current tab settings"""
+        settings = {
+            "shot": self.shot_entry.get(),
+            "tmin": self.time_min_entry.get(),
+            "tmax": self.time_max_entry.get(),
+            "fmin": self.freq_min_entry.get(),
+            "fmax": self.freq_max_entry.get(),
+            "nfft": self.selected_nfft.get(),
+            "dynamic_range": str(self.dyn_range_var.get())
+        }
+        set_tab_settings("spectrogram", settings)
+    
+    def load_settings(self):
+        """Load and apply saved settings"""
+        settings = get_tab_settings("spectrogram")
+        
+        if settings.get("shot"):
+            self.shot_entry.delete(0, tk.END)
+            self.shot_entry.insert(0, settings["shot"])
+        
+        if settings.get("tmin"):
+            self.time_min_entry.delete(0, tk.END)
+            self.time_min_entry.insert(0, settings["tmin"])
+        
+        if settings.get("tmax"):
+            self.time_max_entry.delete(0, tk.END)
+            self.time_max_entry.insert(0, settings["tmax"])
+        
+        if settings.get("fmin"):
+            self.freq_min_entry.delete(0, tk.END)
+            self.freq_min_entry.insert(0, settings["fmin"])
+        
+        if settings.get("fmax"):
+            self.freq_max_entry.delete(0, tk.END)
+            self.freq_max_entry.insert(0, settings["fmax"])
+        
+        if settings.get("nfft"):
+            self.selected_nfft.set(settings["nfft"])
+        
+        if settings.get("dynamic_range"):
+            self.dyn_range_var.set(float(settings["dynamic_range"]))
+            self.dyn_range_label.config(text=settings["dynamic_range"])

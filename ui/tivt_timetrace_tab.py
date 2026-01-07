@@ -135,7 +135,7 @@ class TiVTTimeTraceTab(BaseTab):
         
         # Check if any data loaded
         if not ces_loaded and not xics_loaded:
-            messagebox.showerror("Error", f"No CES or XICS data available for shot #{shot_number}")
+            messagebox.showerror("Error", f"No CES ({analysis_type}) or XICS data available for shot #{shot_number}")
             return
         
         # Build list of all channels with R positions

@@ -20,6 +20,91 @@ from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
     ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_LONG
 )
+from config.user_settings import get_tab_settings, set_tab_settings
+
+
+# Example script for loading IRVB NPZ file
+IRVB_EXAMPLE_SCRIPT = '''"""
+Example script for loading and plotting PRISM IRVB NPZ file
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load NPZ file
+filepath = 'irvb_XXXXXX_0.0-10.0s.npz'
+data = np.load(filepath, allow_pickle=True)
+
+# Extract data
+time = data['time']               # Time array [s]
+R = data['R']                     # R coordinates [m]
+Z = data['Z']                     # Z coordinates [m]
+prad_2d = data['prad_2d']         # 2D Prad array (time, Z, R) [MW/m^3]
+region_prad = data['region_prad'] # Regional Prad (n_regions, time) [MW]
+ptot = data['ptot']               # Total radiated power [MW]
+
+# EFIT data
+efit_r_grid = data['efit_r_grid']       # EFIT R grid [m]
+efit_z_grid = data['efit_z_grid']       # EFIT Z grid [m]
+efit_psi_n = data['efit_psi_n']         # Normalized psi (time, Z, R)
+efit_bdry_r = data['efit_bdry_r']       # LCFS R coordinates (time, max_points) [m]
+efit_bdry_z = data['efit_bdry_z']       # LCFS Z coordinates (time, max_points) [m]
+efit_nbdry = data['efit_nbdry']         # Number of boundary points per frame
+efit_rmaxis = data['efit_rmaxis']       # Magnetic axis R (time) [m]
+efit_zmaxis = data['efit_zmaxis']       # Magnetic axis Z (time) [m]
+efit_limiter_r = data['efit_limiter_r'] # Limiter R [m]
+efit_limiter_z = data['efit_limiter_z'] # Limiter Z [m]
+
+# Get metadata
+metadata = data['metadata'].item()
+print(f"Shot: {metadata['shot']}")
+print(f"EFIT tree: {metadata['efit_tree']}")
+print(f"Psi boundaries: {metadata['psi_boundaries']}")
+print(f"Region labels: {metadata['region_labels']}")
+print(f"Total frames: {len(time)}")
+
+# Plot 2D Prad at middle frame
+frame_idx = len(time) // 2  # Middle frame
+fig, ax = plt.subplots(figsize=(6, 8))
+
+# Use same colormap settings as PRISM
+vmin, vmax = 0.0, 1.5
+levels = np.linspace(vmin, vmax, 101)
+
+im = ax.contourf(R, Z, prad_2d[frame_idx], levels=levels)
+plt.colorbar(im, ax=ax, label='Prad [MW/m$^3$]')
+
+# Plot LCFS
+nbdry = efit_nbdry[frame_idx]
+ax.plot(efit_bdry_r[frame_idx, :nbdry], efit_bdry_z[frame_idx, :nbdry], 'k-', lw=2)
+
+# Plot limiter
+ax.plot(efit_limiter_r, efit_limiter_z, 'k--', lw=1)
+
+# Plot magnetic axis
+ax.plot(efit_rmaxis[frame_idx], efit_zmaxis[frame_idx], 'k+', markersize=10, mew=2)
+
+ax.set_xlabel('R [m]')
+ax.set_ylabel('Z [m]')
+ax.set_title(f"Shot #{metadata['shot']} t={time[frame_idx]:.3f}s")
+ax.set_aspect('equal')
+plt.tight_layout()
+plt.show()
+
+# Plot regional Prad time traces
+# Note: region_prad shape is (n_regions, time)
+fig, ax = plt.subplots(figsize=(10, 5))
+region_labels = metadata['region_labels']
+for i, label in enumerate(region_labels):
+    ax.plot(time, region_prad[i, :], label=label)
+ax.set_xlabel('Time [s]')
+ax.set_ylabel('Prad [MW]')
+ax.set_title(f"Shot #{metadata['shot']} Regional Prad")
+ax.legend()
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+'''
 
 
 class IRVBTab:
@@ -102,6 +187,9 @@ class IRVBTab:
         self._create_frame_controls(control_frame)
         self._create_playback_controls(control_frame)
         self._create_save_controls(control_frame)
+        
+        # Load saved settings
+        self.load_settings()
     
     def _create_load_controls(self, parent):
         """Create data loading section"""
@@ -110,12 +198,22 @@ class IRVBTab:
         
         frame.grid_columnconfigure(1, weight=1)
         
-        # Shot number
+        # Shot number with up/down buttons in same row
         ttk.Label(frame, text='Shot', width=LABEL_WIDTH_LONG, anchor='w').grid(
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
-        self.shot_entry = ttk.Entry(frame, width=ENTRY_WIDTH_SHOT)
-        self.shot_entry.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        
+        shot_frame = ttk.Frame(frame)
+        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        shot_frame.grid_columnconfigure(0, weight=1)
+        
+        self.shot_entry = ttk.Entry(shot_frame, width=ENTRY_WIDTH_SHOT)
+        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
         self.shot_entry.bind('<Return>', lambda e: self._load_data())
+        
+        ttk.Button(shot_frame, text='\u25B2', width=2, 
+                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Button(shot_frame, text='\u25BC', width=2, 
+                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
         
         self.fetch_button = ttk.Button(frame, text='Fetch', command=self._load_data, 
                                        width=BUTTON_WIDTH_MEDIUM)
@@ -124,6 +222,16 @@ class IRVBTab:
         # Status label (left-aligned)
         self.status_label = ttk.Label(frame, text='', foreground='gray', anchor='w')
         self.status_label.grid(row=1, column=0, columnspan=3, padx=PAD_X, pady=(0, 5), sticky='w')
+    
+    def _adjust_shot(self, delta):
+        """Adjust shot number by delta"""
+        try:
+            current = int(self.shot_entry.get())
+            new_shot = max(1, current + delta)
+            self.shot_entry.delete(0, tk.END)
+            self.shot_entry.insert(0, str(new_shot))
+        except ValueError:
+            pass
     
     def _create_efit_controls(self, parent):
         """Create EFIT settings section with psi boundaries"""
@@ -274,6 +382,92 @@ class IRVBTab:
         self.save_button = ttk.Button(frame, text='Save as NPZ', 
                                        command=self._save_data, state='disabled')
         self.save_button.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        
+        ttk.Button(frame, text='Show Example Script', 
+                   command=self._show_example_script).pack(fill='x', padx=PAD_X, pady=(0, PAD_Y))
+    
+    def _show_example_script(self):
+        """Show example script for loading NPZ file with syntax highlighting"""
+        script = IRVB_EXAMPLE_SCRIPT
+        
+        popup = tk.Toplevel(self.frame)
+        popup.title("Example Script - IRVB NPZ")
+        popup.geometry("700x600")
+        
+        text_frame = tk.Frame(popup)
+        text_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        scrollbar_y = tk.Scrollbar(text_frame, orient='vertical')
+        scrollbar_y.pack(side=tk.RIGHT, fill='y')
+        
+        scrollbar_x = tk.Scrollbar(text_frame, orient='horizontal')
+        scrollbar_x.pack(side=tk.BOTTOM, fill='x')
+        
+        text_widget = tk.Text(text_frame, wrap='none', font=('Courier', 10),
+                              yscrollcommand=scrollbar_y.set,
+                              xscrollcommand=scrollbar_x.set,
+                              bg='#19232d', fg='#ffffff',
+                              insertbackground='white')
+        text_widget.pack(side=tk.LEFT, fill='both', expand=True)
+        
+        scrollbar_y.config(command=text_widget.yview)
+        scrollbar_x.config(command=text_widget.xview)
+        
+        # Define syntax highlighting tags (Spyder dark theme)
+        text_widget.tag_configure('keyword', foreground='#c670e0')
+        text_widget.tag_configure('builtin', foreground='#fab16c')
+        text_widget.tag_configure('string', foreground='#b0e686')
+        text_widget.tag_configure('comment', foreground='#999999')
+        text_widget.tag_configure('number', foreground='#faed5c')
+        
+        text_widget.insert('1.0', script)
+        
+        # Apply syntax highlighting
+        self._apply_syntax_highlighting(text_widget)
+        
+        text_widget.config(state='disabled')
+        
+        btn_frame = tk.Frame(popup)
+        btn_frame.pack(fill='x', padx=10, pady=(0, 10))
+        
+        def copy_to_clipboard():
+            popup.clipboard_clear()
+            popup.clipboard_append(script)
+            messagebox.showinfo("Copied", "Script copied to clipboard")
+        
+        tk.Button(btn_frame, text="Copy to Clipboard", command=copy_to_clipboard).pack(side=tk.LEFT)
+        tk.Button(btn_frame, text="Close", command=popup.destroy).pack(side=tk.RIGHT)
+    
+    def _apply_syntax_highlighting(self, text_widget):
+        """Apply Python syntax highlighting to text widget"""
+        import re
+        
+        content = text_widget.get('1.0', 'end')
+        
+        # Keywords
+        keywords = r'\b(import|from|as|def|class|if|elif|else|for|while|try|except|with|return|yield|lambda|and|or|not|in|is|None|True|False|print)\b'
+        # Builtins
+        builtins = r'\b(np|plt|data|metadata|time|R|Z|prad_2d|region_prad|ptot|fig|ax|im)\b'
+        # Strings
+        strings = r'(\"\"\"[\s\S]*?\"\"\"|\'\'\'[\s\S]*?\'\'\'|\"[^\"]*\"|\'[^\']*\'|f\"[^\"]*\"|f\'[^\']*\')'
+        # Comments
+        comments = r'(#[^\n]*)'
+        # Numbers
+        numbers = r'\b(\d+\.?\d*)\b'
+        
+        patterns = [
+            (comments, 'comment'),
+            (strings, 'string'),
+            (keywords, 'keyword'),
+            (builtins, 'builtin'),
+            (numbers, 'number'),
+        ]
+        
+        for pattern, tag in patterns:
+            for match in re.finditer(pattern, content):
+                start_idx = f"1.0+{match.start()}c"
+                end_idx = f"1.0+{match.end()}c"
+                text_widget.tag_add(tag, start_idx, end_idx)
     
     def _save_data(self):
         """Save IRVB data to NPZ file including EFIT data"""
@@ -988,3 +1182,27 @@ class IRVBTab:
             target_delay = max(1, int(base_delay / speed_mult))
         
         self.play_job = self.frame.after(target_delay, self._play_next_frame)
+    
+    def save_settings(self):
+        """Save current tab settings"""
+        settings = {
+            "shot": self.shot_entry.get(),
+            "efit_tree": self.efit_tree_var.get(),
+            "psi_bounds": self.psi_entry.get()
+        }
+        set_tab_settings("irvb", settings)
+    
+    def load_settings(self):
+        """Load and apply saved settings"""
+        settings = get_tab_settings("irvb")
+        
+        if settings.get("shot"):
+            self.shot_entry.delete(0, tk.END)
+            self.shot_entry.insert(0, settings["shot"])
+        
+        if settings.get("efit_tree"):
+            self.efit_tree_var.set(settings["efit_tree"])
+        
+        if settings.get("psi_bounds"):
+            self.psi_entry.delete(0, tk.END)
+            self.psi_entry.insert(0, settings["psi_bounds"])
