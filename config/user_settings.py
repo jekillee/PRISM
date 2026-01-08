@@ -233,7 +233,7 @@ def show_update_popup(parent):
     font_normal = ('TkDefaultFont', 10)
     
     # Version info label
-    version_label = tk.Label(popup, text=f"PRISM v{VERSION} ({date})", font=font_normal)
+    version_label = tk.Label(popup, text=f"Current version: PRISM v{VERSION} ({date})", font=font_normal)
     version_label.pack(pady=(10, 5))
     
     # Bottom frame for checkbox, contact, and button (pack first to reserve space)
@@ -290,6 +290,8 @@ def _render_markdown(text_widget, content):
     import re
     
     # Define tags
+    text_widget.tag_configure('h2', font=('TkDefaultFont', 11, 'bold'), 
+                              foreground='#0366d6', spacing1=15, spacing3=5)
     text_widget.tag_configure('h3', font=('TkDefaultFont', 12, 'bold'), 
                               foreground='#24292e', spacing1=10, spacing3=5)
     text_widget.tag_configure('bold', font=('TkDefaultFont', 10, 'bold'))
@@ -303,6 +305,11 @@ def _render_markdown(text_widget, content):
         # Skip empty lines but add spacing
         if not line.strip():
             text_widget.insert('end', '\n')
+            continue
+        
+        # Version headers [1.1.1] - 2026-01-08
+        if re.match(r'^\[\d+\.\d+\.\d+\] - \d{4}-\d{2}-\d{2}', line.strip()):
+            text_widget.insert('end', line + '\n', 'h2')
             continue
         
         # Headers (### Added -> Added)
@@ -354,7 +361,10 @@ def _render_markdown(text_widget, content):
 
 
 def get_changelog_for_version(version):
-    """Get changelog text and date for specific version from CHANGELOG.md"""
+    """Get changelog text for all patch versions in the same minor version from CHANGELOG.md
+    
+    For example, if version is 1.1.1, it returns changelog for all 1.1.x versions.
+    """
     import re
     
     # Find CHANGELOG.md relative to this file
@@ -372,16 +382,40 @@ def get_changelog_for_version(version):
         with open(changelog_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # Pattern to match version section: ## [1.1.0] - 2026-01-07
-        pattern = rf'## \[{re.escape(version)}\] - (\d{{4}}-\d{{2}}-\d{{2}})\s*\n(.*?)(?=\n## \[|$)'
-        match = re.search(pattern, content, re.DOTALL)
+        # Parse version to get major.minor prefix
+        version_parts = version.split('.')
+        if len(version_parts) >= 2:
+            minor_prefix = f"{version_parts[0]}.{version_parts[1]}"
+        else:
+            minor_prefix = version
         
-        if match:
-            date = match.group(1)
-            changelog_text = match.group(2).strip()
-            return (changelog_text, date)
+        # Find all versions matching the minor prefix (e.g., 1.1.*)
+        # Pattern: ## [1.1.0] - 2026-01-07
+        pattern = rf'## \[({re.escape(minor_prefix)}\.\d+)\] - (\d{{4}}-\d{{2}}-\d{{2}})\s*\n(.*?)(?=\n## \[|$)'
+        matches = list(re.finditer(pattern, content, re.DOTALL))
         
-        return ("Bug fixes and improvements.", "")
+        if not matches:
+            return ("Bug fixes and improvements.", "")
+        
+        # Build combined changelog (newest first - matches are already in file order)
+        combined_changelog = []
+        latest_date = ""
+        
+        for match in matches:
+            ver = match.group(1)
+            date = match.group(2)
+            changelog_text = match.group(3).strip()
+            
+            if not latest_date:
+                latest_date = date
+            
+            # Add version header
+            combined_changelog.append(f"[{ver}] - {date}\n{changelog_text}")
+        
+        # Join with separator
+        full_changelog = "\n\n".join(combined_changelog)
+        
+        return (full_changelog, latest_date)
         
     except Exception as e:
         print(f"Warning: Could not read CHANGELOG.md: {e}")

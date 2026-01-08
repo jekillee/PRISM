@@ -267,18 +267,6 @@ class TVTab:
         self.actual_fps_label = ttk.Label(fps_display_frame, text='Actual: -- FPS', 
                                            foreground='gray')
         self.actual_fps_label.pack(side=tk.LEFT)
-        
-        # Frame skip
-        skip_frame = ttk.Frame(frame)
-        skip_frame.pack(fill='x', padx=5, pady=5)
-        
-        ttk.Label(skip_frame, text='Frame skip:').pack(side=tk.LEFT)
-        
-        self.skip_var = tk.StringVar(value='1')
-        skip_combo = ttk.Combobox(skip_frame, textvariable=self.skip_var,
-                                   values=['1', '2', '5', '10', '20'],
-                                   state='readonly', width=6)
-        skip_combo.pack(side=tk.LEFT, padx=5)
     
     def _create_draw_line_controls(self, parent):
         """Create line drawing controls"""

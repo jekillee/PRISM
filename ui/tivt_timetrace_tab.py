@@ -69,13 +69,13 @@ class TiVTTimeTraceTab(BaseTab):
         self.selected_analysis_type = tk.StringVar(value='mod')
         
         analysis_dropdown = ttk.Combobox(frame, textvariable=self.selected_analysis_type,
-                                        values=analysis_types, state="readonly", width=15)
+                                        values=analysis_types, state="readonly", width=10)
         analysis_dropdown.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         btn_frame = ttk.Frame(frame)
         btn_frame.grid(row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky='e')
         
-        self.fetch_button = ttk.Button(btn_frame, text='Fetch', command=self.load_shot_data, width=5)
+        self.fetch_button = ttk.Button(btn_frame, text='Fetch', command=self.load_shot_data, width=8)
         self.fetch_button.pack(side=tk.LEFT)
         
         ttk.Button(btn_frame, text='...', command=self.load_file_data, width=3).pack(

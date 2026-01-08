@@ -5,6 +5,18 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-01-08
+
+### Changed
+- **N-Mode Spectrum UI Improvements**
+  - Panel style unified (numbering, center-aligned labels)
+  - Shot up/down button height matched with entry field
+  - Tolerance/Fraction layout separated to two rows
+- **TV Tab**
+  - Removed Frame skip feature
+- **TivT Profile/Timetrace**
+  - Adjusted dropdown and button widths
+
 ## [1.1.0] - 2026-01-07
 
 ### Added
@@ -22,9 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TV Tab Enhancements**
   - 2026 campaign support (new file path structure)
   - Time display on frames: t = frame/210 - 0.1s
-  - Shot number up/down buttons (▲/▼)
+  - Shot number up/down buttons
 - **Shot Navigation Buttons**
-  - Added ▲/▼ buttons for Spectrogram, N-Mode Spectrum, IRVB, TV tabs
+  - Added up/down buttons for Spectrogram, N-Mode Spectrum, IRVB, TV tabs
 - **TCI IP Fault Masking**
   - Automatic data masking after IP fault time + 0.5s
   - Consistent with Thomson scattering masking

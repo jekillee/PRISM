@@ -340,7 +340,7 @@ def load_mirnov_data(shot, tmin, tmax):
         for future in as_completed(futures):
             results.append(future.result())
             completed += 1
-            progress = completed / n_channels
+            progress = completed / n_channels            
             bar = '█' * int(40 * progress) + '░' * (40 - int(40 * progress))
             print(f'\r  [{bar}] {completed}/{n_channels}', end='', flush=True)
     
@@ -760,7 +760,7 @@ class NModeSpectrumTab:
     
     def _create_parameters_panel(self, parent):
         """Create parameters panel"""
-        frame = tk.LabelFrame(parent, text="Parameters", font=('TkDefaultFont', 9, 'bold'))
+        frame = ttk.LabelFrame(parent, text="1. Parameters", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
         
         frame.grid_columnconfigure(1, weight=1)
@@ -771,18 +771,18 @@ class NModeSpectrumTab:
         # Shot with up/down buttons in same row
         tk.Label(frame, text='Shot').grid(row=row, column=0, padx=5, pady=5, sticky='w')
         
-        shot_frame = tk.Frame(frame)
+        shot_frame = ttk.Frame(frame)
         shot_frame.grid(row=row, column=1, padx=5, pady=5, sticky='w')
         
         self.shot_var = tk.StringVar(value=str(NModeConfig.DEFAULT_SHOT))
-        self.shot_entry = tk.Entry(shot_frame, textvariable=self.shot_var, width=10)
+        self.shot_entry = ttk.Entry(shot_frame, textvariable=self.shot_var, width=10)
         self.shot_entry.pack(side=tk.LEFT)
         self.shot_entry.bind('<Return>', lambda e: self._run_calculation())
         
-        tk.Button(shot_frame, text='\u25B2', width=2, 
-                  command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
-        tk.Button(shot_frame, text='\u25BC', width=2, 
-                  command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
+        ttk.Button(shot_frame, text='\u25B2', width=2, 
+                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Button(shot_frame, text='\u25BC', width=2, 
+                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
         
         row += 1
         
@@ -831,13 +831,16 @@ class NModeSpectrumTab:
         self.nmodes_label.pack(side=tk.RIGHT, padx=(5, 0))
         row += 1
         
-        # Tolerance and Fraction
+        # Tolerance
         tk.Label(frame, text='Tolerance').grid(row=row, column=0, padx=5, pady=5, sticky='w')
         self.tol_var = tk.StringVar(value=str(NModeConfig.DEFAULT_TOL))
-        tk.Entry(frame, textvariable=self.tol_var, width=8).grid(row=row, column=1, padx=5, pady=5, sticky='w')
-        tk.Label(frame, text='Fraction').grid(row=row, column=2, padx=5, pady=5, sticky='w')
+        tk.Entry(frame, textvariable=self.tol_var, width=10).grid(row=row, column=1, padx=5, pady=5, sticky='w')
+        row += 1
+        
+        # Fraction
+        tk.Label(frame, text='Fraction').grid(row=row, column=0, padx=5, pady=5, sticky='w')
         self.frac_var = tk.StringVar(value=str(NModeConfig.DEFAULT_FRAC))
-        tk.Entry(frame, textvariable=self.frac_var, width=8).grid(row=row, column=3, padx=5, pady=5, sticky='w')
+        tk.Entry(frame, textvariable=self.frac_var, width=10).grid(row=row, column=1, padx=5, pady=5, sticky='w')
         row += 1
         
         # Sign
@@ -873,8 +876,8 @@ class NModeSpectrumTab:
     
     def _create_plot_options_panel(self, parent):
         """Create plot options panel"""
-        frame = tk.LabelFrame(parent, text="Plot Options", font=('TkDefaultFont', 9, 'bold'))
-        frame.pack(fill='x', padx=5, pady=5)
+        frame = ttk.LabelFrame(parent, text="2. Plot Options", labelanchor="n")
+        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
         
         frame.grid_columnconfigure(1, weight=1)
         
@@ -900,7 +903,7 @@ class NModeSpectrumTab:
     
     def _create_save_controls(self, parent):
         """Create save data section"""
-        frame = tk.LabelFrame(parent, text="Save Data", font=('TkDefaultFont', 9, 'bold'))
+        frame = ttk.LabelFrame(parent, text="3. Save Data", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
         
         self.save_button = ttk.Button(frame, text='Save as NPZ', 
