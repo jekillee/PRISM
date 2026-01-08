@@ -88,3 +88,4 @@ Thumbs.db
 output/
 results/
 run_prism_dev.sh
+.nfs*
