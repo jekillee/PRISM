@@ -346,20 +346,58 @@ def load_mirnov_data(shot, tmin, tmax):
     
     print(f'\n  Completed in {tclock.time() - t0:.2f} sec')
     
-    signals, valid_names, valid_angles = [], [], []
-    time_arr = None
+    valid_results = []
     results.sort(key=lambda x: x['angle'])
-    
+
+    # Collect valid results
     for result in results:
-        if result['error'] is None:
-            signals.append(result['data'])
-            valid_names.append(result['name'])
-            valid_angles.append(result['angle'])
-            if time_arr is None:
-                time_arr = result['time']
-    
-    if len(signals) == 0:
+        if result['error'] is None and result['n_points'] > 0:
+            valid_results.append(result)
+
+    if len(valid_results) == 0:
         raise RuntimeError("No valid Mirnov channels found")
+
+    # Find common time range across all channels
+    common_tmin = max(r['time'][0] for r in valid_results)
+    common_tmax = min(r['time'][-1] for r in valid_results)
+
+    if common_tmin >= common_tmax:
+        raise RuntimeError(f"No overlapping time range found across channels")
+
+    print(f"  Common time range: {common_tmin:.4f} - {common_tmax:.4f} s")
+
+    # Use the channel with finest sampling as reference
+    ref_result = min(valid_results, key=lambda r: (r['time'][-1] - r['time'][0]) / r['n_points'])
+    ref_time = ref_result['time']
+
+    # Trim reference time to common range
+    ref_mask = (ref_time >= common_tmin) & (ref_time <= common_tmax)
+    time_arr = ref_time[ref_mask]
+    n_points = len(time_arr)
+
+    print(f"  Reference channel: {ref_result['name']} ({n_points} points in common range)")
+
+    # Interpolate all channels to common time grid
+    signals, valid_names, valid_angles = [], [], []
+
+    for result in valid_results:
+        ch_time = result['time']
+        ch_data = result['data']
+
+        # Check if interpolation is needed
+        if len(ch_time) == n_points and np.allclose(ch_time[ref_mask] if len(ch_time) == len(ref_time) else ch_time, time_arr, rtol=1e-6):
+            # Same time grid, just trim
+            ch_mask = (ch_time >= common_tmin) & (ch_time <= common_tmax)
+            interp_data = ch_data[ch_mask]
+        else:
+            # Interpolate to common time grid
+            interp_data = np.interp(time_arr, ch_time, ch_data).astype(np.float32)
+
+        signals.append(interp_data)
+        valid_names.append(result['name'])
+        valid_angles.append(result['angle'])
+
+    print(f"  Aligned {len(signals)} channels to common time grid")
     
     mirnov = MirnovData()
     mirnov.time = np.array(time_arr, dtype=np.float32)
@@ -659,8 +697,7 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
     ax.set_axisbelow(False)
     ax.grid(True, linestyle='--', linewidth=0.5, color='gray', alpha=0.5)
     
-    sign_str = {0: 'abs', 1: 'pos', -1: 'neg', 2: 'all'}
-    ax.set_title(f'KSTAR #{fft_result.shot} n-mode spectrum ({sign_str.get(msign, "pos")})')
+    ax.set_title(f'#{fft_result.shot}')
     
     # Always show all modes in legend based on nmodes setting
     legend_elements = []
@@ -710,7 +747,6 @@ def plot_amplitude_evolution(ax, fft_result, amp_evolution, tmin, tmax, nmodes, 
     ax.set_ylabel('Amplitude [Gauss]')
     ax.set_xlim(tmin, tmax)
     ax.set_ylim(bottom=0)
-    ax.set_title('Mode Amplitude Evolution (max)')
     ax.legend(loc='upper right', fontsize=8, framealpha=0.8, ncol=5)
     ax.grid(True, linestyle='--', linewidth=0.5, color='gray', alpha=0.5)
 

@@ -89,3 +89,6 @@ output/
 results/
 run_prism_dev.sh
 .nfs*
+
+# Claude Code
+.claude/

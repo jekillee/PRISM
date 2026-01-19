@@ -1,4 +1,14 @@
-# PRISM Release Guide
+# PRISM - Claude Code Instructions
+
+## Important Rules
+
+### Git Commit
+- **Do NOT include Co-Authored-By in commit messages**
+- Commit message format: `v{version}: Brief description of changes`
+
+---
+
+# Release Guide
 
 Version release and deployment procedures.
 
@@ -43,10 +53,10 @@ git status
 git add -A
 
 # Commit
-git commit -m "v1.1.2: Brief description of changes"
+git commit -m "v1.1.3: Brief description of changes"
 
 # Add tag
-git tag -a v1.1.2 -m "v1.1.2"
+git tag -a v1.1.3 -m "v1.1.3"
 ```
 
 **Note**: `git push` does not work on the internal network (no GitHub connection).
@@ -56,21 +66,21 @@ git tag -a v1.1.2 -m "v1.1.2"
 On the internet-connected PC (PowerShell):
 
 ```powershell
-cd "D:\Research\Code\Code Scripts\PRISM\v1.1.2"
+cd "D:\Research\Code\Code Scripts\PRISM\v1.1.3"
 
 # Check changes
 git status
 
 # Stage and commit
 git add -A
-git commit -m "v1.1.2: Brief description of changes"
+git commit -m "v1.1.3: Brief description of changes"
 
 # Add tag
-git tag -a v1.1.2 -m "v1.1.2"
+git tag -a v1.1.3 -m "v1.1.3"
 
 # Push to GitHub
 git push origin master
-git push origin v1.1.2
+git push origin v1.1.3
 ```
 
 ## Server Information
@@ -87,6 +97,7 @@ git push origin v1.1.2
 v{version}: Brief description of changes
 
 Examples:
+v1.1.3: Fix N-Mode Spectrum inhomogeneous array error
 v1.1.2: Fix MSE Time Trace gamma_min error and q/j fill_between style
 v1.1.1: UI improvements for N-Mode Spectrum, TV, TivT tabs
 v1.1.0: Add user settings persistence and update notification
