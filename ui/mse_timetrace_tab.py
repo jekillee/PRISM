@@ -156,7 +156,7 @@ class MSETimeTraceTab(BaseTab):
         if not selected_entries:
             return
         
-        gamma_max, param_max, param_min = 0, 0, 0
+        gamma_min, gamma_max, param_max, param_min = 0, 0, 0, 0
         colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
         
         for i, entry in enumerate(selected_entries):
@@ -226,10 +226,13 @@ class MSETimeTraceTab(BaseTab):
                     param_err_trace[t_idx] = np.interp(actual_R, R_sorted, param_err_sorted)
                 
                 label2 = f'#{shot_number} {actual_R*1e3:.0f}mm ({ch_label})'
-                
-                self.ax2.errorbar(data.time_prof, param_trace, yerr=param_err_trace,
-                                 fmt='o-', capsize=3, markersize=3, color=color,
-                                 linewidth=0.8, label=label2)
+
+                self.ax2.plot(data.time_prof, param_trace, '-', color=color,
+                             linewidth=0.8, label=label2)
+                self.ax2.fill_between(data.time_prof,
+                                      param_trace - param_err_trace*0.5,
+                                      param_trace + param_err_trace*0.5,
+                                      color=color, alpha=0.3)
                 
                 param_max = max(param_max, np.nanmax(param_trace))
                 param_min = min(param_min, np.nanmin(param_trace))
