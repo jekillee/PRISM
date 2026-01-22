@@ -5,6 +5,35 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2026-01-22
+
+### Added
+- **TV Tab - Compare Mode**
+  - Side-by-side viewing of TV01 (right) and TV02 (left)
+  - Time-synchronized display (matching frames by timestamp)
+  - "No Data" display when one TV is out of range
+  - Dropdown option: TV01, TV02, or TV01 + TV02
+  - Default to TV01 + TV02 when both are available
+- **TV Tab - Time Input**
+  - Direct time input (seconds) in Frame Control panel
+  - Navigate to specific time with Go button or Enter key
+  - Time display auto-updates when navigating frames
+
+### Changed
+- **TV Tab UI Refactored**
+  - Separated Search and Load buttons (previously combined as Fetch)
+  - Search: finds available TVs and updates dropdown
+  - Load: loads selected TV option
+  - Removed "Load from File" row, replaced with "..." button
+
+### Fixed
+- **TV Tab Slider Sync**
+  - Fixed frame/filename mismatch when using slider
+  - Implemented debounce to prevent race condition in event queue
+
+### Removed
+- Frame skip option from Playback Control (simplified to 1-frame steps)
+
 ## [1.1.3] - 2026-01-19
 
 ### Fixed

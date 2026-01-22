@@ -5,7 +5,7 @@ PRISM - Plasma Research Integrated System for Multi-diagnostics
 Global application configuration
 """
 
-VERSION = "1.1.3"
+VERSION = "1.1.4"
 APP_NAME = "PRISM"
 APP_FULL_NAME = "Plasma Research Integrated System for Multi-diagnostics"
 
@@ -39,4 +39,4 @@ class AppConfig:
         self.R_SCALE = 1e-3   # mm to m
         self.TI_SCALE = 1e-3  # eV to keV
         self.TE_SCALE = 1e-3  # eV to keV
-        self.NE_SCALE = 1e-19 # particles/mÃ‚Â³ to 10Ã‚Â¹Ã¢ÂÂ¹ particles/mÃ‚Â³
+        self.NE_SCALE = 1e-19 # m-3 to 1e19m-3

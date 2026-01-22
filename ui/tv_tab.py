@@ -2,7 +2,7 @@
 
 """
 TV (Visible Camera) tab for viewing image sequences from ZIP files
-With line drawing feature for paper figures
+With line drawing feature for paper figures and TV1/TV2 compare mode
 """
 
 import tkinter as tk
@@ -26,7 +26,11 @@ from config.user_settings import get_tab_settings, set_tab_settings
 
 
 class TVTab:
-    """TV image sequence viewer tab with line drawing"""
+    """TV image sequence viewer tab with line drawing and compare mode"""
+    
+    # TV camera parameters
+    TV_FPS = 210.0
+    TV_OFFSET = 0.1  # 100ms trigger offset
     
     def __init__(self, parent, app_config, diagnostic_config):
         self.parent = parent
@@ -36,28 +40,42 @@ class TVTab:
         self.frame = ttk.Frame(parent)
         self.toolbar = None
         
-        # Data storage
+        # Single TV mode data storage
         self.zip_file = None
         self.image_files = []
         self.current_frame = 0
         self.total_frames = 0
         
+        # Compare mode data storage
+        self.compare_mode = False
+        self.tv1_zip = None
+        self.tv2_zip = None
+        self.tv1_images = []
+        self.tv2_images = []
+        self.tv1_cache = {}
+        self.tv2_cache = {}
+        
         # Image cache (store nearby frames for smooth playback)
         self.cache = {}
-        self.cache_size = 100  # Increased for better playback
+        self.cache_size = 100
         
         # Playback state
         self.is_playing = False
         self.play_job = None
-        self._last_frame_time = 0  # For adaptive frame timing
+        self._last_frame_time = 0
         
         # Prefetch thread control
         self._prefetch_lock = threading.Lock()
         self._prefetch_thread = None
         self._prefetch_stop = False
         
-        # Plot reference
+        # Plot references
         self.im = None
+        self.im1 = None  # For compare mode (TV01)
+        self.im2 = None  # For compare mode (TV02)
+        self.ax = None
+        self.ax1 = None  # For compare mode
+        self.ax2 = None  # For compare mode
         
         # Line drawing
         self.line_points = []
@@ -105,69 +123,82 @@ class TVTab:
         
         frame.grid_columnconfigure(1, weight=1)
         
-        # Row 0: Shot input with up/down buttons and Search button
-        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='center').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        # Row 0: Shot label, entry, Search button, ... button
+        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='e').grid(
+            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
         
-        shot_frame = ttk.Frame(frame)
-        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
-        shot_frame.grid_columnconfigure(0, weight=1)
-        
-        self.shot_entry = ttk.Entry(shot_frame, width=18)
-        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
+        self.shot_entry = ttk.Entry(frame)
+        self.shot_entry.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
         self.shot_entry.bind('<Return>', lambda e: self._search_available_tvs())
         
-        ttk.Button(shot_frame, text='\u25B2', width=2, 
-                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
-        ttk.Button(shot_frame, text='\u25BC', width=2, 
-                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='e')
         
-        ttk.Button(frame, text='Search', command=self._search_available_tvs, 
-                  width=BUTTON_WIDTH_MEDIUM).grid(
-            row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='e')
+        ttk.Button(btn_frame, text='Search', command=self._search_available_tvs, width=8).pack(
+            side=tk.LEFT)
+        ttk.Button(btn_frame, text='...', command=self._load_zip_file, width=3).pack(
+            side=tk.LEFT, padx=(2, 0))
         
         # Row 1: TV dropdown and Load button
-        ttk.Label(frame, text='TV', width=LABEL_WIDTH_SHORT, anchor='center').grid(
-            row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        ttk.Label(frame, text='TV', width=LABEL_WIDTH_SHORT, anchor='e').grid(
+            row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
         
-        self.tv_selection_var = tk.StringVar(value='-- Select TV --')
+        self.tv_selection_var = tk.StringVar(value='-- Select --')
         self.tv_dropdown = ttk.Combobox(frame, textvariable=self.tv_selection_var,
-                                         state='readonly', width=17)
+                                         state='readonly', width=12)
+        self.tv_dropdown['values'] = []
         self.tv_dropdown.grid(row=1, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
         
-        ttk.Button(frame, text='Load', command=self._load_selected_tv, 
-                  width=BUTTON_WIDTH_MEDIUM).grid(
-            row=1, column=2, padx=PAD_X, pady=PAD_Y, sticky='e')
-        
-        # Row 2: Or label and Load from File button
-        ttk.Label(frame, text='Or', width=LABEL_WIDTH_SHORT, anchor='center').grid(
-            row=2, column=0, padx=PAD_X, pady=PAD_Y, sticky='ew')
-        ttk.Button(frame, text='Load from File',
-                  command=self._load_zip_file).grid(
-            row=2, column=1, columnspan=2, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        ttk.Button(frame, text='Load', command=self._load_selected_tv, width=8).grid(
+            row=1, column=2, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         # File label
         self.file_label = ttk.Label(frame, text="No file loaded", wraplength=360)
-        self.file_label.grid(row=3, column=0, columnspan=3, padx=PAD_X, pady=2, sticky='w')
+        self.file_label.grid(row=2, column=0, columnspan=3, padx=PAD_X, pady=2, sticky='w')
         
         # Loading status label
         self.status_label = ttk.Label(frame, text="", foreground='blue')
-        self.status_label.grid(row=4, column=0, columnspan=3, padx=PAD_X, pady=2, sticky='w')
+        self.status_label.grid(row=3, column=0, columnspan=3, padx=PAD_X, pady=2, sticky='w')
     
-    def _adjust_shot(self, delta):
-        """Adjust shot number by delta"""
+    def _search_available_tvs(self):
+        """Search for available TVs and update dropdown"""
         try:
-            current = int(self.shot_entry.get())
-            new_shot = max(1, current + delta)
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, str(new_shot))
+            shot_number = int(self.shot_entry.get())
         except ValueError:
-            pass
-        self.file_label.grid(row=3, column=0, columnspan=3, padx=PAD_X, pady=PAD_Y, sticky='w')
+            messagebox.showerror("Error", "Please enter a valid shot number")
+            return
         
-        # Loading status label
-        self.status_label = ttk.Label(frame, text="", foreground='blue')
-        self.status_label.grid(row=4, column=0, columnspan=3, padx=PAD_X, pady=2, sticky='w')
+        available_tvs = self._find_available_tvs(shot_number)
+        
+        if not available_tvs:
+            messagebox.showinfo("Not Found", 
+                f"No TV data found for shot #{shot_number}")
+            self.tv_dropdown['values'] = []
+            self.tv_selection_var.set('-- Select --')
+            self.file_label.config(text="No TV files found")
+            return
+        
+        # Build dropdown values based on availability
+        dropdown_values = []
+        has_both = 'TV01' in available_tvs and 'TV02' in available_tvs
+        
+        if has_both:
+            dropdown_values.append('TV01 + TV02')
+        if 'TV01' in available_tvs:
+            dropdown_values.append('TV01')
+        if 'TV02' in available_tvs:
+            dropdown_values.append('TV02')
+        
+        self.tv_dropdown['values'] = dropdown_values
+        
+        # Set default: TV01 + TV02 if both available, otherwise first available
+        if has_both:
+            self.tv_selection_var.set('TV01 + TV02')
+        else:
+            self.tv_selection_var.set(dropdown_values[0])
+        
+        self.file_label.config(text=f"Found: {', '.join(available_tvs)} for #{shot_number}")
+        print(f"TV: Found {available_tvs} for shot #{shot_number}")
     
     def _create_frame_controls(self, parent):
         """Create frame navigation controls"""
@@ -185,9 +216,9 @@ class TVTab:
         )
         self.frame_slider.pack(fill='x', expand=True)
         
-        # Frame number display
+        # Frame number input
         num_frame = ttk.Frame(frame)
-        num_frame.pack(fill='x', padx=5, pady=5)
+        num_frame.pack(fill='x', padx=5, pady=2)
         
         ttk.Label(num_frame, text='Frame:').pack(side=tk.LEFT)
         
@@ -200,6 +231,20 @@ class TVTab:
         self.frame_total_label.pack(side=tk.LEFT)
         
         ttk.Button(num_frame, text='Go', width=5, command=self._goto_frame).pack(
+            side=tk.LEFT, padx=5)
+        
+        # Time input
+        time_frame = ttk.Frame(frame)
+        time_frame.pack(fill='x', padx=5, pady=2)
+        
+        ttk.Label(time_frame, text='Time [s]:').pack(side=tk.LEFT)
+        
+        self.time_entry = ttk.Entry(time_frame, width=8)
+        self.time_entry.pack(side=tk.LEFT, padx=5)
+        self.time_entry.insert(0, '0.0')
+        self.time_entry.bind('<Return>', self._on_time_entry)
+        
+        ttk.Button(time_frame, text='Go', width=5, command=self._goto_time).pack(
             side=tk.LEFT, padx=5)
         
         # Current filename display
@@ -355,7 +400,13 @@ class TVTab:
     
     def _on_line_click(self, event):
         """Handle mouse click for line drawing"""
-        if event.inaxes != self.ax:
+        if event.inaxes is None:
+            return
+        
+        # In compare mode, only draw on ax1 (TV01)
+        if self.compare_mode and event.inaxes != self.ax1:
+            return
+        elif not self.compare_mode and event.inaxes != self.ax:
             return
         
         if event.button == 1:  # Left click - add point
@@ -367,7 +418,13 @@ class TVTab:
     
     def _on_mouse_motion(self, event):
         """Handle mouse motion for preview line"""
-        if not self.draw_mode or event.inaxes != self.ax:
+        if not self.draw_mode:
+            return
+        
+        # Check correct axes
+        if self.compare_mode and event.inaxes != self.ax1:
+            return
+        elif not self.compare_mode and event.inaxes != self.ax:
             return
         
         if len(self.line_points) == 0:
@@ -375,14 +432,15 @@ class TVTab:
         
         # Update preview line from last point to cursor
         last_point = self.line_points[-1]
+        target_ax = self.ax1 if self.compare_mode else self.ax
         
         if self.preview_line:
             self.preview_line.set_data([last_point[0], event.xdata],
                                         [last_point[1], event.ydata])
         else:
-            self.preview_line, = self.ax.plot([last_point[0], event.xdata],
-                                               [last_point[1], event.ydata],
-                                               'r--', linewidth=1, alpha=0.5)
+            self.preview_line, = target_ax.plot([last_point[0], event.xdata],
+                                                 [last_point[1], event.ydata],
+                                                 'r--', linewidth=1, alpha=0.5)
         self.canvas.draw_idle()
     
     def _clear_line(self):
@@ -426,8 +484,40 @@ class TVTab:
         color = self.line_color_var.get()
         width = int(self.line_width_var.get())
         
-        self.drawn_line, = self.ax.plot(x, y, color=color, linewidth=width)
+        target_ax = self.ax1 if self.compare_mode else self.ax
+        self.drawn_line, = target_ax.plot(x, y, color=color, linewidth=width)
         self.canvas.draw_idle()
+    
+    # =========================================================================
+    # Time/Frame conversion utilities
+    # =========================================================================
+    
+    def _frame_to_time(self, frame_idx):
+        """Convert frame index to time in seconds"""
+        return (frame_idx + 1) / self.TV_FPS - self.TV_OFFSET
+    
+    def _time_to_frame(self, time_sec, total_frames):
+        """Convert time in seconds to nearest frame index"""
+        frame_idx = int(round((time_sec + self.TV_OFFSET) * self.TV_FPS - 1))
+        return max(0, min(frame_idx, total_frames - 1))
+    
+    def _find_matching_frame(self, master_frame, master_total, slave_total):
+        """Find slave frame that matches master frame's time. Returns None if out of range."""
+        time_sec = self._frame_to_time(master_frame)
+        
+        # Calculate the time range of slave TV
+        slave_min_time = self._frame_to_time(0)
+        slave_max_time = self._frame_to_time(slave_total - 1)
+        
+        # Check if master time is within slave's time range
+        if time_sec < slave_min_time or time_sec > slave_max_time:
+            return None
+        
+        return self._time_to_frame(time_sec, slave_total)
+    
+    # =========================================================================
+    # Shot/Campaign utilities
+    # =========================================================================
     
     def _get_year_from_shot(self, shot_number):
         """Get year from shot number (KSTAR shot ranges)"""
@@ -516,32 +606,20 @@ class TVTab:
         
         return available_tvs
     
-    def _search_available_tvs(self):
-        """Search for available TV01/TV02 files for given shot"""
-        try:
-            shot_number = int(self.shot_entry.get())
-        except ValueError:
-            messagebox.showerror("Error", "Please enter a valid shot number")
-            return
+    def _get_tv_zip_path(self, shot_number, tv_name):
+        """Get full path to TV ZIP file"""
+        year = self._get_year_from_shot(shot_number)
+        campaign = self._get_campaign_from_year(year)
         
-        available_tvs = self._find_available_tvs(shot_number)
+        if campaign is None:
+            return None
         
-        if not available_tvs:
-            messagebox.showinfo("Not Found", 
-                f"No TV data found for shot #{shot_number}")
-            self.tv_dropdown['values'] = []
-            self.tv_selection_var.set('-- Select TV --')
-            self.file_label.config(text="No TV files found")
-            return
-        
-        # Update dropdown with available TVs
-        self.tv_dropdown['values'] = available_tvs
-        self.tv_selection_var.set(available_tvs[0])
-        self.file_label.config(text=f"Found: {', '.join(available_tvs)} for #{shot_number}")
-        print(f"TV: Found {available_tvs} for shot #{shot_number}")
+        shot_str = f'{shot_number:06d}'
+        tv_num = tv_name.replace('TV', '')
+        return f'/Diag_TV/{campaign}/{tv_name}/{shot_str}_tv{tv_num}.zip'
     
     def _load_selected_tv(self):
-        """Load selected TV ZIP file"""
+        """Load selected TV ZIP file(s)"""
         try:
             shot_number = int(self.shot_entry.get())
         except ValueError:
@@ -550,23 +628,175 @@ class TVTab:
         
         tv_selection = self.tv_selection_var.get()
         
-        if not tv_selection or tv_selection == '-- Select TV --':
+        if not tv_selection or tv_selection == '-- Select --':
             messagebox.showerror("Error", "Please search and select a TV first")
             return
         
-        year = self._get_year_from_shot(shot_number)
-        campaign = self._get_campaign_from_year(year)
+        # Handle TV01 + TV02 compare mode
+        if tv_selection == 'TV01 + TV02':
+            tv1_path = self._get_tv_zip_path(shot_number, 'TV01')
+            tv2_path = self._get_tv_zip_path(shot_number, 'TV02')
+            
+            if tv1_path is None or tv2_path is None:
+                messagebox.showerror("Error", "Failed to get TV file paths")
+                return
+            
+            self._load_compare_mode(tv1_path, tv2_path)
+        else:
+            # Single TV mode
+            zip_path = self._get_tv_zip_path(shot_number, tv_selection)
+            
+            if zip_path is None:
+                messagebox.showerror("Error", "Campaign folder not found")
+                return
+            
+            self.compare_mode = False
+            self._setup_single_mode()
+            self._load_zip_from_path(zip_path)
+    
+    def _setup_single_mode(self):
+        """Setup figure for single TV display"""
+        self._cleanup_compare_mode()
         
-        if campaign is None:
-            messagebox.showerror("Error", "Campaign folder not found")
+        self.figure.clear()
+        self.ax = self.figure.add_subplot(111)
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
+        self.ax.set_title("No image loaded")
+        
+        self.im = None
+        self.ax1 = None
+        self.ax2 = None
+        self.im1 = None
+        self.im2 = None
+        
+        self.canvas.draw()
+    
+    def _setup_compare_mode(self):
+        """Setup figure for TV1/TV2 comparison (side by side)"""
+        self.figure.clear()
+        
+        # Left: TV02, Right: TV01
+        self.ax2 = self.figure.add_subplot(121)
+        self.ax1 = self.figure.add_subplot(122)
+        
+        self.ax1.set_xticks([])
+        self.ax1.set_yticks([])
+        self.ax2.set_xticks([])
+        self.ax2.set_yticks([])
+        
+        self.ax1.set_title("TV01")
+        self.ax2.set_title("TV02")
+        
+        self.im = None
+        self.ax = None
+        self.im1 = None
+        self.im2 = None
+        
+        self.canvas.draw()
+    
+    def _cleanup_compare_mode(self):
+        """Cleanup compare mode resources"""
+        if self.tv1_zip:
+            try:
+                self.tv1_zip.close()
+            except:
+                pass
+            self.tv1_zip = None
+        
+        if self.tv2_zip:
+            try:
+                self.tv2_zip.close()
+            except:
+                pass
+            self.tv2_zip = None
+        
+        self.tv1_images = []
+        self.tv2_images = []
+        self.tv1_cache.clear()
+        self.tv2_cache.clear()
+    
+    def _load_compare_mode(self, tv1_path, tv2_path):
+        """Load both TV01 and TV02 for comparison"""
+        self._stop_play()
+        self._stop_prefetch()
+        self._cleanup_compare_mode()
+        
+        # Close single mode zip if open
+        if self.zip_file:
+            try:
+                self.zip_file.close()
+            except:
+                pass
+            self.zip_file = None
+        self.cache.clear()
+        
+        self._set_status("Loading TV01...")
+        print(f"TV: Loading TV01 from {tv1_path}")
+        
+        try:
+            self.tv1_zip = zipfile.ZipFile(tv1_path, 'r')
+            self.tv1_images = self._get_sorted_images(self.tv1_zip)
+            print(f"TV: TV01 has {len(self.tv1_images)} frames")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load TV01:\n{str(e)}")
+            self._set_status("Failed")
             return
         
-        shot_str = f'{shot_number:06d}'
-        tv_num = tv_selection.replace('TV', '')
+        self._set_status("Loading TV02...")
+        print(f"TV: Loading TV02 from {tv2_path}")
         
-        zip_path = f'/Diag_TV/{campaign}/{tv_selection}/{shot_str}_tv{tv_num}.zip'
+        try:
+            self.tv2_zip = zipfile.ZipFile(tv2_path, 'r')
+            self.tv2_images = self._get_sorted_images(self.tv2_zip)
+            print(f"TV: TV02 has {len(self.tv2_images)} frames")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load TV02:\n{str(e)}")
+            self._set_status("Failed")
+            self._cleanup_compare_mode()
+            return
         
-        self._load_zip_from_path(zip_path)
+        if not self.tv1_images or not self.tv2_images:
+            messagebox.showerror("Error", "No images found in one or both ZIP files")
+            self._cleanup_compare_mode()
+            return
+        
+        # Enable compare mode
+        self.compare_mode = True
+        self._setup_compare_mode()
+        
+        # Use TV01 as master for frame count
+        self.total_frames = len(self.tv1_images)
+        self.image_files = self.tv1_images  # For compatibility
+        
+        # Update UI
+        self.file_label.config(text=f"TV01: {len(self.tv1_images)} frames, TV02: {len(self.tv2_images)} frames")
+        self.frame_slider.config(to=self.total_frames - 1)
+        self.frame_total_label.config(text=f'/ {self.total_frames}')
+        
+        # Display first frame
+        self.current_frame = 0
+        self.frame_var.set(0)
+        self._display_compare_frame(0)
+        
+        self._start_prefetch(0)
+        self._set_status("Ready")
+        print(f"TV: Compare mode ready")
+    
+    def _get_sorted_images(self, zip_file):
+        """Get sorted list of image files from ZIP"""
+        all_files = zip_file.namelist()
+        
+        image_extensions = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
+        image_files = [f for f in all_files 
+                      if f.lower().endswith(image_extensions) and not f.startswith('__MACOSX')]
+        
+        def natural_sort_key(s):
+            return [int(text) if text.isdigit() else text.lower()
+                   for text in re.split('([0-9]+)', s)]
+        
+        image_files.sort(key=natural_sort_key)
+        return image_files
     
     def _load_zip_file(self):
         """Open file dialog and load selected ZIP file"""
@@ -578,6 +808,8 @@ class TVTab:
         )
         
         if file_path:
+            self.compare_mode = False
+            self._setup_single_mode()
             self._load_zip_from_path(file_path)
     
     def _set_status(self, text):
@@ -586,12 +818,11 @@ class TVTab:
         self.status_label.update()
     
     def _load_zip_from_path(self, file_path):
-        """Load images from ZIP file"""
-        # Stop any playback
+        """Load images from ZIP file (single TV mode)"""
         self._stop_play()
         self._stop_prefetch()
+        self._cleanup_compare_mode()
         
-        # Step 1: Close existing ZIP file
         if self.zip_file:
             try:
                 self.zip_file.close()
@@ -599,9 +830,8 @@ class TVTab:
                 pass
         
         self.cache.clear()
-        self.im = None  # Reset image reference
+        self.im = None
         
-        # Step 2: Open ZIP
         self._set_status("Opening ZIP file...")
         print(f"TV: Opening ZIP file {file_path}")
         
@@ -613,77 +843,51 @@ class TVTab:
             print(f"TV: Failed to open ZIP: {str(e)}")
             return
         
-        # Step 3: Get file list
         self._set_status("Reading file list...")
-        print(f"TV: Reading file list...")
+        self.image_files = self._get_sorted_images(self.zip_file)
         
-        all_files = self.zip_file.namelist()
-        
-        # Step 4: Filter image files
-        self._set_status("Filtering image files...")
-        print(f"TV: Filtering image files from {len(all_files)} entries...")
-        
-        image_extensions = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
-        image_files = [f for f in all_files 
-                      if f.lower().endswith(image_extensions) and not f.startswith('__MACOSX')]
-        
-        if not image_files:
+        if not self.image_files:
             messagebox.showerror("Error", "No image files found in ZIP")
             self._set_status("No images found")
-            print(f"TV: No image files found")
             return
         
-        # Sort files naturally
-        def natural_sort_key(s):
-            return [int(text) if text.isdigit() else text.lower()
-                   for text in re.split('([0-9]+)', s)]
-        
-        image_files.sort(key=natural_sort_key)
-        
-        self.image_files = image_files
-        self.total_frames = len(image_files)
-        
+        self.total_frames = len(self.image_files)
         print(f"TV: Found {self.total_frames} image files")
         
-        # Step 5: Update UI
         self._set_status("Updating UI...")
         self.file_label.config(text=file_path.split('/')[-1])
         self.frame_slider.config(to=self.total_frames - 1)
         self.frame_total_label.config(text=f'/ {self.total_frames}')
         
-        # Step 6: Load first frame
         self._set_status("Loading first frame...")
-        print(f"TV: Loading first frame...")
-        
         self.current_frame = 0
         self.frame_var.set(0)
         
         if not self._display_frame(0):
             self._set_status("Failed to load first frame")
-            print(f"TV: Failed to load first frame")
             messagebox.showerror("Error", "Failed to load first frame from ZIP")
             return
         
-        # Start prefetching nearby frames
         self._start_prefetch(0)
-        
         self._set_status("Ready")
         print(f"TV: Successfully loaded {self.total_frames} images")
     
+    # =========================================================================
+    # Image loading and display
+    # =========================================================================
+    
     def _get_image(self, frame_idx):
-        """Get image from cache or load from ZIP"""
+        """Get image from cache or load from ZIP (single mode)"""
         if frame_idx < 0 or frame_idx >= self.total_frames:
             return None
         
         if self.zip_file is None:
             return None
         
-        # Check cache
         with self._prefetch_lock:
             if frame_idx in self.cache:
                 return self.cache[frame_idx]
         
-        # Load from ZIP
         try:
             filename = self.image_files[frame_idx]
             with self.zip_file.open(filename) as f:
@@ -691,7 +895,6 @@ class TVTab:
                 img = Image.open(io.BytesIO(img_data))
                 img_array = np.array(img)
             
-            # Add to cache
             with self._prefetch_lock:
                 self.cache[frame_idx] = img_array
                 self._cleanup_cache(frame_idx)
@@ -700,6 +903,49 @@ class TVTab:
             
         except Exception as e:
             print(f"TV: Error loading frame {frame_idx}: {str(e)}")
+            return None
+    
+    def _get_image_from_tv(self, tv_num, frame_idx):
+        """Get image from specific TV cache or load from ZIP"""
+        if tv_num == 1:
+            zip_file = self.tv1_zip
+            images = self.tv1_images
+            cache = self.tv1_cache
+        else:
+            zip_file = self.tv2_zip
+            images = self.tv2_images
+            cache = self.tv2_cache
+        
+        if frame_idx < 0 or frame_idx >= len(images):
+            return None
+        
+        if zip_file is None:
+            return None
+        
+        with self._prefetch_lock:
+            if frame_idx in cache:
+                return cache[frame_idx]
+        
+        try:
+            filename = images[frame_idx]
+            with zip_file.open(filename) as f:
+                img_data = f.read()
+                img = Image.open(io.BytesIO(img_data))
+                img_array = np.array(img)
+            
+            with self._prefetch_lock:
+                cache[frame_idx] = img_array
+                # Limit cache size
+                if len(cache) > self.cache_size // 2:
+                    keys = list(cache.keys())
+                    for k in keys[:len(cache) - self.cache_size // 2]:
+                        if k != frame_idx:
+                            del cache[k]
+            
+            return img_array
+            
+        except Exception as e:
+            print(f"TV: Error loading TV{tv_num} frame {frame_idx}: {str(e)}")
             return None
     
     def _cleanup_cache(self, center_frame):
@@ -732,30 +978,38 @@ class TVTab:
     
     def _prefetch_worker(self, center_frame, direction):
         """Background worker to prefetch frames"""
-        # Prefetch frames in the playback direction
         prefetch_count = min(30, self.total_frames)
         
         for i in range(1, prefetch_count + 1):
             if self._prefetch_stop:
                 break
             
-            # Prefetch in playback direction first
             frame_idx = center_frame + (i * direction)
             if 0 <= frame_idx < self.total_frames:
-                with self._prefetch_lock:
-                    if frame_idx not in self.cache:
-                        try:
-                            filename = self.image_files[frame_idx]
-                            with self.zip_file.open(filename) as f:
-                                img_data = f.read()
-                                img = Image.open(io.BytesIO(img_data))
-                                img_array = np.array(img)
-                            self.cache[frame_idx] = img_array
-                        except:
-                            pass
+                if self.compare_mode:
+                    # Prefetch both TVs
+                    self._get_image_from_tv(1, frame_idx)
+                    tv2_frame = self._find_matching_frame(
+                        frame_idx, len(self.tv1_images), len(self.tv2_images))
+                    self._get_image_from_tv(2, tv2_frame)
+                else:
+                    with self._prefetch_lock:
+                        if frame_idx not in self.cache:
+                            try:
+                                filename = self.image_files[frame_idx]
+                                with self.zip_file.open(filename) as f:
+                                    img_data = f.read()
+                                    img = Image.open(io.BytesIO(img_data))
+                                    img_array = np.array(img)
+                                self.cache[frame_idx] = img_array
+                            except:
+                                pass
     
     def _display_frame(self, frame_idx, update_ui=True):
-        """Display specified frame using set_data for speed"""
+        """Display specified frame (single TV mode)"""
+        if self.compare_mode:
+            return self._display_compare_frame(frame_idx, update_ui)
+        
         img_array = self._get_image(frame_idx)
         
         if img_array is None:
@@ -763,48 +1017,132 @@ class TVTab:
         
         filename = self.image_files[frame_idx]
         
-        # First frame: use imshow, subsequent frames: use set_data
         if self.im is None:
             self.ax.clear()
             self.im = self.ax.imshow(img_array, cmap='gray' if len(img_array.shape) == 2 else None)
             self.ax.set_xticks([])
             self.ax.set_yticks([])
-            # Re-draw line after clear
             self.drawn_line = None
             self._update_line_display()
         else:
             self.im.set_data(img_array)
         
-        # Calculate time: t = frame_number / fps - offset
-        # fps = 210, offset = 0.1s (trigger starts 100ms before t=0)
-        # Note: May drift for long pulses due to processing delays
-        time_sec = (frame_idx + 1) / 210.0 - 0.1
-        self.ax.set_title(f"Frame {frame_idx + 1}/{self.total_frames} | t = {time_sec:.3f} s")
+        time_sec = self._frame_to_time(frame_idx)
+        self.ax.set_title(f"Frame {frame_idx + 1}/{self.total_frames} (t = {time_sec:.3f} s)")
         
-        # Use blit-like approach for faster rendering
         self.canvas.draw_idle()
         self.canvas.flush_events()
         
-        # Update internal state - this is the key fix for synchronization
         self.current_frame = frame_idx
         
-        # Update UI elements (skip during fast playback for performance)
         if update_ui:
             self.frame_entry.delete(0, tk.END)
             self.frame_entry.insert(0, str(frame_idx + 1))
+            self.time_entry.delete(0, tk.END)
+            self.time_entry.insert(0, f'{time_sec:.3f}')
             self.filename_label.config(text=filename)
         
         return True
     
+    def _display_compare_frame(self, frame_idx, update_ui=True):
+        """Display frames in compare mode (TV01 and TV02 side by side)"""
+        # TV01 frame (master)
+        tv1_img = self._get_image_from_tv(1, frame_idx)
+        tv1_time = self._frame_to_time(frame_idx)
+        
+        # Find matching TV02 frame by time (returns None if out of range)
+        tv2_frame = self._find_matching_frame(
+            frame_idx, len(self.tv1_images), len(self.tv2_images))
+        
+        # Get TV02 image only if frame is valid
+        tv2_img = None
+        tv2_time = tv1_time  # Use same time for display
+        if tv2_frame is not None:
+            tv2_img = self._get_image_from_tv(2, tv2_frame)
+            tv2_time = self._frame_to_time(tv2_frame)
+        
+        # Check if at least one has data
+        if tv1_img is None and tv2_img is None:
+            return False
+        
+        # Display TV01 (right)
+        if tv1_img is not None:
+            if self.im1 is None:
+                self.ax1.clear()
+                self.im1 = self.ax1.imshow(tv1_img, cmap='gray' if len(tv1_img.shape) == 2 else None)
+                self.ax1.set_xticks([])
+                self.ax1.set_yticks([])
+            else:
+                self.im1.set_data(tv1_img)
+            self.ax1.set_title(f"TV01 Frame {frame_idx + 1}/{len(self.tv1_images)} (t = {tv1_time:.3f} s)")
+        else:
+            # No data for TV01 at this time
+            self.ax1.clear()
+            self.ax1.set_facecolor('black')
+            self.ax1.text(0.5, 0.5, 'No Data', ha='center', va='center', 
+                         fontsize=16, color='white', transform=self.ax1.transAxes)
+            self.ax1.set_xticks([])
+            self.ax1.set_yticks([])
+            self.ax1.set_title(f"TV01 (t = {tv1_time:.3f} s) - No Data")
+            self.im1 = None
+        
+        # Display TV02 (left)
+        if tv2_img is not None and tv2_frame is not None:
+            if self.im2 is None:
+                self.ax2.clear()
+                self.im2 = self.ax2.imshow(tv2_img, cmap='gray' if len(tv2_img.shape) == 2 else None)
+                self.ax2.set_xticks([])
+                self.ax2.set_yticks([])
+            else:
+                self.im2.set_data(tv2_img)
+            self.ax2.set_title(f"TV02 Frame {tv2_frame + 1}/{len(self.tv2_images)} (t = {tv2_time:.3f} s)")
+        else:
+            # No data for TV02 at this time
+            self.ax2.clear()
+            self.ax2.set_facecolor('black')
+            self.ax2.text(0.5, 0.5, 'No Data', ha='center', va='center', 
+                         fontsize=16, color='white', transform=self.ax2.transAxes)
+            self.ax2.set_xticks([])
+            self.ax2.set_yticks([])
+            self.ax2.set_title(f"TV02 (t = {tv1_time:.3f} s) - No Data")
+            self.im2 = None
+        
+        self.canvas.draw_idle()
+        self.canvas.flush_events()
+        
+        self.current_frame = frame_idx
+        
+        # Always update filename display
+        tv1_name = self.tv1_images[frame_idx] if frame_idx < len(self.tv1_images) else "N/A"
+        tv2_name = self.tv2_images[tv2_frame] if tv2_frame is not None and tv2_frame < len(self.tv2_images) else "N/A"
+        self.filename_label.config(text=f"TV01: {tv1_name} | TV02: {tv2_name}")
+        
+        if update_ui:
+            self.frame_entry.delete(0, tk.END)
+            self.frame_entry.insert(0, str(frame_idx + 1))
+            self.time_entry.delete(0, tk.END)
+            self.time_entry.insert(0, f'{tv1_time:.3f}')
+        
+        return True
+    
+    # =========================================================================
+    # Frame navigation
+    # =========================================================================
+    
     def _on_slider_change(self, value):
-        """Handle slider value change"""
-        frame_idx = int(float(value))
-        # Always sync current_frame with slider value
-        if frame_idx != self.current_frame:
-            self.current_frame = frame_idx  # Sync first
-            self._display_frame(frame_idx)
-            # Restart prefetch from new position
-            self._start_prefetch(frame_idx)
+        """Handle slider value change with debounce"""
+        # Cancel any pending slider update
+        if hasattr(self, '_slider_job') and self._slider_job is not None:
+            self.frame.after_cancel(self._slider_job)
+        
+        # Schedule update after short delay (debounce)
+        self._slider_job = self.frame.after(10, self._do_slider_update)
+    
+    def _do_slider_update(self):
+        """Actually perform the slider update"""
+        self._slider_job = None
+        frame_idx = self.frame_var.get()
+        self._display_frame(frame_idx, update_ui=True)
     
     def _on_frame_entry(self, event):
         """Handle frame entry input"""
@@ -815,7 +1153,6 @@ class TVTab:
         if self.total_frames == 0:
             return
         
-        # Use frame_var.get() instead of current_frame for consistent state
         current = self.frame_var.get()
         
         if event.button == 'up':
@@ -847,11 +1184,30 @@ class TVTab:
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid frame number")
     
+    def _on_time_entry(self, event):
+        """Handle time entry input"""
+        self._goto_time()
+    
+    def _goto_time(self):
+        """Go to frame at specified time"""
+        if self.total_frames == 0:
+            return
+        
+        try:
+            time_sec = float(self.time_entry.get())
+            frame_idx = self._time_to_frame(time_sec, self.total_frames)
+            
+            self.current_frame = frame_idx
+            self.frame_var.set(frame_idx)
+            self._display_frame(frame_idx)
+            self._start_prefetch(frame_idx)
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid time in seconds")
+    
     def _step_frame(self, delta):
         """Step forward/backward by delta frames"""
         if self.total_frames == 0:
             return
-        # Use frame_var for consistent state
         current = self.frame_var.get()
         new_frame = current + delta
         new_frame = max(0, min(new_frame, self.total_frames - 1))
@@ -879,6 +1235,10 @@ class TVTab:
         self._display_frame(last_idx)
         self._start_prefetch(last_idx, direction=-1)
     
+    # =========================================================================
+    # Playback controls
+    # =========================================================================
+    
     def _toggle_play(self):
         """Toggle play/pause"""
         if self.total_frames == 0:
@@ -894,11 +1254,9 @@ class TVTab:
         self.is_playing = True
         self.play_btn.config(text='Pause')
         self._last_frame_time = time.time()
-        self._fps_history = []  # Reset FPS history
+        self._fps_history = []
         
-        # Start prefetching in playback direction
-        skip = int(self.skip_var.get())
-        self._start_prefetch(self.current_frame, direction=skip)
+        self._start_prefetch(self.current_frame, direction=1)
         
         self._play_next_frame()
     
@@ -910,10 +1268,8 @@ class TVTab:
             self.frame.after_cancel(self.play_job)
             self.play_job = None
         
-        # Reset actual FPS display
         self.actual_fps_label.config(text='Actual: -- FPS')
         
-        # Update UI with current frame info after pause
         if self.total_frames > 0:
             self.frame_entry.delete(0, tk.END)
             self.frame_entry.insert(0, str(self.current_frame + 1))
@@ -933,13 +1289,9 @@ class TVTab:
         if not self.is_playing:
             return
         
-        skip = int(self.skip_var.get())
-        
-        # Use frame_var for consistent state
         current = self.frame_var.get()
-        next_frame = current + skip
+        next_frame = current + 1
         
-        # Handle end of sequence
         if next_frame >= self.total_frames:
             if self.loop_var.get():
                 next_frame = 0
@@ -947,15 +1299,12 @@ class TVTab:
                 self._pause_play()
                 return
         
-        # Measure actual frame time
         now = time.time()
         actual_frame_time = now - self._last_frame_time
         self._last_frame_time = now
         
-        # Calculate and display actual FPS (rolling average)
         if actual_frame_time > 0:
             instant_fps = 1.0 / actual_frame_time
-            # Simple rolling average
             if not hasattr(self, '_fps_history'):
                 self._fps_history = []
             self._fps_history.append(instant_fps)
@@ -964,32 +1313,37 @@ class TVTab:
             avg_fps = sum(self._fps_history) / len(self._fps_history)
             self.actual_fps_label.config(text=f'Actual: {avg_fps:.1f} FPS')
         
-        # Update state and display
         self.current_frame = next_frame
         self.frame_var.set(next_frame)
         self._display_frame(next_frame, update_ui=False)
         
-        # Calculate delay from speed multiplier (1x = 10 FPS = 100ms)
         speed_str = self.speed_var.get()
         if speed_str == 'Max':
-            target_delay = 1  # Minimum delay for maximum speed
+            target_delay = 1
         else:
             speed_mult = float(speed_str.replace('x', ''))
-            base_delay = 100  # 1x = 100ms = 10 FPS
+            base_delay = 100
             target_delay = max(1, int(base_delay / speed_mult))
         
         self.play_job = self.frame.after(target_delay, self._play_next_frame)
+    
+    # =========================================================================
+    # Cleanup and settings
+    # =========================================================================
     
     def cleanup(self):
         """Cleanup resources when tab is closed"""
         self._stop_play()
         self._stop_prefetch()
+        
         if self.zip_file:
             try:
                 self.zip_file.close()
             except:
                 pass
             self.zip_file = None
+        
+        self._cleanup_compare_mode()
         self.cache.clear()
     
     def save_settings(self):
