@@ -91,12 +91,13 @@ ax.set_aspect('equal')
 plt.tight_layout()
 plt.show()
 
-# Plot regional Prad time traces
+# Plot regional Prad time traces with Ptot
 # Note: region_prad shape is (n_regions, time)
 fig, ax = plt.subplots(figsize=(10, 5))
 region_labels = metadata['region_labels']
 for i, label in enumerate(region_labels):
     ax.plot(time, region_prad[i, :], label=label)
+ax.plot(time, ptot, 'k--', lw=1.5, label='Ptot')
 ax.set_xlabel('Time [s]')
 ax.set_ylabel('Prad [MW]')
 ax.set_title(f"Shot #{metadata['shot']} Regional Prad")
@@ -654,29 +655,31 @@ class IRVBTab:
         """Slice IRVB data by IP fault time"""
         if self.ip_fault_time is None or self.irvb_data is None:
             return
-        
+
         valid_mask = self.irvb_data.time < self.ip_fault_time
         if not np.any(valid_mask):
             return
-        
+
         self.irvb_data.time = self.irvb_data.time[valid_mask]
         self.irvb_data.recon = self.irvb_data.recon[valid_mask]
+        self.irvb_data.ptot = self.irvb_data.ptot[valid_mask]
         print(f"IRVB: Data sliced to {len(self.irvb_data.time)} frames (before IP fault)")
     
     def _slice_by_efit_time(self):
         """Slice IRVB data by valid time range (0 to EFIT last time)"""
         if self.efit_2d is None or self.irvb_data is None:
             return
-        
+
         efit_end = self.efit_2d.time[-1]
         valid_mask = (self.irvb_data.time >= 0) & (self.irvb_data.time <= efit_end)
         if not np.any(valid_mask):
             return
-        
+
         n_before = len(self.irvb_data.time)
         self.irvb_data.time = self.irvb_data.time[valid_mask]
         self.irvb_data.recon = self.irvb_data.recon[valid_mask]
-        
+        self.irvb_data.ptot = self.irvb_data.ptot[valid_mask]
+
         if len(self.irvb_data.time) < n_before:
             print(f"IRVB: Data sliced to {len(self.irvb_data.time)} frames (0 to EFIT end)")
     

@@ -5,6 +5,17 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] - 2026-01-27
+
+### Fixed
+- **IRVB - Ptot/Recon Time Mismatch**
+  - Fixed `ptot` not being sliced together with `time` and `recon` in `_slice_by_ip_fault` and `_slice_by_efit_time`
+  - Previously, slicing only applied to `time` and `recon`, causing `ptot` indices to be misaligned with the actual time points
+
+### Changed
+- **IRVB - Example Script**
+  - Added `Ptot` trace to regional Prad time trace plot in NPZ example script
+
 ## [1.1.4] - 2026-01-22
 
 ### Added
