@@ -5,7 +5,7 @@ ECE (Electron Cyclotron Emission) data loader
 """
 
 import numpy as np
-from MDSplus import Connection
+from MDSplus import Connection, MdsException
 from data_loaders.base_loader import BaseDiagnosticLoader
 from core.data_structures import DiagnosticData
 
@@ -188,7 +188,7 @@ class ECELoader(BaseDiagnosticLoader):
                     data = mds.get(f'\\ECE{channel:02d}').data()
                     Te_list.append(data)
                     loaded_indices.append(idx)
-                except:
+                except MdsException:
                     print(f'    ECE{channel:02d} not available')
                 
                 # Progress bar
@@ -225,7 +225,7 @@ class ECELoader(BaseDiagnosticLoader):
                     baseline_data = mds.get(f'\\ECE{channel:02d}').data()
                     baseline_avg = np.mean(baseline_data)
                     baseline_list.append(baseline_avg)
-                except:
+                except MdsException:
                     baseline_list.append(0.0)
             
             # Subtract baseline from main data

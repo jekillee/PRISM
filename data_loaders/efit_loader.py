@@ -6,7 +6,7 @@ Supports both 1D profile mapping and 2D poloidal cross-section data
 """
 
 import numpy as np
-from MDSplus import Connection
+from MDSplus import Connection, MdsException
 from scipy.interpolate import interp1d, interp2d
 from core.data_structures import EFITData, EFITData2D
 
@@ -94,7 +94,7 @@ class EFITLoader:
                 lim_data = mds.get('\\lim').data()
                 limiter_r = lim_data[:, 0]
                 limiter_z = lim_data[:, 1]
-            except:
+            except MdsException:
                 limiter_r = None
                 limiter_z = None
             

@@ -319,91 +319,64 @@ class MSETimeTraceTab(BaseTab):
         messagebox.showinfo("Info", "EFIT mapping not available for time trace tabs")
     
     def _write_data_to_file(self, file_path, selected_entries):
-        """Write MSE time trace data to text file"""
-        param = self.selected_param.get()
-        
+        """Write MSE time trace data to text file (gamma, q, j at same R position)"""
         with open(file_path, 'w') as f:
-            # Write header for TGAMMA time trace (10 char width each)
-            f.write("# MSE Time Trace Data - Section 1: TGAMMA time trace\n")
-            f.write("#%10s,%10s,%10s,%10s,%10s\n" % (
-                "Shot", "Time[s]", "R[m]", "gamma", "gamma_err"
+            # Write header
+            f.write("# MSE Time Trace Data (q and j interpolated at TGAMMA position)\n")
+            f.write("#%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s\n" % (
+                "Shot", "Time[s]", "R[m]", "gamma", "gamma_err", "q", "q_err", "j[MA/m2]", "j_err"
             ))
-            
+
             for entry in selected_entries:
                 shot_number, radius, ch_label = self._parse_entry(entry)
                 cache_key = f'{shot_number}_MSE'
-                
+
                 if cache_key not in self.data:
                     data = self.data_loader.load_data(shot_number)
                     self.data[cache_key] = data
                 else:
                     data = self.data[cache_key]
-                
+
                 # Find channel index by R position
                 tgamma_meas = data.measurements['tgamma']
                 R_raw = tgamma_meas['R']
                 ch_idx = np.argmin(np.abs(R_raw - radius))
                 actual_R = R_raw[ch_idx]
-                
+
                 tgamma_trace = tgamma_meas['data'][ch_idx, :]
                 sgamma_trace = tgamma_meas['error'][ch_idx, :]
-                
-                # Write TGAMMA time trace data (10 char width each)
-                for i in range(len(data.time)):
-                    f.write(" %10d,%10.3f,%10.3f,%10.3f,%10.3f\n" % (
-                        shot_number, data.time[i], actual_R,
-                        tgamma_trace[i], sgamma_trace[i]
-                    ))
-            
-            # Write header for q/j time trace (10 char width each)
-            f.write("#\n")
-            f.write("# MSE Time Trace Data - Section 2: %s time trace (interpolated at gamma R)\n" % param)
-            if param == 'q':
-                f.write("#%10s,%10s,%10s,%10s,%10s\n" % (
-                    "Shot", "Time[s]", "R[m]", "q", "q_err"
-                ))
-            else:
-                f.write("#%10s,%10s,%10s,%10s,%10s\n" % (
-                    "Shot", "Time[s]", "R[m]", "j[MA/m2]", "j_err"
-                ))
-            
-            for entry in selected_entries:
-                shot_number, radius, ch_label = self._parse_entry(entry)
-                cache_key = f'{shot_number}_MSE'
-                data = self.data[cache_key]
-                
-                # Find actual gamma R position
-                tgamma_meas = data.measurements['tgamma']
-                R_raw = tgamma_meas['R']
-                ch_idx = np.argmin(np.abs(R_raw - radius))
-                actual_R = R_raw[ch_idx]
-                
-                param_meas = data.measurements[param]
-                roa_data = param_meas['roa']
-                param_data_all = param_meas['data']
-                param_err_all = param_meas['error']
-                
-                # Interpolate at each time step
+
+                # Get q and j measurements
+                q_meas = data.measurements['q']
+                j_meas = data.measurements['j']
+                roa_data = q_meas['roa']
+
+                # Use profile time (same as q/j time)
                 for i in range(len(data.time_prof)):
+                    # Find closest raw time index for gamma
+                    raw_idx = np.argmin(np.abs(data.time - data.time_prof[i]))
+
                     magx = data.measurements['magx']['data'][i]
                     r_edge = self._get_r_edge_at_time(data, data.time_prof[i])
-                    
+
                     # Convert r/a to R for this time step
                     roa_profile = roa_data[:, i]
                     R_profile = magx + roa_profile * (r_edge - magx)
-                    
+
                     # Sort by R for interpolation
-                    param_profile = param_data_all[:, i]
-                    param_err_profile = param_err_all[:, i]
                     sort_idx = np.argsort(R_profile)
                     R_sorted = R_profile[sort_idx]
-                    param_sorted = param_profile[sort_idx]
-                    param_err_sorted = param_err_profile[sort_idx]
-                    
-                    param_val = np.interp(actual_R, R_sorted, param_sorted)
-                    param_err_val = np.interp(actual_R, R_sorted, param_err_sorted)
-                    
-                    f.write(" %10d,%10.3f,%10.3f,%10.3f,%10.3f\n" % (
+
+                    # Interpolate q
+                    q_val = np.interp(actual_R, R_sorted, q_meas['data'][:, i][sort_idx])
+                    q_err_val = np.interp(actual_R, R_sorted, q_meas['error'][:, i][sort_idx])
+
+                    # Interpolate j
+                    j_val = np.interp(actual_R, R_sorted, j_meas['data'][:, i][sort_idx])
+                    j_err_val = np.interp(actual_R, R_sorted, j_meas['error'][:, i][sort_idx])
+
+                    f.write(" %10d,%10.3f,%10.3f,%10.3f,%10.3f,%10.3f,%10.3f,%10.3f,%10.3f\n" % (
                         shot_number, data.time_prof[i], actual_R,
-                        param_val, param_err_val
+                        tgamma_trace[raw_idx], sgamma_trace[raw_idx],
+                        q_val, q_err_val, j_val, j_err_val
                     ))

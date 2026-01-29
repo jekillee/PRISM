@@ -5,7 +5,7 @@ BES (Beam Emission Spectroscopy) data loader
 """
 
 import numpy as np
-from MDSplus import Connection
+from MDSplus import Connection, MdsException
 from data_loaders.base_loader import BaseDiagnosticLoader
 
 
@@ -58,7 +58,7 @@ class BESLoader(BaseDiagnosticLoader):
                         R_values.append(R_pos)
                         Z_values.append(V_pos)
                         
-                    except:
+                    except (MdsException, ValueError, TypeError):
                         pass
             
             mds.closeTree('kstar', shot_number)

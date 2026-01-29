@@ -264,25 +264,44 @@ class MSEProfileTab(BaseTab):
                 
                 # =============================================================
                 # Plot j or q vs R (right plot)
+                # - Solid line: pmse profile (20 points)
+                # - Markers: interpolated values at TGAMMA R positions
                 # =============================================================
                 param_meas = data.measurements[param]
                 roa = param_meas['roa'][:, idx_prof]
                 param_data = param_meas['data'][:, idx_prof]
                 param_err = param_meas['error'][:, idx_prof]
-                
+
                 # Convert r/a to R
                 R_prof = self.data_loader.get_R_from_roa(roa, magx, r_edge)
-                
-                self.ax2.errorbar(R_prof, param_data, yerr=param_err,
-                                 fmt='o-', capsize=3, markersize=5, color=color,
-                                 label=label)
-                
-                # Add channel labels for profile (node: pmse_qv01~20 or pmse_jv01~20)
-                n_prof = len(R_prof)
-                prof_channels = list(range(1, n_prof + 1))
-                node_prefix = 'pmse_qv' if param == 'q' else 'pmse_jv'
-                self._add_channel_labels(self.ax2, R_prof, param_data, node_prefix, prof_channels)
-                
+
+                # Sort by R for proper line plotting
+                sort_idx = np.argsort(R_prof)
+                R_prof_sorted = R_prof[sort_idx]
+                param_data_sorted = param_data[sort_idx]
+                param_err_sorted = param_err[sort_idx]
+
+                # Plot pmse profile as solid line with error band
+                self.ax2.plot(R_prof_sorted, param_data_sorted, '-', color=color,
+                             linewidth=1.5, label=label)
+                self.ax2.fill_between(R_prof_sorted,
+                                      param_data_sorted - param_err_sorted,
+                                      param_data_sorted + param_err_sorted,
+                                      color=color, alpha=0.2)
+
+                # Interpolate param values at TGAMMA R positions
+                # Use R_raw from TGAMMA (good channels only)
+                param_interp_func = interp1d(R_prof_sorted, param_data_sorted,
+                                             fill_value='extrapolate', bounds_error=False)
+                param_at_tgamma = param_interp_func(R_raw)
+
+                # Plot markers at TGAMMA positions
+                self.ax2.plot(R_raw, param_at_tgamma, 'o', color=color,
+                             markersize=5, markeredgecolor='white', markeredgewidth=0.5)
+
+                # Add channel labels at TGAMMA positions (node: TGAMMA01~25)
+                self._add_channel_labels(self.ax2, R_raw, param_at_tgamma, 'TGAMMA', raw_channels)
+
                 param_max = max(param_max, np.nanmax(param_data))
                 param_min = min(param_min, np.nanmin(param_data))
                 
@@ -387,24 +406,42 @@ class MSEProfileTab(BaseTab):
                 gamma_max = max(gamma_max, np.nanpercentile(tgamma, 98))
                 
                 # j or q
+                # - Solid line: pmse profile (20 points)
+                # - Markers: interpolated values at TGAMMA positions
                 param_meas = data.measurements[param]
                 roa = param_meas['roa'][:, idx_prof]
                 param_data = param_meas['data'][:, idx_prof]
                 param_err = param_meas['error'][:, idx_prof]
-                
+
                 R_prof = self.data_loader.get_R_from_roa(roa, magx, r_edge)
                 x_prof = interp_func(R_prof)
-                
-                self.ax2.errorbar(x_prof, param_data, yerr=param_err,
-                                 fmt='o-', capsize=3, markersize=5, color=color,
-                                 label=label)
-                
-                # Add channel labels for profile
-                n_prof = len(R_prof)
-                prof_channels = list(range(1, n_prof + 1))
-                node_prefix = 'pmse_qv' if param == 'q' else 'pmse_jv'
-                self._add_channel_labels(self.ax2, x_prof, param_data, node_prefix, prof_channels)
-                
+
+                # Sort by x coordinate for proper line plotting
+                sort_idx = np.argsort(x_prof)
+                x_prof_sorted = x_prof[sort_idx]
+                param_data_sorted = param_data[sort_idx]
+                param_err_sorted = param_err[sort_idx]
+
+                # Plot pmse profile as solid line with error band
+                self.ax2.plot(x_prof_sorted, param_data_sorted, '-', color=color,
+                             linewidth=1.5, label=label)
+                self.ax2.fill_between(x_prof_sorted,
+                                      param_data_sorted - param_err_sorted,
+                                      param_data_sorted + param_err_sorted,
+                                      color=color, alpha=0.2)
+
+                # Interpolate param values at TGAMMA positions (in EFIT coordinates)
+                param_interp_func = interp1d(x_prof_sorted, param_data_sorted,
+                                             fill_value='extrapolate', bounds_error=False)
+                param_at_tgamma = param_interp_func(x_raw)
+
+                # Plot markers at TGAMMA positions
+                self.ax2.plot(x_raw, param_at_tgamma, 'o', color=color,
+                             markersize=5, markeredgecolor='white', markeredgewidth=0.5)
+
+                # Add channel labels at TGAMMA positions
+                self._add_channel_labels(self.ax2, x_raw, param_at_tgamma, 'TGAMMA', raw_channels)
+
                 param_max = max(param_max, np.nanmax(param_data))
                 param_min = min(param_min, np.nanmin(param_data))
                 
@@ -445,93 +482,75 @@ class MSEProfileTab(BaseTab):
             self.toolbar.push_current()
     
     def _write_data_to_file(self, file_path, selected_entries):
-        """Write MSE profile data to text file"""
-        param = self.selected_param.get()
-        
+        """Write MSE profile data to text file (gamma, q, j at TGAMMA positions)"""
         with open(file_path, 'w') as f:
-            # Write header for TGAMMA data (10 char width each)
-            f.write("# MSE Profile Data - Section 1: TGAMMA (raw measurements)\n")
+            # Write header
+            f.write("# MSE Profile Data (q and j interpolated at TGAMMA positions)\n")
             if self.computed_efit_tree:
                 f.write(f"# EFIT Source: {self.computed_efit_tree}\n")
-            f.write("#%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s\n" % (
+            f.write("#%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s\n" % (
                 "Shot", "Time[s]", "R[m]", "psi_N", "rho_pol", "rho_tor",
-                "gamma", "gamma_err", "drr[m]"
+                "gamma", "gamma_err", "drr[m]", "q", "q_err", "j[MA/m2]", "j_err"
             ))
-            
+
             for entry in selected_entries:
                 shot_number, time_point, _ = self._parse_entry(entry)
                 cache_key = f'{shot_number}_MSE'
-                
+
                 if cache_key not in self.data:
                     data = self.data_loader.load_data(shot_number)
                     self.data[cache_key] = data
                 else:
                     data = self.data[cache_key]
-                
+
                 idx_raw = np.argmin(np.abs(data.time - time_point))
+                idx_prof = np.argmin(np.abs(data.time_prof - time_point))
                 actual_time = data.time[idx_raw]
-                
+
                 # TGAMMA data
                 tgamma_meas = data.measurements['tgamma']
                 good_mask = tgamma_meas['good_mask']
-                
+
                 R_raw = tgamma_meas['R'][good_mask]
                 drr = tgamma_meas['drr'][good_mask]
                 tgamma = tgamma_meas['data'][good_mask, idx_raw]
                 sgamma = tgamma_meas['error'][good_mask, idx_raw]
-                
+
+                # Get q and j profiles for interpolation
+                r_edge = self._get_r_edge_at_time(data, time_point)
+                magx = data.measurements['magx']['data'][idx_prof]
+
+                q_meas = data.measurements['q']
+                j_meas = data.measurements['j']
+                roa = q_meas['roa'][:, idx_prof]
+                R_prof = self.data_loader.get_R_from_roa(roa, magx, r_edge)
+
+                # Sort by R for interpolation
+                sort_idx = np.argsort(R_prof)
+                R_prof_sorted = R_prof[sort_idx]
+
+                q_data_sorted = q_meas['data'][:, idx_prof][sort_idx]
+                q_err_sorted = q_meas['error'][:, idx_prof][sort_idx]
+                j_data_sorted = j_meas['data'][:, idx_prof][sort_idx]
+                j_err_sorted = j_meas['error'][:, idx_prof][sort_idx]
+
+                # Interpolate q and j at TGAMMA R positions
+                q_at_tgamma = np.interp(R_raw, R_prof_sorted, q_data_sorted)
+                q_err_at_tgamma = np.interp(R_raw, R_prof_sorted, q_err_sorted)
+                j_at_tgamma = np.interp(R_raw, R_prof_sorted, j_data_sorted)
+                j_err_at_tgamma = np.interp(R_raw, R_prof_sorted, j_err_sorted)
+
                 # Get EFIT values
                 psi_n, rho_pol, rho_tor = self._get_efit_values_at_R(entry, R_raw)
-                
-                # Write TGAMMA data rows (10 char width each)
+
+                # Write data rows (gamma, q, j at same R positions)
                 for i in range(len(R_raw)):
-                    f.write(" %10d,%10.3f,%10.3f,%s,%s,%s,%10.3f,%10.3f,%10.3f\n" % (
+                    f.write(" %10d,%10.3f,%10.3f,%s,%s,%s,%10.3f,%10.3f,%10.3f,%10.3f,%10.3f,%10.3f,%10.3f\n" % (
                         shot_number, actual_time, R_raw[i],
                         self._format_value(psi_n[i]),
                         self._format_value(rho_pol[i]),
                         self._format_value(rho_tor[i]),
-                        tgamma[i], sgamma[i], drr[i]
-                    ))
-            
-            # Write header for q/j profile data (10 char width each)
-            f.write("#\n")
-            f.write("# MSE Profile Data - Section 2: %s profile (processed)\n" % param)
-            if param == 'q':
-                f.write("#%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s\n" % (
-                    "Shot", "Time[s]", "r/a", "R[m]", "psi_N", "rho_pol", "rho_tor", "q", "q_err"
-                ))
-            else:
-                f.write("#%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s\n" % (
-                    "Shot", "Time[s]", "r/a", "R[m]", "psi_N", "rho_pol", "rho_tor", "j[MA/m2]", "j_err"
-                ))
-            
-            for entry in selected_entries:
-                shot_number, time_point, _ = self._parse_entry(entry)
-                cache_key = f'{shot_number}_MSE'
-                data = self.data[cache_key]
-                
-                idx_prof = np.argmin(np.abs(data.time_prof - time_point))
-                actual_time = data.time_prof[idx_prof]
-                
-                r_edge = self._get_r_edge_at_time(data, time_point)
-                magx = data.measurements['magx']['data'][idx_prof]
-                
-                param_meas = data.measurements[param]
-                roa = param_meas['roa'][:, idx_prof]
-                param_data = param_meas['data'][:, idx_prof]
-                param_err = param_meas['error'][:, idx_prof]
-                
-                R_prof = self.data_loader.get_R_from_roa(roa, magx, r_edge)
-                
-                # Get EFIT values for profile R positions
-                psi_n, rho_pol, rho_tor = self._get_efit_values_at_R(entry, R_prof)
-                
-                # Write profile data rows (10 char width each)
-                for i in range(len(roa)):
-                    f.write(" %10d,%10.3f,%10.3f,%10.3f,%s,%s,%s,%10.3f,%10.3f\n" % (
-                        shot_number, actual_time, roa[i], R_prof[i],
-                        self._format_value(psi_n[i]),
-                        self._format_value(rho_pol[i]),
-                        self._format_value(rho_tor[i]),
-                        param_data[i], param_err[i]
+                        tgamma[i], sgamma[i], drr[i],
+                        q_at_tgamma[i], q_err_at_tgamma[i],
+                        j_at_tgamma[i], j_err_at_tgamma[i]
                     ))

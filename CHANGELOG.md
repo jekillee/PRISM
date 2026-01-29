@@ -5,6 +5,37 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.7] - 2026-01-29
+
+### Changed
+- **MSE Profile - Improved q/j Visualization**
+  - q/j profile now plotted as solid line with error band (fill_between)
+  - Markers added at TGAMMA measurement positions (interpolated values)
+  - Shows full pmse profile shape while highlighting actual measurement locations
+  - Applied to both R plot and EFIT-mapped plot
+
+- **MSE Text Export - Unified Format**
+  - Profile and time trace text exports now save gamma, q, j in same row (like TiVT)
+  - q and j are interpolated at TGAMMA measurement positions
+  - Single table format: R, gamma, gamma_err, drr, q, q_err, j, j_err
+  - Removed Section 1/Section 2 separation
+
+- **Code Quality - Specific Exception Handling**
+  - Replaced bare `except:` clauses with specific exceptions (`MdsException`, `TclError`, etc.)
+  - Affected files: thomson_loader.py, bes_loader.py, ece_loader.py, efit_loader.py, xics_loader.py, base_tab.py
+  - Improves debugging by preserving exception context
+
+- **Code Quality - Type Hints**
+  - Added Python type hints to core data structures (`core/data_structures.py`)
+  - Added type hints to base loader class (`data_loaders/base_loader.py`)
+  - Improves IDE support and code maintainability
+
+### Added
+- **ProfileBaseTab Base Class** (`ui/profile_base_tab.py`)
+  - New abstract base class for profile tabs (TiVT, NeTe, MSE)
+  - Extracts common profile plotting logic for future refactoring
+  - Reduces code duplication in profile tab implementations
+
 ## [1.1.6] - 2026-01-28
 
 ### Fixed

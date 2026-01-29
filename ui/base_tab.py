@@ -448,7 +448,7 @@ class BaseTab(ABC):
         # Hide hidden files in file dialog (Linux Tk)
         try:
             self.frame.tk.call('tk_getOpenFile', '-foption')
-        except:
+        except tk.TclError:
             pass
         self.frame.tk.call('set', '::tk::dialog::file::showHiddenVar', '0')
 

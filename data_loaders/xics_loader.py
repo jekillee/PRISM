@@ -6,7 +6,7 @@ Provides Ti and vT at R=1.8m with offset correction
 """
 
 import numpy as np
-from MDSplus import Connection
+from MDSplus import Connection, MdsException
 from data_loaders.base_loader import BaseDiagnosticLoader
 from core.data_structures import DiagnosticData
 
@@ -51,7 +51,7 @@ class XICSLoader(BaseDiagnosticLoader):
                 if len(time_arr) > 0 and not np.all(np.isnan(vt_data)):
                     mds.closeTree('kstar', shot_number)
                     return time_arr, vt_data, analysis_type
-            except:
+            except MdsException:
                 continue
         
         mds.closeTree('kstar', shot_number)

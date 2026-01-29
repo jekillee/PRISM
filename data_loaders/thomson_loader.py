@@ -5,6 +5,7 @@ Thomson Scattering data loader implementation
 """
 
 import numpy as np
+from MDSplus import MdsException
 from data_loaders.base_loader import BaseDiagnosticLoader
 from core.data_structures import DiagnosticData
 
@@ -88,7 +89,7 @@ class ThomsonLoader(BaseDiagnosticLoader):
                         ne_errl_data.append(ne_errl_raw)
                         ts_position.append(pos / 1000.)
                         
-                except:
+                except MdsException:
                     print(f'TS_CORE{i+1} not available')
             
             # Load edge channels
@@ -131,7 +132,7 @@ class ThomsonLoader(BaseDiagnosticLoader):
                         ne_errl_data.append(ne_errl_raw)
                         ts_position.append(pos / 1000.)
                         
-                except:
+                except MdsException:
                     print(f'TS_EDGE{i+1} not available')
             
             self._close_mds(mds, shot_number)
