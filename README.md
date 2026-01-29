@@ -83,7 +83,8 @@ PRISM/
 ├── run_prism.sh                 # Shell launcher script
 ├── config/
 │   ├── app_config.py            # Global configuration
-│   └── diagnostic_config.py     # Diagnostic metadata
+│   ├── diagnostic_config.py     # Diagnostic metadata
+│   └── user_settings.py         # User settings persistence
 ├── core/
 │   ├── data_structures.py       # Data classes
 │   └── file_parser.py           # File parser
@@ -103,6 +104,7 @@ PRISM/
 │   ├── ui_constants.py          # UI constants
 │   ├── main_window.py           # Main window
 │   ├── base_tab.py              # Base tab class
+│   ├── profile_base_tab.py      # Profile tab base class
 │   ├── tab_factory.py           # Tab creation factory
 │   ├── tivt_profile_tab.py      # Ti,vT profile tab
 │   ├── tivt_timetrace_tab.py    # Ti,vT time trace tab
@@ -120,8 +122,7 @@ PRISM/
 │   └── plot_manager.py          # Plot management
 ├── requirements.txt             # Python dependencies
 ├── README.md                    # This file
-├── CHANGELOG.md                 # Version history
-└── INSTALL.md                   # Installation guide
+└── CHANGELOG.md                 # Version history
 ```
 
 ## Note for External Users
