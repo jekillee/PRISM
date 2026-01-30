@@ -8,46 +8,16 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
 from scipy.interpolate import interp1d
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from ui.base_tab import BaseTab
-from ui.ui_constants import (
-    CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
-    ENTRY_WIDTH_SHOT, LABEL_WIDTH_SHORT, LABEL_WIDTH_MEDIUM
-)
-from plotting.plot_manager import apply_legend_with_limit, TIMETRACE_LEGEND_LIMIT
+from ui.timetrace_base_tab import TimeTraceBaseTab
+from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT
 
 
-class MSETimeTraceTab(BaseTab):
+class MSETimeTraceTab(TimeTraceBaseTab):
     """MSE Time Trace tab with TGAMMA and j/q time traces"""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-    
-    def create_widgets(self):
-        """Create MSE time trace tab widgets"""
-        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
-        
-        # Setup 2x1 plot: TGAMMA (top), j or q (bottom)
-        self.ax1, self.ax2 = self.plot_manager.setup_timetrace_plot(
-            self.figure, r'$\gamma$ [rad]', 'q')
-        
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
-        self.canvas.draw()
-        
-        canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.LEFT, fill='both', expand=True)
-        
-        control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
-        control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
-        control_frame.pack_propagate(False)
-        
-        self._create_shot_input(control_frame)
-        self._create_selection_listboxes(control_frame)
-        self._create_plot_controls(control_frame)
-        self._create_axis_controls(control_frame)
-        self._create_save_controls(control_frame)
-    
+
     def _create_shot_input(self, parent):
         """Create data loading section"""
         frame = ttk.LabelFrame(parent, text="1. Load MSE Data", labelanchor="n")
@@ -133,11 +103,7 @@ class MSETimeTraceTab(BaseTab):
         radius = float(parts[1]) / 1e3  # mm to m
         
         return shot_number, radius, ch_label
-    
-    def _parse_entry_for_efit(self, entry):
-        """Not used for time trace tabs"""
-        return None, None
-    
+
     def plot_data(self):
         """Plot time traces"""
         self.ax1.clear()
@@ -251,19 +217,9 @@ class MSETimeTraceTab(BaseTab):
         else:
             self.ax2.axhline(0, color='gray', linestyle='--', alpha=0.5)
         self.ax2.set_ylim(0, 6)
-        
-        # Apply styling
-        for ax in [self.ax1, self.ax2]:
-            apply_legend_with_limit(ax, TIMETRACE_LEGEND_LIMIT,
-                                    frameon=False, fontsize=8)
-        
-        self.plot_manager.apply_common_styling(self.ax1, self.ax2, skip_legend=True)
-        self.canvas.draw()
-        
-        if self.toolbar:
-            self.toolbar.update()
-            self.toolbar.push_current()
-    
+
+        self._finalize_plot()
+
     def _create_axis_controls(self, parent):
         """Create axis control panel with dynamic y2 label for MSE"""
         frame = ttk.LabelFrame(parent, text="Axis Control Panel", labelanchor="n")
@@ -313,11 +269,7 @@ class MSETimeTraceTab(BaseTab):
         # Apply button
         ttk.Button(frame, text="Apply", command=self.apply_axis_limits).grid(
             row=0, column=4, rowspan=3, padx=5, pady=5, sticky="nsew")
-    
-    def plot_efit_profiles(self):
-        """Not applicable for time trace tabs"""
-        messagebox.showinfo("Info", "EFIT mapping not available for time trace tabs")
-    
+
     def _write_data_to_file(self, file_path, selected_entries):
         """Write MSE time trace data to text file (gamma, q, j at same R position)"""
         with open(file_path, 'w') as f:

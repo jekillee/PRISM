@@ -5,6 +5,22 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.8] - 2026-01-30
+
+### Changed
+- **Code Architecture - Base Tab Refactoring**
+  - Applied `ProfileBaseTab` to TiVT, NeTe, MSE profile tabs
+  - Created `TimeTraceBaseTab` (`ui/timetrace_base_tab.py`) for time trace tabs
+  - Applied `TimeTraceBaseTab` to TiVT, NeTe, MSE time trace tabs
+  - Reduces code duplication by extracting common widget creation and plot finalization
+  - 3-level inheritance: BaseTab → ProfileBaseTab/TimeTraceBaseTab → Concrete tabs
+
+### Added
+- **TimeTraceBaseTab Base Class** (`ui/timetrace_base_tab.py`)
+  - New abstract base class for time trace tabs (TiVT, NeTe, MSE)
+  - Common methods: `create_widgets()`, `_create_plot_controls()`, `plot_efit_profiles()`, `_parse_entry_for_efit()`, `_finalize_plot()`
+  - Abstract methods: `_create_shot_input()`, `load_shot_data()`, `_parse_entry()`, `plot_data()`, `_write_data_to_file()`
+
 ## [1.1.7] - 2026-01-29
 
 ### Changed

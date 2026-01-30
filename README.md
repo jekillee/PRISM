@@ -105,6 +105,7 @@ PRISM/
 │   ├── main_window.py           # Main window
 │   ├── base_tab.py              # Base tab class
 │   ├── profile_base_tab.py      # Profile tab base class
+│   ├── timetrace_base_tab.py    # Time trace tab base class
 │   ├── tab_factory.py           # Tab creation factory
 │   ├── tivt_profile_tab.py      # Ti,vT profile tab
 │   ├── tivt_timetrace_tab.py    # Ti,vT time trace tab

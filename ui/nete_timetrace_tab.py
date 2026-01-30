@@ -7,49 +7,20 @@ ne, Te Time Trace tab with unified Thomson/ECE/TCI loading
 import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from ui.base_tab import BaseTab
-from ui.ui_constants import (
-    CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
-    ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_SHORT
-)
-from plotting.plot_manager import apply_legend_with_limit, TIMETRACE_LEGEND_LIMIT
+from ui.timetrace_base_tab import TimeTraceBaseTab
+from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT
 
 
-class NeTeTimeTraceTab(BaseTab):
+class NeTeTimeTraceTab(TimeTraceBaseTab):
     """ne, Te Time Trace tab with unified Thomson/ECE/TCI loading"""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ece_loader = None
         self.ece_data_cache = {}
         self.tci_loader = None
         self.tci_data_cache = {}
-    
-    def create_widgets(self):
-        """Create ne, Te time trace tab widgets"""
-        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
-        
-        self.ax1, self.ax2 = self.plot_manager.setup_timetrace_plot(
-            self.figure, self.param1['label'], self.param2['label'])
-        
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
-        self.canvas.draw()
-        
-        canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.LEFT, fill='both', expand=True)
-        
-        control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
-        control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
-        control_frame.pack_propagate(False)
-        
-        self._create_shot_input(control_frame)
-        self._create_selection_listboxes(control_frame)
-        self._create_plot_controls(control_frame)
-        self._create_axis_controls(control_frame)
-        self._create_save_controls(control_frame)
-    
+
     def _create_shot_input(self, parent):
         """Create data loading section with diagnostic selection"""
         frame = ttk.LabelFrame(parent, text="1. Load ne, Te Data", labelanchor="n")
@@ -73,15 +44,7 @@ class NeTeTimeTraceTab(BaseTab):
         
         self.fetch_button = ttk.Button(frame, text='Fetch', command=self.load_shot_data, width=8)
         self.fetch_button.grid(row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky='e')
-    
-    def _create_plot_controls(self, parent):
-        """Create plot control buttons"""
-        frame = ttk.LabelFrame(parent, text="3. Plot", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
-        ttk.Button(frame, text='Plot time traces', command=self.plot_data).pack(
-            fill='x', padx=PAD_X, pady=PAD_Y)
-    
+
     def _get_ece_loader(self):
         """On-demand initialization of ECE loader"""
         if self.ece_loader is None:
@@ -270,11 +233,7 @@ class NeTeTimeTraceTab(BaseTab):
             # Fallback
             radius = float(parts[1]) / 1e3 if len(parts) > 1 and parts[1] else 0
             return shot_number, radius, 'TS', diag_label, sampling_key
-    
-    def _parse_entry_for_efit(self, entry):
-        """Not used for time trace tabs"""
-        return None, None
-    
+
     def plot_data(self):
         """Plot time traces with markers only (no lines)"""
         self.ax1.clear()
@@ -419,23 +378,9 @@ class NeTeTimeTraceTab(BaseTab):
         if ne_max > 0:
             ne_margin = ne_max * 0.1
             self.ax2.set_ylim(0, ne_max + ne_margin)
-        
-        # Apply styling
-        for ax in [self.ax1, self.ax2]:
-            apply_legend_with_limit(ax, TIMETRACE_LEGEND_LIMIT,
-                                    frameon=False, fontsize=8)
-        
-        self.plot_manager.apply_common_styling(self.ax1, self.ax2, skip_legend=True)
-        self.canvas.draw()
-        
-        if self.toolbar:
-            self.toolbar.update()
-            self.toolbar.push_current()
-    
-    def plot_efit_profiles(self):
-        """Not applicable for time trace tabs"""
-        messagebox.showinfo("Info", "EFIT mapping not available for time trace tabs")
-    
+
+        self._finalize_plot()
+
     def _write_data_to_file(self, file_path, selected_entries):
         """Write ne, Te time trace data to text file"""
         with open(file_path, 'w') as f:

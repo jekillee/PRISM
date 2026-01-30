@@ -10,18 +10,21 @@ import numpy as np
 from scipy.interpolate import interp1d
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from ui.base_tab import BaseTab
+from ui.profile_base_tab import ProfileBaseTab
 from ui.ui_constants import (
-    CONTROL_PANEL_WIDTH, PAD_X, PAD_Y, ENTRY_WIDTH_AXIS,
-    ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_SHORT, LABEL_WIDTH_MEDIUM
+    CONTROL_PANEL_WIDTH, PAD_X, PAD_Y, ENTRY_WIDTH_AXIS, LABEL_WIDTH_SHORT
 )
 
 
-class MSEProfileTab(BaseTab):
+class MSEProfileTab(ProfileBaseTab):
     """MSE Profile tab with TGAMMA and j/q profiles"""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def _get_secondary_loader(self):
+        """MSE has no secondary diagnostic"""
+        return None
     
     def create_widgets(self):
         """Create MSE profile tab widgets"""

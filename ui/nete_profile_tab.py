@@ -8,47 +8,22 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
 from scipy.interpolate import interp1d
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from ui.base_tab import BaseTab
-from ui.ui_constants import (
-    CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
-    ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_SHORT
-)
+from ui.profile_base_tab import ProfileBaseTab
+from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT
 
 
-class NeTeProfileTab(BaseTab):
+class NeTeProfileTab(ProfileBaseTab):
     """ne, Te Profile tab supporting Thomson and/or ECE"""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ece_loader = None
         self.ece_data_cache = {}
-    
-    def create_widgets(self):
-        """Create ne, Te profile tab widgets"""
-        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
-        
-        self.ax1, self.ax2 = self.plot_manager.setup_profile_plot(
-            self.figure, self.param1['label'], self.param2['label'])
-        
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
-        self.canvas.draw()
-        
-        canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.LEFT, fill='both', expand=True)
-        
-        control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
-        control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
-        control_frame.pack_propagate(False)
-        
-        self._create_shot_input(control_frame)
-        self._create_selection_listboxes(control_frame)
-        self._create_plot_controls(control_frame)
-        self._create_efit_controls(control_frame)
-        self._create_axis_controls(control_frame)
-        self._create_save_controls(control_frame)
-    
+
+    def _get_secondary_loader(self):
+        """Get ECE loader for secondary diagnostic overlay"""
+        return self._get_ece_loader()
+
     def _create_shot_input(self, parent):
         """Create data loading section with diagnostic selection"""
         frame = ttk.LabelFrame(parent, text="1. Load ne, Te Data", labelanchor="n")
@@ -72,23 +47,7 @@ class NeTeProfileTab(BaseTab):
         
         self.fetch_button = ttk.Button(frame, text='Fetch', command=self.load_shot_data, width=8)
         self.fetch_button.grid(row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky='e')
-    
-    def _create_plot_controls(self, parent):
-        """Create plot control buttons"""
-        frame = ttk.LabelFrame(parent, text="3. Plot", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
-        row_frame = ttk.Frame(frame)
-        row_frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        row_frame.grid_columnconfigure(1, weight=1)
-        
-        self.show_channel_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(row_frame, text='Show Nodes', variable=self.show_channel_var).grid(
-            row=0, column=0, sticky='w')
-        
-        ttk.Button(row_frame, text='Plot R profiles', command=self.plot_data).grid(
-            row=0, column=1, sticky='ew', padx=(10, 0))
-    
+
     def _get_ece_loader(self):
         """On-demand initialization of ECE loader"""
         if self.ece_loader is None:

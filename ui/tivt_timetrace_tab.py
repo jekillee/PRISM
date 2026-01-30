@@ -7,19 +7,13 @@ Ti/vT Time Trace tab with CES and XICS integration
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import numpy as np
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from ui.base_tab import BaseTab
-from ui.ui_constants import (
-    CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
-    ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_SHORT
-)
-from plotting.plot_manager import apply_legend_with_limit, TIMETRACE_LEGEND_LIMIT
+from ui.timetrace_base_tab import TimeTraceBaseTab
+from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT
 
 
-class TiVTTimeTraceTab(BaseTab):
+class TiVTTimeTraceTab(TimeTraceBaseTab):
     """Ti/vT Time Trace tab with CES and XICS support"""
-    
+
     def __init__(self, parent, app_config, diagnostic_name, tab_type,
                  data_loader, efit_loader, plot_manager, file_parser):
         super().__init__(parent, app_config, diagnostic_name, tab_type,
@@ -27,30 +21,7 @@ class TiVTTimeTraceTab(BaseTab):
         self.file_parser = file_parser
         self.xics_loader = None
         self.xics_data_cache = {}
-    
-    def create_widgets(self):
-        """Create Ti/vT time trace tab widgets"""
-        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
-        
-        self.ax1, self.ax2 = self.plot_manager.setup_timetrace_plot(
-            self.figure, self.param1['label'], self.param2['label'])
-        
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
-        self.canvas.draw()
-        
-        canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.LEFT, fill='both', expand=True)
-        
-        control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
-        control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
-        control_frame.pack_propagate(False)
-        
-        self._create_shot_input(control_frame)
-        self._create_selection_listboxes(control_frame)
-        self._create_plot_controls(control_frame)
-        self._create_axis_controls(control_frame)
-        self._create_save_controls(control_frame)
-    
+
     def _create_shot_input(self, parent):
         """Create data loading section with analysis type selection"""
         frame = ttk.LabelFrame(parent, text="1. Load Ti/vT Data", labelanchor="n")
@@ -80,15 +51,7 @@ class TiVTTimeTraceTab(BaseTab):
         
         ttk.Button(btn_frame, text='...', command=self.load_file_data, width=3).pack(
             side=tk.LEFT, padx=(2, 0))
-    
-    def _create_plot_controls(self, parent):
-        """Create plot control buttons"""
-        frame = ttk.LabelFrame(parent, text="3. Plot", labelanchor="n")
-        frame.pack(fill='x', padx=5, pady=5)
-        
-        ttk.Button(frame, text='Plot time traces', command=self.plot_data).pack(
-            fill='x', padx=5, pady=5)
-    
+
     def _get_xics_loader(self):
         """Lazy initialization of XICS loader"""
         if self.xics_loader is None:
@@ -249,11 +212,7 @@ class TiVTTimeTraceTab(BaseTab):
             source = diag_label
         
         return shot_number, radius, source, diag_label
-    
-    def _parse_entry_for_efit(self, entry):
-        """Not used for time trace tabs"""
-        return None, None
-    
+
     def _get_marker_style(self, source):
         """Get marker style based on data source"""
         if source == 'mod':
@@ -387,23 +346,9 @@ class TiVTTimeTraceTab(BaseTab):
         vt_margin = (vt_max - vt_min) * 0.1
         self.ax2.set_ylim(vt_min - vt_margin, vt_max + vt_margin)
         self.ax2.axhline(y=0, c='silver', ls='--')
-        
-        # Apply styling
-        for ax in [self.ax1, self.ax2]:
-            apply_legend_with_limit(ax, TIMETRACE_LEGEND_LIMIT,
-                                    frameon=False, fontsize=8)
-        
-        self.plot_manager.apply_common_styling(self.ax1, self.ax2, skip_legend=True)
-        self.canvas.draw()
-        
-        if self.toolbar:
-            self.toolbar.update()
-            self.toolbar.push_current()
-    
-    def plot_efit_profiles(self):
-        """Not applicable for time trace tabs"""
-        messagebox.showinfo("Info", "EFIT mapping not available for time trace tabs")
-    
+
+        self._finalize_plot()
+
     def _write_data_to_file(self, file_path, selected_entries):
         """Write Ti/vT time trace data to text file"""
         with open(file_path, 'w') as f:
