@@ -224,7 +224,17 @@ DIAGNOSTICS = {
         'standalone_viewer': True,  # Uses TV Viewer tab
         'supported_formats': ['.bmp', '.png', '.jpg', '.jpeg', '.gif', '.tiff'],
     },
-    
+
+    'IRVB': {
+        'name': 'IRVB',
+        'full_name': 'Infra-Red Video Bolometer',
+        'mds_tree': None,  # HTTP server-based
+        'enabled': True,
+        'file_loadable': False,
+        'analysis_types': None,
+        'standalone_viewer': True,  # Uses IRVB Viewer tab
+    },
+
     'ECEI': {
         'name': 'ECEI',
         'full_name': 'Electron Cyclotron Emission Imaging',
