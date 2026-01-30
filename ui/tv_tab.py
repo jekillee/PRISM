@@ -22,6 +22,7 @@ from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
     ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_SHORT
 )
+from ui.widgets.custom_toolbar import AxisControlToolbar
 from config.user_settings import get_tab_settings, set_tab_settings
 
 
@@ -99,26 +100,36 @@ class TVTab:
         self.ax.set_xticks([])
         self.ax.set_yticks([])
         self.ax.set_title("No image loaded")
-        
+
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
         self.canvas.draw()
-        
+
+        # Create toolbar frame to hold canvas and toolbar
+        plot_frame = ttk.Frame(self.frame)
+        plot_frame.pack(side=tk.LEFT, fill='both', expand=True)
+
         canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.LEFT, fill='both', expand=True)
-        
+        canvas_widget.pack(side=tk.TOP, fill='both', expand=True, in_=plot_frame)
+
         # Bind mouse wheel event for frame navigation
         self.canvas.mpl_connect('scroll_event', self._on_mouse_wheel)
-        
+
+        # Add axis control toolbar
+        self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
+        self.toolbar.update()
+        self.toolbar.pack(side=tk.BOTTOM, fill='x', in_=plot_frame)
+        self.toolbar.configure_axes(has_y2=False)
+
         # Right: Control panel
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
         control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
         control_frame.pack_propagate(False)
-        
+
         self._create_file_controls(control_frame)
         self._create_frame_controls(control_frame)
         self._create_playback_controls(control_frame)
         self._create_draw_line_controls(control_frame)
-        
+
         # Load saved settings
         self.load_settings()
     

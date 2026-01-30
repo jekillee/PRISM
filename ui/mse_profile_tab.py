@@ -14,6 +14,7 @@ from ui.profile_base_tab import ProfileBaseTab
 from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, PAD_X, PAD_Y, ENTRY_WIDTH_AXIS, LABEL_WIDTH_SHORT
 )
+from ui.widgets.custom_toolbar import AxisControlToolbar
 
 
 class MSEProfileTab(ProfileBaseTab):
@@ -41,8 +42,18 @@ class MSEProfileTab(ProfileBaseTab):
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
         self.canvas.draw()
 
+        # Create toolbar frame to hold canvas and toolbar
+        plot_frame = ttk.Frame(self.frame)
+        plot_frame.pack(side=tk.LEFT, fill='both', expand=True)
+
         canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.LEFT, fill='both', expand=True)
+        canvas_widget.pack(side=tk.TOP, fill='both', expand=True, in_=plot_frame)
+
+        # Add axis control toolbar
+        self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
+        self.toolbar.update()
+        self.toolbar.pack(side=tk.BOTTOM, fill='x', in_=plot_frame)
+        self.toolbar.configure_axes(has_y2=True)
 
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
         control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
@@ -52,7 +63,6 @@ class MSEProfileTab(ProfileBaseTab):
         self._create_selection_listboxes(control_frame)
         self._create_plot_controls(control_frame)
         self._create_efit_controls(control_frame)
-        self._create_axis_controls(control_frame)
         self._create_save_controls(control_frame)
 
     def _create_shot_input(self, parent):
@@ -132,62 +142,6 @@ class MSEProfileTab(ProfileBaseTab):
         """Parse entry for EFIT (extract shot and time)"""
         shot_number, time_point, _ = self._parse_entry(entry)
         return shot_number, time_point
-
-    def _create_axis_controls(self, parent):
-        """Create custom axis control panel for MSE (gamma + q/j)"""
-        frame = ttk.LabelFrame(parent, text="Axis Control Panel", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-
-        for i in range(4):
-            frame.grid_columnconfigure(i, weight=1)
-
-        self.axis_entries = {}
-
-        # Headers
-        ttk.Label(frame, text="", anchor="center").grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky="ew")
-        ttk.Label(frame, text="x", anchor="center").grid(
-            row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky="ew")
-        ttk.Label(frame, text="gamma [rad]", anchor="center").grid(
-            row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky="ew")
-        ttk.Label(frame, text="q or j [MA/m2]", anchor="center").grid(
-            row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky="ew")
-
-        # Min entries
-        ttk.Label(frame, text="min", anchor="center").grid(
-            row=1, column=0, padx=PAD_X, pady=PAD_Y)
-
-        x_min_entry = ttk.Entry(frame, width=ENTRY_WIDTH_AXIS)
-        x_min_entry.grid(row=1, column=1, padx=PAD_X, pady=PAD_Y, sticky="ew")
-        self.axis_entries['xmin'] = x_min_entry
-
-        y1_min_entry = ttk.Entry(frame, width=ENTRY_WIDTH_AXIS)
-        y1_min_entry.grid(row=1, column=2, padx=PAD_X, pady=PAD_Y, sticky="ew")
-        self.axis_entries['y1min'] = y1_min_entry
-
-        y2_min_entry = ttk.Entry(frame, width=ENTRY_WIDTH_AXIS)
-        y2_min_entry.grid(row=1, column=3, padx=PAD_X, pady=PAD_Y, sticky="ew")
-        self.axis_entries['y2min'] = y2_min_entry
-
-        # Max entries
-        ttk.Label(frame, text="max", anchor="center").grid(
-            row=2, column=0, padx=PAD_X, pady=PAD_Y)
-
-        x_max_entry = ttk.Entry(frame, width=ENTRY_WIDTH_AXIS)
-        x_max_entry.grid(row=2, column=1, padx=PAD_X, pady=PAD_Y, sticky="ew")
-        self.axis_entries['xmax'] = x_max_entry
-
-        y1_max_entry = ttk.Entry(frame, width=ENTRY_WIDTH_AXIS)
-        y1_max_entry.grid(row=2, column=2, padx=PAD_X, pady=PAD_Y, sticky="ew")
-        self.axis_entries['y1max'] = y1_max_entry
-
-        y2_max_entry = ttk.Entry(frame, width=ENTRY_WIDTH_AXIS)
-        y2_max_entry.grid(row=2, column=3, padx=PAD_X, pady=PAD_Y, sticky="ew")
-        self.axis_entries['y2max'] = y2_max_entry
-
-        # Apply button
-        ttk.Button(frame, text="Apply", command=self.apply_axis_limits).grid(
-            row=0, column=4, rowspan=3, padx=PAD_X, pady=PAD_Y, sticky="nsew")
 
     def _get_r_edge_at_time(self, data, time_point):
         """Get R_edge at specific time by interpolation"""

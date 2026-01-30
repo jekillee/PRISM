@@ -19,6 +19,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from MDSplus import Connection
 
 from ui.ui_constants import CONTROL_PANEL_WIDTH, PAD_X, PAD_Y
+from ui.widgets.custom_toolbar import AxisControlToolbar
 from config.user_settings import get_tab_settings, set_tab_settings
 
 
@@ -778,19 +779,30 @@ class NModeSpectrumTab:
         self.figure = Figure(NModeConfig.FIGURE_SIZE, tight_layout=True)
         self.ax1 = self.figure.add_subplot(211)
         self.ax2 = self.figure.add_subplot(212, sharex=self.ax1)
-        
+
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(side=tk.LEFT, fill='both', expand=True)
-        
+
+        # Create toolbar frame to hold canvas and toolbar
+        plot_frame = ttk.Frame(self.frame)
+        plot_frame.pack(side=tk.LEFT, fill='both', expand=True)
+
+        self.canvas.get_tk_widget().pack(side=tk.TOP, fill='both', expand=True, in_=plot_frame)
+
+        # Add axis control toolbar
+        self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
+        self.toolbar.update()
+        self.toolbar.pack(side=tk.BOTTOM, fill='x', in_=plot_frame)
+        self.toolbar.configure_axes(has_y2=True)
+
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
         control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
         control_frame.pack_propagate(False)
-        
+
         self._create_parameters_panel(control_frame)
         self._create_run_plot_panel(control_frame)
         self._create_save_controls(control_frame)
-        
+
         # Load saved settings
         self.load_settings()
     

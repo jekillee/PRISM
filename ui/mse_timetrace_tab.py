@@ -220,56 +220,6 @@ class MSETimeTraceTab(TimeTraceBaseTab):
 
         self._finalize_plot()
 
-    def _create_axis_controls(self, parent):
-        """Create axis control panel with dynamic y2 label for MSE"""
-        frame = ttk.LabelFrame(parent, text="Axis Control Panel", labelanchor="n")
-        frame.pack(fill='x', padx=5, pady=5)
-
-        for i in range(4):
-            frame.grid_columnconfigure(i, weight=1)
-
-        self.axis_entries = {}
-
-        # Headers
-        ttk.Label(frame, text="", anchor="center").grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-        ttk.Label(frame, text='Time [s]', anchor="center").grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-        ttk.Label(frame, text=r'gamma[rad]', anchor="center").grid(row=0, column=2, padx=5, pady=5, sticky="ew")
-        ttk.Label(frame, text='q or j [MA/m2]', anchor="center").grid(row=0, column=3, padx=5, pady=5, sticky="ew")
-
-        # Min entries
-        ttk.Label(frame, text="min", anchor="center").grid(row=1, column=0, padx=5, pady=5)
-
-        x_min_entry = ttk.Entry(frame, width=6)
-        x_min_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-        self.axis_entries['xmin'] = x_min_entry
-
-        y1_min_entry = ttk.Entry(frame, width=6)
-        y1_min_entry.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
-        self.axis_entries['y1min'] = y1_min_entry
-
-        y2_min_entry = ttk.Entry(frame, width=6)
-        y2_min_entry.grid(row=1, column=3, padx=5, pady=5, sticky="ew")
-        self.axis_entries['y2min'] = y2_min_entry
-
-        # Max entries
-        ttk.Label(frame, text="max", anchor="center").grid(row=2, column=0, padx=5, pady=5)
-
-        x_max_entry = ttk.Entry(frame, width=6)
-        x_max_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
-        self.axis_entries['xmax'] = x_max_entry
-
-        y1_max_entry = ttk.Entry(frame, width=6)
-        y1_max_entry.grid(row=2, column=2, padx=5, pady=5, sticky="ew")
-        self.axis_entries['y1max'] = y1_max_entry
-
-        y2_max_entry = ttk.Entry(frame, width=6)
-        y2_max_entry.grid(row=2, column=3, padx=5, pady=5, sticky="ew")
-        self.axis_entries['y2max'] = y2_max_entry
-
-        # Apply button
-        ttk.Button(frame, text="Apply", command=self.apply_axis_limits).grid(
-            row=0, column=4, rowspan=3, padx=5, pady=5, sticky="nsew")
-
     def _write_data_to_file(self, file_path, selected_entries):
         """Write MSE time trace data to text file (gamma, q, j at same R position)"""
         with open(file_path, 'w') as f:

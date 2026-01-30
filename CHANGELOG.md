@@ -5,7 +5,22 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.8] - 2026-01-30
+## [1.1.9] - 2026-01-30
+
+### Changed
+- **Axis Control - Toolbar Integration**
+  - Removed separate Axis Control Panel from all tabs
+  - Added X, Y1, Y2 axis control buttons to navigation toolbar
+  - Click buttons to open dialog for setting axis min/max limits
+  - "Auto" button for automatic axis scaling
+  - Applied to all tabs: Ti/vT, ne/Te, MSE (profile and time trace), Spectrogram, N-Mode Spectrum, TV, IRVB
+
+### Technical
+- New `AxisControlToolbar` class in `ui/widgets/custom_toolbar.py`
+- Simplified base tab classes by removing axis control panel creation
+- Consistent toolbar-based axis control across all diagnostic tabs
+
+## [1.1.8] - 2026-01-29
 
 ### Added
 - **N-Mode Spectrum - Use Full Shot Length Option**

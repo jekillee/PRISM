@@ -13,6 +13,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from ui.base_tab import BaseTab
 from ui.ui_constants import CONTROL_PANEL_WIDTH, PAD_X, PAD_Y
+from ui.widgets.custom_toolbar import AxisControlToolbar
 from plotting.plot_manager import apply_legend_with_limit, TIMETRACE_LEGEND_LIMIT
 
 
@@ -35,8 +36,18 @@ class TimeTraceBaseTab(BaseTab):
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
         self.canvas.draw()
 
+        # Create toolbar frame to hold canvas and toolbar
+        plot_frame = ttk.Frame(self.frame)
+        plot_frame.pack(side=tk.LEFT, fill='both', expand=True)
+
         canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.LEFT, fill='both', expand=True)
+        canvas_widget.pack(side=tk.TOP, fill='both', expand=True, in_=plot_frame)
+
+        # Add axis control toolbar
+        self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
+        self.toolbar.update()
+        self.toolbar.pack(side=tk.BOTTOM, fill='x', in_=plot_frame)
+        self.toolbar.configure_axes(has_y2=self.param2 is not None)
 
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
         control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
@@ -46,7 +57,6 @@ class TimeTraceBaseTab(BaseTab):
         self._create_shot_input(control_frame)
         self._create_selection_listboxes(control_frame)
         self._create_plot_controls(control_frame)
-        self._create_axis_controls(control_frame)
         self._create_save_controls(control_frame)
 
     def _create_plot_controls(self, parent: ttk.Frame) -> None:
