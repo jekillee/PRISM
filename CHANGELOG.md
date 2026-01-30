@@ -5,6 +5,15 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.8] - 2026-01-30
+
+### Added
+- **N-Mode Spectrum - Use Full Shot Length Option**
+  - New checkbox "Use full shot length" in Parameters panel
+  - When enabled, time input fields are disabled and calculation uses actual shot duration
+  - Automatically detects shot's time range from MDS+ data
+  - Setting persisted across sessions
+
 ## [1.1.7] - 2026-01-29
 
 ### Changed

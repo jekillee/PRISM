@@ -823,14 +823,25 @@ class NModeSpectrumTab:
         row += 1
         
         # Time range
-        tk.Label(frame, text='Time [s]').grid(row=row, column=0, padx=5, pady=5, sticky='w')
+        tk.Label(frame, text='Time [s]').grid(row=row, column=0, padx=5, pady=5, sticky='nw')
         time_frame = tk.Frame(frame)
         time_frame.grid(row=row, column=1, columnspan=3, padx=5, pady=5, sticky='w')
+
+        # Time inputs with grid layout
         self.tmin_var = tk.StringVar(value=str(NModeConfig.DEFAULT_TMIN))
-        tk.Entry(time_frame, textvariable=self.tmin_var, width=8).pack(side=tk.LEFT, padx=(0, 2))
-        tk.Label(time_frame, text='-').pack(side=tk.LEFT)
+        self.tmin_entry = tk.Entry(time_frame, textvariable=self.tmin_var, width=8)
+        self.tmin_entry.grid(row=0, column=0, padx=(0, 2))
+        tk.Label(time_frame, text='-').grid(row=0, column=1)
         self.tmax_var = tk.StringVar(value=str(NModeConfig.DEFAULT_TMAX))
-        tk.Entry(time_frame, textvariable=self.tmax_var, width=8).pack(side=tk.LEFT, padx=(2, 0))
+        self.tmax_entry = tk.Entry(time_frame, textvariable=self.tmax_var, width=8)
+        self.tmax_entry.grid(row=0, column=2, padx=(2, 0))
+
+        # Use full shot checkbox (below tmin entry)
+        self.use_full_shot_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(time_frame, text='Use full shot length',
+                       variable=self.use_full_shot_var,
+                       command=self._toggle_time_entries).grid(
+            row=1, column=0, columnspan=3, sticky='w')
         row += 1
         
         # Separator
@@ -1112,6 +1123,15 @@ class NModeSpectrumTab:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save data: {str(e)}")
     
+    def _toggle_time_entries(self):
+        """Enable/disable time entry fields based on checkbox state"""
+        if self.use_full_shot_var.get():
+            self.tmin_entry.config(state='disabled')
+            self.tmax_entry.config(state='disabled')
+        else:
+            self.tmin_entry.config(state='normal')
+            self.tmax_entry.config(state='normal')
+
     def _on_nmodes_changed(self, value):
         """Update nmodes label"""
         self.nmodes_label.config(text=str(int(float(value))))
@@ -1129,8 +1149,16 @@ class NModeSpectrumTab:
         """Run complete workflow"""
         try:
             shot = int(self.shot_var.get())
-            tmin = float(self.tmin_var.get())
-            tmax = float(self.tmax_var.get())
+            use_full_shot = self.use_full_shot_var.get()
+
+            # When using full shot, use wide time range for initial load
+            if use_full_shot:
+                load_tmin = -1.0
+                load_tmax = 100.0
+            else:
+                load_tmin = float(self.tmin_var.get())
+                load_tmax = float(self.tmax_var.get())
+
             t_interval = float(self.tinterval_var.get())
             fmin = float(self.fmin_var.get())
             fmax = float(self.fmax_var.get())
@@ -1140,44 +1168,57 @@ class NModeSpectrumTab:
             msign = self.msign_var.get()
             integrate = self.integrate_var.get()
             run_detrend = self.detrend_var.get()
-            
+
             self.run_button.config(state='disabled')
             self.status_label.config(text='Running...', fg='blue')
             self.frame.update()
-            
+
             need_reload = (
                 self.mirnov_data is None or
                 self.current_shot != shot or
-                getattr(self, '_last_tmin', None) != tmin or
-                getattr(self, '_last_tmax', None) != tmax
+                getattr(self, '_last_load_tmin', None) != load_tmin or
+                getattr(self, '_last_load_tmax', None) != load_tmax
             )
-            
+
             if need_reload:
                 self.mirnov_data = None
                 self.fft_result = None
                 gc.collect()
-                
+
                 self.status_label.config(text='Loading data...', fg='blue')
                 self.frame.update()
-                
-                self.mirnov_data = load_mirnov_data(shot, tmin, tmax)
+
+                self.mirnov_data = load_mirnov_data(shot, load_tmin, load_tmax)
                 self.current_shot = shot
-                self._last_tmin = tmin
-                self._last_tmax = tmax
-            
-            # Adjust tmin/tmax if they exceed actual data range
+                self._last_load_tmin = load_tmin
+                self._last_load_tmax = load_tmax
+
+            # Get actual data time range
             actual_tmin = self.mirnov_data.time[0]
             actual_tmax = self.mirnov_data.time[-1]
-            
-            if tmin < actual_tmin:
-                print(f"  tmin adjusted: {tmin:.3f} -> {actual_tmin:.3f} s")
-                tmin = actual_tmin
-                self.tmin_var.set(f"{tmin:.3f}")
-            
-            if tmax > actual_tmax:
-                print(f"  tmax adjusted: {tmax:.3f} -> {actual_tmax:.3f} s")
+
+            # Determine tmin/tmax to use for calculation
+            if use_full_shot:
+                # Start from 0 if actual_tmin is negative
+                tmin = max(0.0, actual_tmin)
                 tmax = actual_tmax
+                # Update display (entry fields are disabled but show the values)
+                self.tmin_var.set(f"{tmin:.3f}")
                 self.tmax_var.set(f"{tmax:.3f}")
+                print(f"  Using full shot: {tmin:.3f} - {tmax:.3f} s")
+            else:
+                tmin = float(self.tmin_var.get())
+                tmax = float(self.tmax_var.get())
+                # Adjust if exceeds actual range
+                if tmin < actual_tmin:
+                    print(f"  tmin adjusted: {tmin:.3f} -> {actual_tmin:.3f} s")
+                    tmin = actual_tmin
+                    self.tmin_var.set(f"{tmin:.3f}")
+
+                if tmax > actual_tmax:
+                    print(f"  tmax adjusted: {tmax:.3f} -> {actual_tmax:.3f} s")
+                    tmax = actual_tmax
+                    self.tmax_var.set(f"{tmax:.3f}")
             
             self.status_label.config(text='Calculating FFT...', fg='blue')
             self.frame.update()
@@ -1251,6 +1292,7 @@ class NModeSpectrumTab:
             "shot": self.shot_var.get(),
             "tmin": self.tmin_var.get(),
             "tmax": self.tmax_var.get(),
+            "use_full_shot": self.use_full_shot_var.get(),
             "tinterval": self.tinterval_var.get(),
             "fmin": self.fmin_var.get(),
             "fmax": self.fmax_var.get(),
@@ -1277,7 +1319,11 @@ class NModeSpectrumTab:
         
         if settings.get("tmax"):
             self.tmax_var.set(settings["tmax"])
-        
+
+        if settings.get("use_full_shot") is not None:
+            self.use_full_shot_var.set(settings["use_full_shot"])
+            self._toggle_time_entries()
+
         if settings.get("tinterval"):
             self.tinterval_var.set(settings["tinterval"])
         
