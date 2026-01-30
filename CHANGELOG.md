@@ -33,8 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **ProfileBaseTab Base Class** (`ui/profile_base_tab.py`)
   - New abstract base class for profile tabs (TiVT, NeTe, MSE)
-  - Extracts common profile plotting logic for future refactoring
+  - Applied to nete_profile_tab, tivt_profile_tab, mse_profile_tab
+  - Extracts common profile plotting logic
   - Reduces code duplication in profile tab implementations
+
+- **TimeTraceBaseTab Base Class** (`ui/timetrace_base_tab.py`)
+  - New abstract base class for time trace tabs (TiVT, NeTe, MSE)
+  - Applied to nete_timetrace_tab, tivt_timetrace_tab, mse_timetrace_tab
+  - Extracts common time trace plotting logic
+  - Reduces code duplication (~220 lines removed across 6 tab files)
 
 ## [1.1.6] - 2026-01-28
 

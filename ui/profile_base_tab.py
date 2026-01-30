@@ -139,7 +139,6 @@ class ProfileBaseTab(BaseTab):
             self.toolbar.update()
             self.toolbar.push_current()
 
-    @abstractmethod
     def _plot_single_entry(
         self,
         entry: str,
@@ -159,8 +158,11 @@ class ProfileBaseTab(BaseTab):
 
         Returns:
             Updated tuple of (y1_max, y2_max, y2_min)
+
+        Note:
+            Override this method OR override plot_data() entirely.
         """
-        pass
+        raise NotImplementedError("Subclass must implement _plot_single_entry or override plot_data")
 
     def _apply_plot_limits(
         self,
@@ -261,7 +263,6 @@ class ProfileBaseTab(BaseTab):
             self.toolbar.update()
             self.toolbar.push_current()
 
-    @abstractmethod
     def _plot_single_efit_entry(
         self,
         entry: str,
@@ -283,8 +284,11 @@ class ProfileBaseTab(BaseTab):
 
         Returns:
             Updated tuple of (y1_max, y2_max, y2_min)
+
+        Note:
+            Override this method OR override plot_efit_profiles() entirely.
         """
-        pass
+        raise NotImplementedError("Subclass must implement _plot_single_efit_entry or override plot_efit_profiles")
 
     def _apply_y2_limits_efit(self, y2_max: float, y2_min: float) -> None:
         """Apply y2 axis limits for EFIT plots - can be overridden"""

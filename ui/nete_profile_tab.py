@@ -378,13 +378,15 @@ class NeTeProfileTab(ProfileBaseTab):
                     time_idx = np.argmin(np.abs(data.time - time_point))
                     x_data = interp_func(data.radius)
 
-                    Te_data, Te_err = data.get_parameter('Te')
-                    ne_data, ne_err = data.get_parameter('ne')
+                    Te_data, Te_err_upper, Te_err_lower = data.get_parameter_asymmetric('Te')
+                    ne_data, ne_err_upper, ne_err_lower = data.get_parameter_asymmetric('ne')
 
                     Te_profile = Te_data[:, time_idx]
-                    Te_err_profile = Te_err[:, time_idx]
+                    Te_err_upper_profile = Te_err_upper[:, time_idx]
+                    Te_err_lower_profile = Te_err_lower[:, time_idx]
                     ne_profile = ne_data[:, time_idx]
-                    ne_err_profile = ne_err[:, time_idx]
+                    ne_err_upper_profile = ne_err_upper[:, time_idx]
+                    ne_err_lower_profile = ne_err_lower[:, time_idx]
 
                     lcfs_idx = np.argmin(np.abs(x_data - 1))
                     te_max = max(te_max, np.nanmax(Te_profile[:lcfs_idx]))
@@ -392,11 +394,13 @@ class NeTeProfileTab(ProfileBaseTab):
 
                     label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (TS)'
 
-                    self.ax1.errorbar(x_data, Te_profile, Te_err_profile,
+                    self.ax1.errorbar(x_data, Te_profile,
+                                     yerr=[Te_err_lower_profile, Te_err_upper_profile],
                                      fmt='o', capsize=5, label=label,
                                      color=color, markersize=5, zorder=10)
 
-                    self.ax2.errorbar(x_data, ne_profile, ne_err_profile,
+                    self.ax2.errorbar(x_data, ne_profile,
+                                     yerr=[ne_err_lower_profile, ne_err_upper_profile],
                                      fmt='o', capsize=5, label=label,
                                      color=color, markersize=5, zorder=10)
 
