@@ -788,17 +788,21 @@ class NModeSpectrumTab:
         control_frame.pack_propagate(False)
         
         self._create_parameters_panel(control_frame)
-        self._create_plot_options_panel(control_frame)
+        self._create_run_plot_panel(control_frame)
         self._create_save_controls(control_frame)
         
         # Load saved settings
         self.load_settings()
     
+    # Shared column 0 width for consistent alignment across panels
+    LABEL_COLUMN_WIDTH = 105
+
     def _create_parameters_panel(self, parent):
         """Create parameters panel"""
         frame = ttk.LabelFrame(parent, text="1. Parameters", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
+
+        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
         frame.grid_columnconfigure(1, weight=1)
         frame.grid_columnconfigure(3, weight=1)
         
@@ -829,11 +833,11 @@ class NModeSpectrumTab:
 
         # Time inputs with grid layout
         self.tmin_var = tk.StringVar(value=str(NModeConfig.DEFAULT_TMIN))
-        self.tmin_entry = tk.Entry(time_frame, textvariable=self.tmin_var, width=8)
+        self.tmin_entry = tk.Entry(time_frame, textvariable=self.tmin_var, width=10)
         self.tmin_entry.grid(row=0, column=0, padx=(0, 2))
         tk.Label(time_frame, text='-').grid(row=0, column=1)
         self.tmax_var = tk.StringVar(value=str(NModeConfig.DEFAULT_TMAX))
-        self.tmax_entry = tk.Entry(time_frame, textvariable=self.tmax_var, width=8)
+        self.tmax_entry = tk.Entry(time_frame, textvariable=self.tmax_var, width=10)
         self.tmax_entry.grid(row=0, column=2, padx=(2, 0))
 
         # Use full shot checkbox (below tmin entry)
@@ -860,10 +864,10 @@ class NModeSpectrumTab:
         freq_frame = tk.Frame(frame)
         freq_frame.grid(row=row, column=1, columnspan=3, padx=5, pady=5, sticky='w')
         self.fmin_var = tk.StringVar(value=str(NModeConfig.DEFAULT_FMIN))
-        tk.Entry(freq_frame, textvariable=self.fmin_var, width=8).pack(side=tk.LEFT, padx=(0, 2))
+        tk.Entry(freq_frame, textvariable=self.fmin_var, width=10).pack(side=tk.LEFT, padx=(0, 2))
         tk.Label(freq_frame, text='-').pack(side=tk.LEFT)
         self.fmax_var = tk.StringVar(value=str(NModeConfig.DEFAULT_FMAX))
-        tk.Entry(freq_frame, textvariable=self.fmax_var, width=8).pack(side=tk.LEFT, padx=(2, 0))
+        tk.Entry(freq_frame, textvariable=self.fmax_var, width=10).pack(side=tk.LEFT, padx=(2, 0))
         row += 1
         
         # n-modes
@@ -905,60 +909,75 @@ class NModeSpectrumTab:
         option_frame = tk.Frame(frame)
         option_frame.grid(row=row, column=0, columnspan=4, padx=5, pady=5, sticky='w')
         self.integrate_var = tk.BooleanVar(value=NModeConfig.DEFAULT_INTEGRATE)
-        tk.Checkbutton(option_frame, text='Integrate (dB/dt -> B)', 
+        tk.Checkbutton(option_frame, text='Integrate (dB/dt -> B)',
                        variable=self.integrate_var).pack(side=tk.LEFT, padx=5)
         self.detrend_var = tk.BooleanVar(value=NModeConfig.DEFAULT_DETREND)
-        tk.Checkbutton(option_frame, text='Detrend', 
+        tk.Checkbutton(option_frame, text='Detrend',
                        variable=self.detrend_var).pack(side=tk.LEFT, padx=5)
+    
+    def _create_run_plot_panel(self, parent):
+        """Create run and plot options panel"""
+        frame = ttk.LabelFrame(parent, text="2. Plot", labelanchor="n")
+        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+
+        # Match Parameters panel column structure
+        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
+        frame.grid_columnconfigure(1, weight=1)
+        frame.grid_columnconfigure(3, weight=1)
+
+        row = 0
+
+        # Calculate and Plot button
+        self.run_button = ttk.Button(frame, text='Calculate and Plot', command=self._run_calculation)
+        self.run_button.grid(row=row, column=0, columnspan=4, padx=5, pady=5, sticky='ew')
         row += 1
-        
-        # Run button
-        self.run_button = ttk.Button(frame, text='Run', command=self._run_calculation)
-        self.run_button.grid(row=row, column=0, columnspan=4, padx=5, pady=10, sticky='ew')
-        row += 1
-        
+
         # Status
         self.status_label = tk.Label(frame, text='Ready', fg='gray', font=('TkDefaultFont', 9, 'bold'))
         self.status_label.grid(row=row, column=0, columnspan=4, padx=5, pady=2, sticky='w')
-    
-    def _create_plot_options_panel(self, parent):
-        """Create plot options panel"""
-        frame = ttk.LabelFrame(parent, text="2. Plot Options", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
-        frame.grid_columnconfigure(1, weight=1)
-        
-        # Plot type
-        tk.Label(frame, text='Plot type:').grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        type_frame = tk.Frame(frame)
-        type_frame.grid(row=0, column=1, padx=5, pady=5, sticky='w')
+        row += 1
+
+        # Separator
+        ttk.Separator(frame, orient='horizontal').grid(row=row, column=0, columnspan=4, sticky='ew', pady=5)
+        row += 1
+
+        # Plot type (radio buttons)
+        tk.Label(frame, text='Plot type').grid(row=row, column=0, padx=5, pady=5, sticky='w')
+        plot_type_frame = tk.Frame(frame)
+        plot_type_frame.grid(row=row, column=1, columnspan=3, padx=5, pady=5, sticky='w')
         self.plot_type_var = tk.StringVar(value=NModeConfig.DEFAULT_PLOT_TYPE)
-        tk.Radiobutton(type_frame, text='contour', variable=self.plot_type_var, 
-                       value='contour').pack(side=tk.LEFT, padx=5)
-        tk.Radiobutton(type_frame, text='imshow', variable=self.plot_type_var, 
-                       value='imshow').pack(side=tk.LEFT, padx=5)
-        
+        tk.Radiobutton(plot_type_frame, text='contour', variable=self.plot_type_var,
+                       value='contour', command=self._toggle_contour_levels).pack(side=tk.LEFT)
+        tk.Radiobutton(plot_type_frame, text='imshow', variable=self.plot_type_var,
+                       value='imshow', command=self._toggle_contour_levels).pack(side=tk.LEFT, padx=(5, 0))
+        row += 1
+
         # Contour levels
-        tk.Label(frame, text='Contour levels:').grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        self.contour_levels_label = tk.Label(frame, text='Contour levels')
+        self.contour_levels_label.grid(row=row, column=0, padx=5, pady=5, sticky='w')
         self.numc_var = tk.StringVar(value=str(NModeConfig.DEFAULT_NUMC))
-        tk.Entry(frame, textvariable=self.numc_var, width=10).grid(
-            row=1, column=1, padx=5, pady=5, sticky='w')
-        
-        # Update button
+        self.contour_levels_entry = tk.Entry(frame, textvariable=self.numc_var, width=10)
+        self.contour_levels_entry.grid(row=row, column=1, padx=5, pady=5, sticky='w')
+        row += 1
+
+        # Update Plot button
         ttk.Button(frame, text='Update Plot', command=self._update_plot).grid(
-            row=2, column=0, columnspan=2, padx=5, pady=10, sticky='ew')
+            row=row, column=0, columnspan=4, padx=5, pady=5, sticky='ew')
     
     def _create_save_controls(self, parent):
         """Create save data section"""
         frame = ttk.LabelFrame(parent, text="3. Save Data", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
-        self.save_button = ttk.Button(frame, text='Save as NPZ', 
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+
+        self.save_button = ttk.Button(btn_frame, text='Save as NPZ',
                                        command=self._save_data, state='disabled')
-        self.save_button.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
-        ttk.Button(frame, text='Show Example Script', 
-                   command=self._show_example_script).pack(fill='x', padx=PAD_X, pady=(0, PAD_Y))
+        self.save_button.pack(side=tk.LEFT, expand=True, fill='x', padx=(0, 2))
+
+        ttk.Button(btn_frame, text='Example Script',
+                   command=self._show_example_script).pack(side=tk.LEFT, expand=True, fill='x', padx=(2, 0))
     
     def _show_example_script(self):
         """Show example script for loading NPZ file with syntax highlighting"""
@@ -1131,6 +1150,15 @@ class NModeSpectrumTab:
         else:
             self.tmin_entry.config(state='normal')
             self.tmax_entry.config(state='normal')
+
+    def _toggle_contour_levels(self):
+        """Enable/disable contour levels entry based on plot type"""
+        if self.plot_type_var.get() == 'contour':
+            self.contour_levels_label.config(state='normal')
+            self.contour_levels_entry.config(state='normal')
+        else:
+            self.contour_levels_label.config(state='disabled')
+            self.contour_levels_entry.config(state='disabled')
 
     def _on_nmodes_changed(self, value):
         """Update nmodes label"""
@@ -1354,6 +1382,7 @@ class NModeSpectrumTab:
         
         if settings.get("plot_type"):
             self.plot_type_var.set(settings["plot_type"])
-        
+            self._toggle_contour_levels()
+
         if settings.get("contour_levels"):
             self.numc_var.set(settings["contour_levels"])

@@ -14,6 +14,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Automatically detects shot's time range from MDS+ data
   - Setting persisted across sessions
 
+### Changed
+- **UI Consistency Improvements**
+  - Spectrogram, TV, IRVB tabs: Added consistent label column width (LABEL_COLUMN_WIDTH)
+  - All tabs: Labels left-aligned with consistent spacing to input fields
+  - Spectrogram: Removed colons from labels, changed "Shot" to "Loaded Shot" in Select Signal
+  - TV, IRVB: Simplified Frame Control - removed navigation buttons, kept < > next to slider
+  - TV, IRVB: Frame Control uses grid layout for consistent Frame/Time alignment
+  - TV: Added shot up/down buttons (▲/▼)
+  - IRVB: Added Time [s] input field for direct time navigation
+
+- **N-Mode Spectrum UI Reorganization**
+  - Separated Parameters panel (inputs only) and Plot panel (Calculate and Plot button, options)
+  - Plot type changed from dropdown to radio buttons
+  - Contour levels disabled when imshow selected
+  - Time/Freq entry widths unified (width=10)
+
+- **Save Data Panel**
+  - Spectrogram, N-Mode Spectrum, IRVB: "Save as NPZ" and "Example Script" buttons now in single row
+  - Changed "Show Example Script" to "Example Script"
+
+- **TV Draw Line Improvements**
+  - Draw Mode button now shows green background when ON for better visibility
+  - Right-click finishes current line; next left-click starts a new separate line
+  - Support for drawing multiple lines on both TV01 and TV02 in compare mode
+  - Frame/Time inputs use fixed-width Entry for total frames display
+  - Added Linestyle dropdown (dashed/solid/dotted), default is dashed
+  - Default line color changed to white
+  - Fixed TV02 image flickering in compare mode when drawing with blitting optimization
+
 ## [1.1.7] - 2026-01-29
 
 ### Changed

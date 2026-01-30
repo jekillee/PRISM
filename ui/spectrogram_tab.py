@@ -63,10 +63,13 @@ plt.show()
 
 class SpectrogramTab:
     """Spectrogram visualization tab"""
-    
+
     # NFFT options
     NFFT_OPTIONS = ['256', '512', '1024', '2048', '4096']
     DEFAULT_NFFT = '1024'
+
+    # Label column width for consistent alignment
+    LABEL_COLUMN_WIDTH = 90
     
     def __init__(self, parent, app_config, diagnostic_config):
         self.parent = parent
@@ -135,11 +138,12 @@ class SpectrogramTab:
         """Create shot input section with up/down buttons"""
         frame = ttk.LabelFrame(parent, text="1. Load Shot", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
+
+        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
         frame.grid_columnconfigure(1, weight=1)
-        
-        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='center').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='ew')
+
+        ttk.Label(frame, text='Shot', anchor='w').grid(
+            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         # Shot entry with up/down buttons in same row
         shot_frame = ttk.Frame(frame)
@@ -174,19 +178,20 @@ class SpectrogramTab:
         frame = ttk.LabelFrame(parent, text="2. Select Signal", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
         self.signal_frame = frame
-        
+
+        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
         frame.grid_columnconfigure(1, weight=1)
         
         # Shot number display (row 0)
-        ttk.Label(frame, text='Shot:', anchor='w').grid(
+        ttk.Label(frame, text='Loaded Shot', anchor='w').grid(
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
-        
-        self.shot_display_label = ttk.Label(frame, text='Not loaded', anchor='w', 
+
+        self.shot_display_label = ttk.Label(frame, text='Not loaded', anchor='w',
                                             foreground='gray')
         self.shot_display_label.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='w')
-        
+
         # Diagnostic type dropdown (row 1)
-        ttk.Label(frame, text='Diagnostic:', anchor='w').grid(
+        ttk.Label(frame, text='Diagnostic', anchor='w').grid(
             row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         self.diag_options = ['Mirnov (Toroidal)', 'Mirnov (Poloidal)', 'ECE', 'BES', 'TCI', 
@@ -200,7 +205,7 @@ class SpectrogramTab:
         self.signal_widgets.append(self.diag_dropdown)
         
         # Channel dropdown (row 2)
-        ttk.Label(frame, text='Channel:', anchor='w').grid(
+        ttk.Label(frame, text='Channel', anchor='w').grid(
             row=2, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         self.selected_channel = tk.StringVar()
@@ -213,12 +218,13 @@ class SpectrogramTab:
         """Create spectrogram parameter section"""
         frame = ttk.LabelFrame(parent, text="3. Spectrogram Parameters", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
+
+        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
         frame.grid_columnconfigure(1, weight=1)
         frame.grid_columnconfigure(3, weight=1)
         
         # Time range
-        ttk.Label(frame, text='Time [s]:', anchor='w').grid(
+        ttk.Label(frame, text='Time [s]', anchor='w').grid(
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         time_frame = ttk.Frame(frame)
@@ -235,7 +241,7 @@ class SpectrogramTab:
         self.time_max_entry.insert(0, '10')
         
         # Frequency range
-        ttk.Label(frame, text='Freq [kHz]:', anchor='w').grid(
+        ttk.Label(frame, text='Freq [kHz]', anchor='w').grid(
             row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         freq_frame = ttk.Frame(frame)
@@ -252,7 +258,7 @@ class SpectrogramTab:
         self.freq_max_entry.insert(0, '100')
         
         # NFFT
-        ttk.Label(frame, text='NFFT:', anchor='w').grid(
+        ttk.Label(frame, text='NFFT', anchor='w').grid(
             row=2, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         self.selected_nfft = tk.StringVar(value=self.DEFAULT_NFFT)
@@ -295,13 +301,16 @@ class SpectrogramTab:
         """Create save data section"""
         frame = ttk.LabelFrame(parent, text="5. Save Data", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
-        self.save_button = ttk.Button(frame, text='Save as NPZ', 
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+
+        self.save_button = ttk.Button(btn_frame, text='Save as NPZ',
                                        command=self._save_data, state='disabled')
-        self.save_button.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
-        ttk.Button(frame, text='Show Example Script', 
-                   command=self._show_example_script).pack(fill='x', padx=PAD_X, pady=(0, PAD_Y))
+        self.save_button.pack(side=tk.LEFT, expand=True, fill='x', padx=(0, 2))
+
+        ttk.Button(btn_frame, text='Example Script',
+                   command=self._show_example_script).pack(side=tk.LEFT, expand=True, fill='x', padx=(2, 0))
     
     def _show_example_script(self):
         """Show example script for loading NPZ file with syntax highlighting"""

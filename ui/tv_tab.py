@@ -27,10 +27,13 @@ from config.user_settings import get_tab_settings, set_tab_settings
 
 class TVTab:
     """TV image sequence viewer tab with line drawing and compare mode"""
-    
+
     # TV camera parameters
     TV_FPS = 210.0
     TV_OFFSET = 0.1  # 100ms trigger offset
+
+    # Label column width for consistent alignment
+    LABEL_COLUMN_WIDTH = 90
     
     def __init__(self, parent, app_config, diagnostic_config):
         self.parent = parent
@@ -79,11 +82,14 @@ class TVTab:
         
         # Line drawing
         self.line_points = []
-        self.drawn_line = None
+        self.drawn_lines = []  # List of (line_obj, ax) tuples for finalized lines
+        self.current_line_obj = None  # Line object currently being drawn (not finalized)
         self.preview_line = None
         self.draw_mode = False
         self.click_cid = None
         self.motion_cid = None
+        self._draw_background = None  # For blitting optimization
+        self.current_draw_ax = None  # Track which axis current line is being drawn on
     
     def create_widgets(self):
         """Create TV tab widgets"""
@@ -120,28 +126,37 @@ class TVTab:
         """Create file loading section"""
         frame = ttk.LabelFrame(parent, text="1. Load TV Data", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
+
+        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
         frame.grid_columnconfigure(1, weight=1)
         
-        # Row 0: Shot label, entry, Search button, ... button
-        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='e').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
-        
-        self.shot_entry = ttk.Entry(frame)
-        self.shot_entry.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        # Row 0: Shot label, entry with up/down, Search button, ... button
+        ttk.Label(frame, text='Shot', anchor='w').grid(
+            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
+
+        shot_frame = ttk.Frame(frame)
+        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+
+        self.shot_entry = ttk.Entry(shot_frame, width=10)
+        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
         self.shot_entry.bind('<Return>', lambda e: self._search_available_tvs())
-        
+
+        ttk.Button(shot_frame, text='\u25B2', width=2,
+                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Button(shot_frame, text='\u25BC', width=2,
+                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
+
         btn_frame = ttk.Frame(frame)
         btn_frame.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='e')
-        
+
         ttk.Button(btn_frame, text='Search', command=self._search_available_tvs, width=8).pack(
             side=tk.LEFT)
         ttk.Button(btn_frame, text='...', command=self._load_zip_file, width=3).pack(
             side=tk.LEFT, padx=(2, 0))
         
         # Row 1: TV dropdown and Load button
-        ttk.Label(frame, text='TV', width=LABEL_WIDTH_SHORT, anchor='e').grid(
-            row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
+        ttk.Label(frame, text='TV', width=LABEL_WIDTH_SHORT, anchor='w').grid(
+            row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         self.tv_selection_var = tk.StringVar(value='-- Select --')
         self.tv_dropdown = ttk.Combobox(frame, textvariable=self.tv_selection_var,
@@ -199,79 +214,91 @@ class TVTab:
         
         self.file_label.config(text=f"Found: {', '.join(available_tvs)} for #{shot_number}")
         print(f"TV: Found {available_tvs} for shot #{shot_number}")
-    
+
+    def _adjust_shot(self, delta):
+        """Adjust shot number by delta"""
+        try:
+            current = int(self.shot_entry.get())
+            new_shot = max(1, current + delta)
+            self.shot_entry.delete(0, tk.END)
+            self.shot_entry.insert(0, str(new_shot))
+        except ValueError:
+            pass
+
     def _create_frame_controls(self, parent):
         """Create frame navigation controls"""
         frame = ttk.LabelFrame(parent, text="2. Frame Control", labelanchor="n")
         frame.pack(fill='x', padx=5, pady=5)
-        
-        # Frame slider
+
+        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
+        frame.grid_columnconfigure(1, weight=1)
+
+        row = 0
+
+        # Frame slider with < > buttons
         slider_frame = ttk.Frame(frame)
-        slider_frame.pack(fill='x', padx=5, pady=5)
-        
+        slider_frame.grid(row=row, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
+
+        ttk.Button(slider_frame, text='<', width=3, command=lambda: self._step_frame(-1)).pack(
+            side=tk.LEFT, padx=(0, 2))
+
         self.frame_var = tk.IntVar(value=0)
         self.frame_slider = ttk.Scale(
             slider_frame, from_=0, to=0, orient='horizontal',
             variable=self.frame_var, command=self._on_slider_change
         )
-        self.frame_slider.pack(fill='x', expand=True)
-        
+        self.frame_slider.pack(side=tk.LEFT, fill='x', expand=True)
+
+        ttk.Button(slider_frame, text='>', width=3, command=lambda: self._step_frame(1)).pack(
+            side=tk.LEFT, padx=(2, 0))
+        row += 1
+
         # Frame number input
-        num_frame = ttk.Frame(frame)
-        num_frame.pack(fill='x', padx=5, pady=2)
-        
-        ttk.Label(num_frame, text='Frame:').pack(side=tk.LEFT)
-        
-        self.frame_entry = ttk.Entry(num_frame, width=8)
-        self.frame_entry.pack(side=tk.LEFT, padx=5)
+        ttk.Label(frame, text='Frame', anchor='w').grid(
+            row=row, column=0, padx=5, pady=2, sticky='w')
+
+        frame_input = ttk.Frame(frame)
+        frame_input.grid(row=row, column=1, columnspan=2, padx=5, pady=2, sticky='w')
+
+        self.frame_entry = ttk.Entry(frame_input, width=8)
+        self.frame_entry.pack(side=tk.LEFT)
         self.frame_entry.insert(0, '0')
         self.frame_entry.bind('<Return>', self._on_frame_entry)
-        
-        self.frame_total_label = ttk.Label(num_frame, text='/ 0')
-        self.frame_total_label.pack(side=tk.LEFT)
-        
-        ttk.Button(num_frame, text='Go', width=5, command=self._goto_frame).pack(
-            side=tk.LEFT, padx=5)
-        
+
+        ttk.Label(frame_input, text='/').pack(side=tk.LEFT, padx=2)
+
+        self.frame_total_entry = ttk.Entry(frame_input, width=8, state='readonly')
+        self.frame_total_entry.pack(side=tk.LEFT)
+
+        ttk.Button(frame_input, text='Go', width=5, command=self._goto_frame).pack(
+            side=tk.LEFT, padx=(10, 0))
+        row += 1
+
         # Time input
-        time_frame = ttk.Frame(frame)
-        time_frame.pack(fill='x', padx=5, pady=2)
-        
-        ttk.Label(time_frame, text='Time [s]:').pack(side=tk.LEFT)
-        
-        self.time_entry = ttk.Entry(time_frame, width=8)
-        self.time_entry.pack(side=tk.LEFT, padx=5)
+        ttk.Label(frame, text='Time [s]', anchor='w').grid(
+            row=row, column=0, padx=5, pady=2, sticky='w')
+
+        time_input = ttk.Frame(frame)
+        time_input.grid(row=row, column=1, columnspan=2, padx=5, pady=2, sticky='w')
+
+        self.time_entry = ttk.Entry(time_input, width=8)
+        self.time_entry.pack(side=tk.LEFT)
         self.time_entry.insert(0, '0.0')
         self.time_entry.bind('<Return>', self._on_time_entry)
-        
-        ttk.Button(time_frame, text='Go', width=5, command=self._goto_time).pack(
-            side=tk.LEFT, padx=5)
-        
+
+        ttk.Button(time_input, text='Go', width=5, command=self._goto_time).pack(
+            side=tk.LEFT, padx=(10, 0))
+        row += 1
+
         # Current filename display
         self.filename_label = ttk.Label(frame, text="", wraplength=320)
-        self.filename_label.pack(fill='x', padx=5, pady=5)
-        
-        # Navigation buttons
-        nav_frame = ttk.Frame(frame)
-        nav_frame.pack(fill='x', padx=5, pady=5)
-        
-        ttk.Button(nav_frame, text='|<', width=4, command=self._goto_first).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        ttk.Button(nav_frame, text='<10', width=4, command=lambda: self._step_frame(-10)).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        ttk.Button(nav_frame, text='<', width=4, command=lambda: self._step_frame(-1)).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        ttk.Button(nav_frame, text='>', width=4, command=lambda: self._step_frame(1)).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        ttk.Button(nav_frame, text='10>', width=4, command=lambda: self._step_frame(10)).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        ttk.Button(nav_frame, text='>|', width=4, command=self._goto_last).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        
+        self.filename_label.grid(row=row, column=0, columnspan=3, padx=5, pady=5, sticky='w')
+        row += 1
+
         # Mouse wheel hint
-        hint_label = ttk.Label(frame, text="(Mouse wheel: navigate frames)", 
+        hint_label = ttk.Label(frame, text="(Mouse wheel: navigate frames)",
                                font=('TkDefaultFont', 8), foreground='gray')
-        hint_label.pack(pady=(0, 5))
+        hint_label.grid(row=row, column=0, columnspan=3, pady=(0, 5))
     
     def _create_playback_controls(self, parent):
         """Create playback control section"""
@@ -321,12 +348,12 @@ class TVTab:
         # Draw mode button and Clear button
         btn_frame = ttk.Frame(frame)
         btn_frame.pack(fill='x', padx=5, pady=5)
-        
-        self.draw_btn = ttk.Button(btn_frame, text='Draw Mode: OFF', 
-                                   command=self._toggle_draw_mode)
+
+        self.draw_btn = tk.Button(btn_frame, text='Draw Mode: OFF',
+                                  command=self._toggle_draw_mode, width=14)
         self.draw_btn.pack(side=tk.LEFT, expand=True, fill='x', padx=2)
-        
-        ttk.Button(btn_frame, text='Clear', command=self._clear_line).pack(
+
+        tk.Button(btn_frame, text='Clear', command=self._clear_line, width=8).pack(
             side=tk.LEFT, expand=True, fill='x', padx=2)
         
         # Show line checkbox and smooth curve checkbox
@@ -347,24 +374,43 @@ class TVTab:
         self.points_label = ttk.Label(check_frame, text='Points: 0')
         self.points_label.pack(side=tk.RIGHT, padx=5)
         
-        # Line style options
+        # Line style options (grid layout for even spacing)
         style_frame = ttk.Frame(frame)
         style_frame.pack(fill='x', padx=5, pady=5)
-        
-        ttk.Label(style_frame, text='Color:').pack(side=tk.LEFT)
-        self.line_color_var = tk.StringVar(value='black')
-        color_combo = ttk.Combobox(style_frame, textvariable=self.line_color_var,
-                                    values=['black', 'white', 'red', 'blue', 'yellow', 'green'],
-                                    state='readonly', width=8)
-        color_combo.pack(side=tk.LEFT, padx=5)
+        for i in range(3):
+            style_frame.columnconfigure(i, weight=1)
+
+        # Color
+        color_frame = ttk.Frame(style_frame)
+        color_frame.grid(row=0, column=0, sticky='w')
+        ttk.Label(color_frame, text='Color:').pack(side=tk.LEFT, padx=(0, 2))
+        self.line_color_var = tk.StringVar(value='white')
+        color_combo = ttk.Combobox(color_frame, textvariable=self.line_color_var,
+                                    values=['white', 'black', 'red', 'blue', 'yellow', 'green'],
+                                    state='readonly', width=6)
+        color_combo.pack(side=tk.LEFT)
         color_combo.bind('<<ComboboxSelected>>', lambda e: self._update_line_display())
-        
-        ttk.Label(style_frame, text='Width:').pack(side=tk.LEFT, padx=(10, 0))
+
+        # Linestyle
+        linestyle_frame = ttk.Frame(style_frame)
+        linestyle_frame.grid(row=0, column=1)
+        ttk.Label(linestyle_frame, text='Linestyle:').pack(side=tk.LEFT, padx=(0, 2))
+        self.line_style_var = tk.StringVar(value='dashed')
+        style_combo = ttk.Combobox(linestyle_frame, textvariable=self.line_style_var,
+                                    values=['dashed', 'solid', 'dotted'],
+                                    state='readonly', width=6)
+        style_combo.pack(side=tk.LEFT)
+        style_combo.bind('<<ComboboxSelected>>', lambda e: self._update_line_display())
+
+        # Width
+        width_frame = ttk.Frame(style_frame)
+        width_frame.grid(row=0, column=2, sticky='e')
+        ttk.Label(width_frame, text='Width:').pack(side=tk.LEFT, padx=(0, 2))
         self.line_width_var = tk.StringVar(value='2')
-        width_combo = ttk.Combobox(style_frame, textvariable=self.line_width_var,
+        width_combo = ttk.Combobox(width_frame, textvariable=self.line_width_var,
                                     values=['1', '2', '3', '4', '5'],
-                                    state='readonly', width=4)
-        width_combo.pack(side=tk.LEFT, padx=5)
+                                    state='readonly', width=3)
+        width_combo.pack(side=tk.LEFT)
         width_combo.bind('<<ComboboxSelected>>', lambda e: self._update_line_display())
         
         # Hint label
@@ -375,16 +421,19 @@ class TVTab:
     def _toggle_draw_mode(self):
         """Toggle line drawing mode"""
         self.draw_mode = not self.draw_mode
-        
+
         if self.draw_mode:
-            self.draw_btn.config(text='Draw Mode: ON')
-            self.click_cid = self.canvas.mpl_connect('button_press_event', 
+            self.draw_btn.config(text='Draw Mode: ON', bg='#90EE90', activebackground='#7CCD7C')
+            self.click_cid = self.canvas.mpl_connect('button_press_event',
                                                       self._on_line_click)
             self.motion_cid = self.canvas.mpl_connect('motion_notify_event',
                                                        self._on_mouse_motion)
             self.canvas.get_tk_widget().config(cursor='crosshair')
+            # Capture background for blitting optimization
+            self.canvas.draw()
+            self._draw_background = self.canvas.copy_from_bbox(self.figure.bbox)
         else:
-            self.draw_btn.config(text='Draw Mode: OFF')
+            self.draw_btn.config(text='Draw Mode: OFF', bg='#d9d9d9', activebackground='#ececec')
             if self.click_cid:
                 self.canvas.mpl_disconnect(self.click_cid)
                 self.click_cid = None
@@ -392,6 +441,8 @@ class TVTab:
                 self.canvas.mpl_disconnect(self.motion_cid)
                 self.motion_cid = None
             self.canvas.get_tk_widget().config(cursor='')
+            # Clear blitting background
+            self._draw_background = None
             # Remove preview line
             if self.preview_line:
                 self.preview_line.remove()
@@ -402,75 +453,127 @@ class TVTab:
         """Handle mouse click for line drawing"""
         if event.inaxes is None:
             return
-        
-        # In compare mode, only draw on ax1 (TV01)
-        if self.compare_mode and event.inaxes != self.ax1:
-            return
-        elif not self.compare_mode and event.inaxes != self.ax:
-            return
-        
+
+        # Determine target axis
+        if self.compare_mode:
+            if event.inaxes == self.ax1:
+                target_ax = self.ax1
+            elif event.inaxes == self.ax2:
+                target_ax = self.ax2
+            else:
+                return
+        else:
+            if event.inaxes != self.ax:
+                return
+            target_ax = self.ax
+
         if event.button == 1:  # Left click - add point
+            # If switching to a different axis, finalize current line first
+            if self.current_draw_ax is not None and self.current_draw_ax != target_ax:
+                self._finalize_current_line()
+
+            self.current_draw_ax = target_ax
             self.line_points.append((event.xdata, event.ydata))
             self.points_label.config(text=f'Points: {len(self.line_points)}')
             self._update_line_display()
-        elif event.button == 3:  # Right click - finish drawing
-            self._toggle_draw_mode()
+        elif event.button == 3:  # Right click - finish current line
+            self._finalize_current_line()
     
     def _on_mouse_motion(self, event):
         """Handle mouse motion for preview line"""
         if not self.draw_mode:
             return
-        
-        # Check correct axes
-        if self.compare_mode and event.inaxes != self.ax1:
+
+        # Must have started drawing (current_draw_ax set)
+        if self.current_draw_ax is None or len(self.line_points) == 0:
             return
-        elif not self.compare_mode and event.inaxes != self.ax:
+
+        # Only show preview on the axis where we're drawing
+        if event.inaxes != self.current_draw_ax:
             return
-        
-        if len(self.line_points) == 0:
-            return
-        
+
         # Update preview line from last point to cursor
         last_point = self.line_points[-1]
-        target_ax = self.ax1 if self.compare_mode else self.ax
-        
+
         if self.preview_line:
             self.preview_line.set_data([last_point[0], event.xdata],
                                         [last_point[1], event.ydata])
         else:
-            self.preview_line, = target_ax.plot([last_point[0], event.xdata],
-                                                 [last_point[1], event.ydata],
-                                                 'r--', linewidth=1, alpha=0.5)
-        self.canvas.draw_idle()
+            self.preview_line, = self.current_draw_ax.plot([last_point[0], event.xdata],
+                                                            [last_point[1], event.ydata],
+                                                            'r--', linewidth=1, alpha=0.5)
+
+        # Use blitting for smooth animation without flickering
+        if self._draw_background is not None:
+            self.canvas.restore_region(self._draw_background)
+            self.current_draw_ax.draw_artist(self.preview_line)
+            self.canvas.blit(self.figure.bbox)
+        else:
+            self.canvas.draw_idle()
     
-    def _clear_line(self):
-        """Clear drawn line"""
+    def _finalize_current_line(self):
+        """Finalize the current line and prepare for a new one"""
+        # Move current line to finalized lines list
+        if self.current_line_obj is not None and self.current_draw_ax is not None:
+            self.drawn_lines.append((self.current_line_obj, self.current_draw_ax))
+            self.current_line_obj = None
+        # Clear points for new line
         self.line_points = []
+        self.current_draw_ax = None
         self.points_label.config(text='Points: 0')
-        
-        if self.drawn_line:
-            self.drawn_line.remove()
-            self.drawn_line = None
+        # Remove preview line
         if self.preview_line:
             self.preview_line.remove()
             self.preview_line = None
-        
+        # Update background for blitting
+        self.canvas.draw()
+        self._draw_background = self.canvas.copy_from_bbox(self.figure.bbox)
+
+    def _clear_line(self):
+        """Clear all drawn lines"""
+        self.line_points = []
+        self.current_draw_ax = None
+        self.points_label.config(text='Points: 0')
+
+        # Remove current line being drawn
+        if self.current_line_obj is not None:
+            try:
+                self.current_line_obj.remove()
+            except ValueError:
+                pass
+            self.current_line_obj = None
+
+        # Remove all finalized lines
+        for line_obj, _ in self.drawn_lines:
+            try:
+                line_obj.remove()
+            except ValueError:
+                pass  # Already removed
+        self.drawn_lines = []
+
+        if self.preview_line:
+            self.preview_line.remove()
+            self.preview_line = None
+
         self.canvas.draw_idle()
-    
+
+        # Update background if in draw mode
+        if self.draw_mode:
+            self.canvas.draw()
+            self._draw_background = self.canvas.copy_from_bbox(self.figure.bbox)
+
     def _update_line_display(self):
         """Update line display based on current settings"""
-        # Remove existing drawn line
-        if self.drawn_line:
-            self.drawn_line.remove()
-            self.drawn_line = None
-        
         if not self.show_line_var.get() or len(self.line_points) < 2:
             self.canvas.draw_idle()
             return
-        
+
+        if self.current_draw_ax is None:
+            return
+
         points = np.array(self.line_points)
         x, y = points[:, 0], points[:, 1]
-        
+
         # Apply smoothing if enabled
         if self.smooth_var.get() and len(points) >= 4:
             try:
@@ -480,13 +583,28 @@ class TVTab:
                 x, y = splev(u_new, tck)
             except:
                 pass  # Fall back to non-smooth
-        
+
         color = self.line_color_var.get()
         width = int(self.line_width_var.get())
-        
-        target_ax = self.ax1 if self.compare_mode else self.ax
-        self.drawn_line, = target_ax.plot(x, y, color=color, linewidth=width)
+        style_map = {'dashed': '--', 'solid': '-', 'dotted': ':'}
+        linestyle = style_map.get(self.line_style_var.get(), '--')
+
+        # Remove previous version of current line if exists
+        if self.current_line_obj is not None:
+            try:
+                self.current_line_obj.remove()
+            except ValueError:
+                pass
+            self.current_line_obj = None
+
+        # Draw new line
+        self.current_line_obj, = self.current_draw_ax.plot(x, y, color=color, linewidth=width, linestyle=linestyle)
         self.canvas.draw_idle()
+
+        # Update background for blitting (include newly drawn line)
+        if self.draw_mode:
+            self.canvas.draw()
+            self._draw_background = self.canvas.copy_from_bbox(self.figure.bbox)
     
     # =========================================================================
     # Time/Frame conversion utilities
@@ -772,7 +890,10 @@ class TVTab:
         # Update UI
         self.file_label.config(text=f"TV01: {len(self.tv1_images)} frames, TV02: {len(self.tv2_images)} frames")
         self.frame_slider.config(to=self.total_frames - 1)
-        self.frame_total_label.config(text=f'/ {self.total_frames}')
+        self.frame_total_entry.config(state='normal')
+        self.frame_total_entry.delete(0, tk.END)
+        self.frame_total_entry.insert(0, str(self.total_frames))
+        self.frame_total_entry.config(state='readonly')
         
         # Display first frame
         self.current_frame = 0
@@ -857,7 +978,10 @@ class TVTab:
         self._set_status("Updating UI...")
         self.file_label.config(text=file_path.split('/')[-1])
         self.frame_slider.config(to=self.total_frames - 1)
-        self.frame_total_label.config(text=f'/ {self.total_frames}')
+        self.frame_total_entry.config(state='normal')
+        self.frame_total_entry.delete(0, tk.END)
+        self.frame_total_entry.insert(0, str(self.total_frames))
+        self.frame_total_entry.config(state='readonly')
         
         self._set_status("Loading first frame...")
         self.current_frame = 0
@@ -1022,8 +1146,10 @@ class TVTab:
             self.im = self.ax.imshow(img_array, cmap='gray' if len(img_array.shape) == 2 else None)
             self.ax.set_xticks([])
             self.ax.set_yticks([])
-            self.drawn_line = None
-            self._update_line_display()
+            # Clear lines associated with this axis
+            self.drawn_lines = [(l, ax) for l, ax in self.drawn_lines if ax != self.ax]
+            if self.current_draw_ax == self.ax:
+                self.current_line_obj = None
         else:
             self.im.set_data(img_array)
         
@@ -1032,18 +1158,23 @@ class TVTab:
         
         self.canvas.draw_idle()
         self.canvas.flush_events()
-        
+
+        # Update blitting background if draw mode is active
+        if self.draw_mode:
+            self.canvas.draw()
+            self._draw_background = self.canvas.copy_from_bbox(self.figure.bbox)
+
         self.current_frame = frame_idx
-        
+
         if update_ui:
             self.frame_entry.delete(0, tk.END)
             self.frame_entry.insert(0, str(frame_idx + 1))
             self.time_entry.delete(0, tk.END)
             self.time_entry.insert(0, f'{time_sec:.3f}')
             self.filename_label.config(text=filename)
-        
+
         return True
-    
+
     def _display_compare_frame(self, frame_idx, update_ui=True):
         """Display frames in compare mode (TV01 and TV02 side by side)"""
         # TV01 frame (master)
@@ -1109,9 +1240,14 @@ class TVTab:
         
         self.canvas.draw_idle()
         self.canvas.flush_events()
-        
+
+        # Update blitting background if draw mode is active
+        if self.draw_mode:
+            self.canvas.draw()
+            self._draw_background = self.canvas.copy_from_bbox(self.figure.bbox)
+
         self.current_frame = frame_idx
-        
+
         # Always update filename display
         tv1_name = self.tv1_images[frame_idx] if frame_idx < len(self.tv1_images) else "N/A"
         tv2_name = self.tv2_images[tv2_frame] if tv2_frame is not None and tv2_frame < len(self.tv2_images) else "N/A"

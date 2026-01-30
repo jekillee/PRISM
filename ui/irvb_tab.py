@@ -110,10 +110,13 @@ plt.show()
 
 class IRVBTab:
     """IRVB visualization tab"""
-    
+
     # Default psi boundaries for region separation
     DEFAULT_PSI_BOUNDARIES = "0.7, 1.0"
     MAX_BOUNDARIES = 5
+
+    # Label column width for consistent alignment
+    LABEL_COLUMN_WIDTH = 90
     
     # 2D plot color settings
     PRAD_VMIN = 0.0
@@ -196,11 +199,12 @@ class IRVBTab:
         """Create data loading section"""
         frame = ttk.LabelFrame(parent, text="1. Load IRVB Data", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
+
+        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
         frame.grid_columnconfigure(1, weight=1)
         
         # Shot number with up/down buttons in same row
-        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_LONG, anchor='w').grid(
+        ttk.Label(frame, text='Shot').grid(
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         shot_frame = ttk.Frame(frame)
@@ -238,12 +242,13 @@ class IRVBTab:
         """Create EFIT settings section with psi boundaries"""
         frame = ttk.LabelFrame(parent, text="2. EFIT Settings", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
+
+        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
         frame.grid_columnconfigure(1, weight=1)
         
         # EFIT Tree selection
-        ttk.Label(frame, text="EFIT Tree:", width=LABEL_WIDTH_LONG, anchor='e').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
+        ttk.Label(frame, text="EFIT Tree").grid(
+            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
         
         efit_options = list(self.app_config.EFIT_TREES.keys())
         self.efit_tree_var = tk.StringVar(value=efit_options[0])
@@ -253,8 +258,8 @@ class IRVBTab:
         efit_dropdown.grid(row=0, column=1, columnspan=2, padx=PAD_X, pady=PAD_Y, sticky='ew')
         
         # Psi boundaries
-        ttk.Label(frame, text='psi bounds:', width=LABEL_WIDTH_LONG, anchor='e').grid(
-            row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
+        ttk.Label(frame, text='psi bounds').grid(
+            row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
         self.psi_entry = ttk.Entry(frame, width=20)
         self.psi_entry.insert(0, self.DEFAULT_PSI_BOUNDARIES)
         self.psi_entry.grid(row=1, column=1, columnspan=2, padx=PAD_X, pady=PAD_Y, sticky='ew')
@@ -276,64 +281,71 @@ class IRVBTab:
         """Create frame navigation controls"""
         frame = ttk.LabelFrame(parent, text="4. Frame Control", labelanchor="n")
         frame.pack(fill='x', padx=5, pady=5)
-        
-        # Frame slider
+
+        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
+        frame.grid_columnconfigure(1, weight=1)
+
+        row = 0
+
+        # Frame slider with < > buttons
         slider_frame = ttk.Frame(frame)
-        slider_frame.pack(fill='x', padx=5, pady=5)
-        
+        slider_frame.grid(row=row, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
+
+        ttk.Button(slider_frame, text='<', width=3, command=lambda: self._step_frame(-1)).pack(
+            side=tk.LEFT, padx=(0, 2))
+
         self.frame_var = tk.IntVar(value=0)
         self.frame_slider = ttk.Scale(
             slider_frame, from_=0, to=0, orient='horizontal',
             variable=self.frame_var, command=self._on_slider_change
         )
-        self.frame_slider.pack(fill='x', expand=True)
-        
-        # Frame number and time display
-        num_frame = ttk.Frame(frame)
-        num_frame.pack(fill='x', padx=5, pady=5)
-        
-        ttk.Label(num_frame, text='Frame:').pack(side=tk.LEFT)
-        
-        self.frame_entry = ttk.Entry(num_frame, width=8)
-        self.frame_entry.pack(side=tk.LEFT, padx=5)
+        self.frame_slider.pack(side=tk.LEFT, fill='x', expand=True)
+
+        ttk.Button(slider_frame, text='>', width=3, command=lambda: self._step_frame(1)).pack(
+            side=tk.LEFT, padx=(2, 0))
+        row += 1
+
+        # Frame number input
+        ttk.Label(frame, text='Frame', anchor='w').grid(
+            row=row, column=0, padx=5, pady=2, sticky='w')
+
+        frame_input = ttk.Frame(frame)
+        frame_input.grid(row=row, column=1, columnspan=2, padx=5, pady=2, sticky='w')
+
+        self.frame_entry = ttk.Entry(frame_input, width=8)
+        self.frame_entry.pack(side=tk.LEFT)
         self.frame_entry.insert(0, '1')
         self.frame_entry.bind('<Return>', self._on_frame_entry)
-        
-        self.frame_total_label = ttk.Label(num_frame, text='/ 0')
-        self.frame_total_label.pack(side=tk.LEFT)
-        
-        ttk.Button(num_frame, text='Go', width=5, command=self._goto_frame).pack(
-            side=tk.LEFT, padx=5)
-        
-        # Time display
-        time_frame = ttk.Frame(frame)
-        time_frame.pack(fill='x', padx=5, pady=5)
-        
-        ttk.Label(time_frame, text='Time:').pack(side=tk.LEFT)
-        self.time_label = ttk.Label(time_frame, text='0.000 s', width=12)
-        self.time_label.pack(side=tk.LEFT, padx=5)
-        
-        # Navigation buttons
-        nav_frame = ttk.Frame(frame)
-        nav_frame.pack(fill='x', padx=5, pady=5)
-        
-        ttk.Button(nav_frame, text='|<', width=4, command=self._goto_first).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        ttk.Button(nav_frame, text='<10', width=4, command=lambda: self._step_frame(-10)).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        ttk.Button(nav_frame, text='<', width=4, command=lambda: self._step_frame(-1)).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        ttk.Button(nav_frame, text='>', width=4, command=lambda: self._step_frame(1)).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        ttk.Button(nav_frame, text='10>', width=4, command=lambda: self._step_frame(10)).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        ttk.Button(nav_frame, text='>|', width=4, command=self._goto_last).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=1)
-        
+
+        ttk.Label(frame_input, text='/').pack(side=tk.LEFT, padx=2)
+
+        self.frame_total_entry = ttk.Entry(frame_input, width=8, state='readonly')
+        self.frame_total_entry.pack(side=tk.LEFT)
+
+        ttk.Button(frame_input, text='Go', width=5, command=self._goto_frame).pack(
+            side=tk.LEFT, padx=(10, 0))
+        row += 1
+
+        # Time input
+        ttk.Label(frame, text='Time [s]', anchor='w').grid(
+            row=row, column=0, padx=5, pady=2, sticky='w')
+
+        time_input = ttk.Frame(frame)
+        time_input.grid(row=row, column=1, columnspan=2, padx=5, pady=2, sticky='w')
+
+        self.time_entry = ttk.Entry(time_input, width=8)
+        self.time_entry.pack(side=tk.LEFT)
+        self.time_entry.insert(0, '0.0')
+        self.time_entry.bind('<Return>', self._on_time_entry)
+
+        ttk.Button(time_input, text='Go', width=5, command=self._goto_time).pack(
+            side=tk.LEFT, padx=(10, 0))
+        row += 1
+
         # Mouse wheel hint
         hint = ttk.Label(frame, text="(Mouse wheel: navigate frames)",
                         font=('TkDefaultFont', 8), foreground='gray')
-        hint.pack(pady=(0, 5))
+        hint.grid(row=row, column=0, columnspan=3, pady=(0, 5))
     
     def _create_playback_controls(self, parent):
         """Create playback control section"""
@@ -379,13 +391,16 @@ class IRVBTab:
         """Create save data section"""
         frame = ttk.LabelFrame(parent, text="6. Save Data", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
-        self.save_button = ttk.Button(frame, text='Save as NPZ', 
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+
+        self.save_button = ttk.Button(btn_frame, text='Save as NPZ',
                                        command=self._save_data, state='disabled')
-        self.save_button.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
-        ttk.Button(frame, text='Show Example Script', 
-                   command=self._show_example_script).pack(fill='x', padx=PAD_X, pady=(0, PAD_Y))
+        self.save_button.pack(side=tk.LEFT, expand=True, fill='x', padx=(0, 2))
+
+        ttk.Button(btn_frame, text='Example Script',
+                   command=self._show_example_script).pack(side=tk.LEFT, expand=True, fill='x', padx=(2, 0))
     
     def _show_example_script(self):
         """Show example script for loading NPZ file with syntax highlighting"""
@@ -632,10 +647,14 @@ class IRVBTab:
             self.current_frame = 0
             self.frame_slider.config(to=self.total_frames - 1)
             self.frame_var.set(0)
-            self.frame_total_label.config(text=f'/ {self.total_frames}')
+            self.frame_total_entry.config(state='normal')
+            self.frame_total_entry.delete(0, tk.END)
+            self.frame_total_entry.insert(0, str(self.total_frames))
+            self.frame_total_entry.config(state='readonly')
             self.frame_entry.delete(0, tk.END)
             self.frame_entry.insert(0, '1')
-            self.time_label.config(text=f'{self.irvb_data.time[0]:.3f} s')
+            self.time_entry.delete(0, tk.END)
+            self.time_entry.insert(0, f'{self.irvb_data.time[0]:.3f}')
             
             self._update_status(f'Shot #{shot_number}: {self.total_frames} frames loaded', success=True)
             print(f"IRVB: Data loaded for shot #{shot_number}")
@@ -811,11 +830,15 @@ class IRVBTab:
         self.current_frame = 0
         self.frame_slider.config(to=self.total_frames - 1)
         self.frame_var.set(0)
-        self.frame_total_label.config(text=f'/ {self.total_frames}')
+        self.frame_total_entry.config(state='normal')
+        self.frame_total_entry.delete(0, tk.END)
+        self.frame_total_entry.insert(0, str(self.total_frames))
+        self.frame_total_entry.config(state='readonly')
         self.frame_entry.delete(0, tk.END)
         self.frame_entry.insert(0, '1')
-        self.time_label.config(text=f'{self.irvb_data.time[0]:.3f} s')
-    
+        self.time_entry.delete(0, tk.END)
+        self.time_entry.insert(0, f'{self.irvb_data.time[0]:.3f}')
+
     def _setup_figure(self):
         """Setup figure with dynamic number of subplots"""
         self.figure.clear()
@@ -1024,7 +1047,8 @@ class IRVBTab:
         self.current_frame = frame_idx
         self.frame_entry.delete(0, tk.END)
         self.frame_entry.insert(0, str(frame_idx + 1))
-        self.time_label.config(text=f'{time:.3f} s')
+        self.time_entry.delete(0, tk.END)
+        self.time_entry.insert(0, f'{time:.3f}')
         
         self.canvas.draw_idle()
     
@@ -1064,11 +1088,11 @@ class IRVBTab:
         """Go to specified frame"""
         if self.region_prad is None:
             return
-        
+
         try:
             frame_num = int(self.frame_entry.get())
             frame_idx = frame_num - 1
-            
+
             if 0 <= frame_idx < self.total_frames:
                 self.current_frame = frame_idx
                 self.frame_var.set(frame_idx)
@@ -1078,7 +1102,27 @@ class IRVBTab:
                     f"Frame number must be between 1 and {self.total_frames}")
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid frame number")
-    
+
+    def _on_time_entry(self, event):
+        """Handle time entry"""
+        self._goto_time()
+
+    def _goto_time(self):
+        """Go to frame at specified time"""
+        if self.region_prad is None or self.irvb_data is None:
+            return
+
+        try:
+            time_sec = float(self.time_entry.get())
+            # Find closest frame index
+            frame_idx = np.argmin(np.abs(self.irvb_data.time - time_sec))
+
+            self.current_frame = frame_idx
+            self.frame_var.set(frame_idx)
+            self._update_plot(frame_idx)
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid time in seconds")
+
     def _step_frame(self, delta):
         """Step by delta frames"""
         if self.total_frames == 0 or self.region_prad is None:
