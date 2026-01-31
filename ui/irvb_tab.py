@@ -185,11 +185,11 @@ class IRVBTab:
         # Bind mouse wheel for frame navigation
         self.canvas.mpl_connect('scroll_event', self._on_mouse_wheel)
 
-        # Add axis control toolbar
+        # Add axis control toolbar (will be reconfigured when data is loaded)
         self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
         self.toolbar.update()
         self.toolbar.pack(side=tk.BOTTOM, fill='x', in_=plot_frame)
-        self.toolbar.configure_axes(has_y2=False)
+        self.toolbar.configure_axes(has_y2=False, ax1_label='IRVB')
 
         # Control panel
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
@@ -881,7 +881,10 @@ class IRVBTab:
 
         # Update toolbar: has_y2=True, share_x=False (time traces and 2D have different X)
         if self.toolbar:
-            self.toolbar.configure_axes(has_y2=True, share_x=False)
+            self.toolbar.configure_axes(
+                has_y2=True, share_x=False,
+                ax1_label='Time Traces', ax2_label='2D Prad'
+            )
 
         # Plot time traces
         self._plot_time_traces()

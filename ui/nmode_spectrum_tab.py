@@ -793,7 +793,7 @@ class NModeSpectrumTab:
         self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
         self.toolbar.update()
         self.toolbar.pack(side=tk.BOTTOM, fill='x', in_=plot_frame)
-        self.toolbar.configure_axes(has_y2=True)
+        self.toolbar.configure_axes(has_y2=True, ax1_label='n-mode', ax2_label='Amplitude')
 
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
         control_frame.pack(side=tk.RIGHT, fill='y', expand=False)

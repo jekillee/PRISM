@@ -47,7 +47,11 @@ class TimeTraceBaseTab(BaseTab):
         self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
         self.toolbar.update()
         self.toolbar.pack(side=tk.BOTTOM, fill='x', in_=plot_frame)
-        self.toolbar.configure_axes(has_y2=self.param2 is not None)
+        self.toolbar.configure_axes(
+            has_y2=self.param2 is not None,
+            ax1_label=self.param1['label'],
+            ax2_label=self.param2['label'] if self.param2 else 'Axes 2'
+        )
 
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
         control_frame.pack(side=tk.RIGHT, fill='y', expand=False)

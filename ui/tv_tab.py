@@ -118,7 +118,7 @@ class TVTab:
         self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
         self.toolbar.update()
         self.toolbar.pack(side=tk.BOTTOM, fill='x', in_=plot_frame)
-        self.toolbar.configure_axes(has_y2=False)
+        self.toolbar.configure_axes(has_y2=False, ax1_label='TV Image')
 
         # Right: Control panel
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)

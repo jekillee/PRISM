@@ -70,8 +70,8 @@ class QuietNavigationToolbar(NavigationToolbar2Tk):
 
 class AxisControlToolbar(QuietNavigationToolbar):
     """
-    Navigation toolbar with axis control button (Qt-style)
-    Single button opens a dialog with axis selector dropdown
+    Navigation toolbar with axis control button (PyQt5 Figure Options style)
+    Single button opens a dialog to select figure and adjust X/Y axes
     """
 
     def __init__(self, canvas, window, tab_instance=None):
@@ -85,7 +85,7 @@ class AxisControlToolbar(QuietNavigationToolbar):
         """
         super().__init__(canvas, window)
         self.tab_instance = tab_instance
-        self.axes_config = []  # List of (name, getter_func) tuples
+        self.figures_config = []  # List of (display_name, ax_attr_name) tuples
         self.share_x = True
 
         # Add separator and axis control button
@@ -102,56 +102,45 @@ class AxisControlToolbar(QuietNavigationToolbar):
                                   command=self._show_axes_dialog)
         self.axes_btn.pack(side=tk.LEFT, padx=1)
 
-    def configure_axes(self, has_y2=True, share_x=True, x_label='X', y1_label='Y1', y2_label='Y2'):
+    def configure_axes(self, has_y2=True, share_x=True, ax1_label='Axes 1', ax2_label='Axes 2'):
         """
-        Configure available axes for the dialog
+        Configure available figures/axes for the dialog
 
         Args:
-            has_y2: Whether Y2 axis exists
+            has_y2: Whether second axes (ax2) exists
             share_x: Whether X-axis is shared between ax1 and ax2
-            x_label: Display label for X axis
-            y1_label: Display label for Y1 axis
-            y2_label: Display label for Y2 axis
+            ax1_label: Display label for first axes
+            ax2_label: Display label for second axes
         """
         self.share_x = share_x
-        self.axes_config = [
-            (f'X ({x_label})', 'x', 'ax1'),
-            (f'Y1 ({y1_label})', 'y', 'ax1'),
+        self.figures_config = [
+            (ax1_label, 'ax1'),
         ]
         if has_y2:
-            self.axes_config.append((f'Y2 ({y2_label})', 'y', 'ax2'))
+            self.figures_config.append((ax2_label, 'ax2'))
 
-    def _get_axis_and_limits(self, axis_type, ax_name):
-        """Get axis object and current limits"""
+    def _get_axes(self, ax_name):
+        """Get axis object"""
         if self.tab_instance is None:
-            return None, (0, 1)
+            return None
 
-        # Get the axis object
         ax = getattr(self.tab_instance, ax_name, None)
         if ax is None and ax_name == 'ax1':
             ax = getattr(self.tab_instance, 'ax', None)
-
-        if ax is None:
-            return None, (0, 1)
-
-        # Get limits based on axis type
-        if axis_type == 'x':
-            return ax, ax.get_xlim()
-        else:
-            return ax, ax.get_ylim()
+        return ax
 
     def _show_axes_dialog(self):
-        """Show Qt-style axes configuration dialog"""
+        """Show PyQt5-style Figure Options dialog"""
         if self.tab_instance is None:
             return
 
-        # Build axes config if not set
-        if not self.axes_config:
+        # Build figures config if not set
+        if not self.figures_config:
             self.configure_axes()
 
         dialog = tk.Toplevel(self.master)
         dialog.title('Axis Limits')
-        dialog.geometry('280x160')
+        dialog.geometry('340x180')
         dialog.resizable(False, False)
         dialog.transient(self.master)
         dialog.grab_set()
@@ -166,61 +155,115 @@ class AxisControlToolbar(QuietNavigationToolbar):
         frame = ttk.Frame(dialog, padding=10)
         frame.pack(fill='both', expand=True)
 
-        # Axis selector dropdown
-        ttk.Label(frame, text='Axis:').grid(row=0, column=0, padx=5, pady=5, sticky='e')
-        axis_names = [cfg[0] for cfg in self.axes_config]
-        axis_var = tk.StringVar(value=axis_names[0] if axis_names else '')
-        axis_combo = ttk.Combobox(frame, textvariable=axis_var, values=axis_names,
-                                  state='readonly', width=20)
-        axis_combo.grid(row=0, column=1, padx=5, pady=5, sticky='w')
+        # Figure/Axes selector dropdown
+        ttk.Label(frame, text='Axes:').grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        figure_names = [cfg[0] for cfg in self.figures_config]
+        figure_var = tk.StringVar(value=figure_names[0] if figure_names else '')
+        figure_combo = ttk.Combobox(frame, textvariable=figure_var, values=figure_names,
+                                    state='readonly', width=25)
+        figure_combo.grid(row=0, column=1, columnspan=3, padx=5, pady=5, sticky='w')
 
-        # Min entry
-        ttk.Label(frame, text='Min:').grid(row=1, column=0, padx=5, pady=5, sticky='e')
-        min_entry = ttk.Entry(frame, width=18)
-        min_entry.grid(row=1, column=1, padx=5, pady=5, sticky='w')
+        # X-axis row
+        ttk.Label(frame, text='X-axis').grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        ttk.Label(frame, text='Min:').grid(row=1, column=1, padx=(5, 2), pady=5, sticky='e')
+        x_min_entry = ttk.Entry(frame, width=10)
+        x_min_entry.grid(row=1, column=2, padx=2, pady=5)
+        ttk.Label(frame, text='Max:').grid(row=1, column=3, padx=(5, 2), pady=5, sticky='e')
+        x_max_entry = ttk.Entry(frame, width=10)
+        x_max_entry.grid(row=1, column=4, padx=2, pady=5)
 
-        # Max entry
-        ttk.Label(frame, text='Max:').grid(row=2, column=0, padx=5, pady=5, sticky='e')
-        max_entry = ttk.Entry(frame, width=18)
-        max_entry.grid(row=2, column=1, padx=5, pady=5, sticky='w')
+        # Y-axis row
+        ttk.Label(frame, text='Y-axis').grid(row=2, column=0, padx=5, pady=5, sticky='e')
+        ttk.Label(frame, text='Min:').grid(row=2, column=1, padx=(5, 2), pady=5, sticky='e')
+        y_min_entry = ttk.Entry(frame, width=10)
+        y_min_entry.grid(row=2, column=2, padx=2, pady=5)
+        ttk.Label(frame, text='Max:').grid(row=2, column=3, padx=(5, 2), pady=5, sticky='e')
+        y_max_entry = ttk.Entry(frame, width=10)
+        y_max_entry.grid(row=2, column=4, padx=2, pady=5)
+
+        def get_current_ax_name():
+            """Get the ax attribute name for current selection"""
+            selected = figure_var.get()
+            for name, ax_name in self.figures_config:
+                if name == selected:
+                    return ax_name
+            return 'ax1'
 
         def update_entries(*args):
-            """Update min/max entries when axis selection changes"""
-            selected = axis_var.get()
-            for name, axis_type, ax_name in self.axes_config:
-                if name == selected:
-                    ax, limits = self._get_axis_and_limits(axis_type, ax_name)
-                    min_entry.delete(0, tk.END)
-                    max_entry.delete(0, tk.END)
-                    min_entry.insert(0, f'{limits[0]:.6g}')
-                    max_entry.insert(0, f'{limits[1]:.6g}')
-                    break
+            """Update X/Y entries when figure selection changes"""
+            ax_name = get_current_ax_name()
+            ax = self._get_axes(ax_name)
+            if ax is None:
+                return
 
-        # Bind axis selection change
-        axis_combo.bind('<<ComboboxSelected>>', update_entries)
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
 
-        # Initialize with first axis
+            x_min_entry.delete(0, tk.END)
+            x_max_entry.delete(0, tk.END)
+            y_min_entry.delete(0, tk.END)
+            y_max_entry.delete(0, tk.END)
+
+            x_min_entry.insert(0, f'{xlim[0]:.6g}')
+            x_max_entry.insert(0, f'{xlim[1]:.6g}')
+            y_min_entry.insert(0, f'{ylim[0]:.6g}')
+            y_max_entry.insert(0, f'{ylim[1]:.6g}')
+
+        # Bind figure selection change
+        figure_combo.bind('<<ComboboxSelected>>', update_entries)
+
+        # Initialize with first figure
         update_entries()
 
         # Button frame
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=3, column=0, columnspan=2, pady=10)
+        btn_frame.grid(row=3, column=0, columnspan=5, pady=10)
 
         def on_apply():
-            """Apply the current axis limits"""
+            """Apply X and Y axis limits to current figure"""
             try:
-                min_val = float(min_entry.get()) if min_entry.get().strip() else None
-                max_val = float(max_entry.get()) if max_entry.get().strip() else None
-
-                if min_val is not None and max_val is not None and min_val >= max_val:
-                    messagebox.showerror("Error", "Min must be less than Max", parent=dialog)
+                ax_name = get_current_ax_name()
+                ax = self._get_axes(ax_name)
+                if ax is None:
                     return
 
-                selected = axis_var.get()
-                for name, axis_type, ax_name in self.axes_config:
-                    if name == selected:
-                        self._apply_limits(axis_type, ax_name, min_val, max_val)
-                        break
+                canvas = getattr(self.tab_instance, 'canvas', None)
+                if canvas is None:
+                    return
+
+                # Parse X limits
+                x_min = float(x_min_entry.get()) if x_min_entry.get().strip() else None
+                x_max = float(x_max_entry.get()) if x_max_entry.get().strip() else None
+
+                # Parse Y limits
+                y_min = float(y_min_entry.get()) if y_min_entry.get().strip() else None
+                y_max = float(y_max_entry.get()) if y_max_entry.get().strip() else None
+
+                # Validate
+                if x_min is not None and x_max is not None and x_min >= x_max:
+                    messagebox.showerror("Error", "X Min must be less than X Max", parent=dialog)
+                    return
+                if y_min is not None and y_max is not None and y_min >= y_max:
+                    messagebox.showerror("Error", "Y Min must be less than Y Max", parent=dialog)
+                    return
+
+                # Apply X limits
+                if x_min is not None and x_max is not None:
+                    ax.set_xlim(left=x_min, right=x_max)
+                    # Apply to other axes if share_x
+                    if self.share_x:
+                        for _, other_ax_name in self.figures_config:
+                            if other_ax_name != ax_name:
+                                other_ax = self._get_axes(other_ax_name)
+                                if other_ax is not None:
+                                    other_ax.set_xlim(left=x_min, right=x_max)
+
+                # Apply Y limits
+                if y_min is not None and y_max is not None:
+                    ax.set_ylim(bottom=y_min, top=y_max)
+
+                canvas.draw_idle()
+                self.push_current()
 
                 # Update entries to show applied values
                 update_entries()
@@ -229,12 +272,30 @@ class AxisControlToolbar(QuietNavigationToolbar):
                 messagebox.showerror("Error", "Please enter valid numbers", parent=dialog)
 
         def on_auto():
-            """Auto-scale the selected axis"""
-            selected = axis_var.get()
-            for name, axis_type, ax_name in self.axes_config:
-                if name == selected:
-                    self._apply_limits(axis_type, ax_name, None, None, auto=True)
-                    break
+            """Auto-scale both axes for current figure"""
+            ax_name = get_current_ax_name()
+            ax = self._get_axes(ax_name)
+            if ax is None:
+                return
+
+            canvas = getattr(self.tab_instance, 'canvas', None)
+            if canvas is None:
+                return
+
+            ax.autoscale()
+
+            # Apply X autoscale to other axes if share_x
+            if self.share_x:
+                xlim = ax.get_xlim()
+                for _, other_ax_name in self.figures_config:
+                    if other_ax_name != ax_name:
+                        other_ax = self._get_axes(other_ax_name)
+                        if other_ax is not None:
+                            other_ax.set_xlim(xlim)
+
+            canvas.draw_idle()
+            self.push_current()
+
             # Update entries to show new values
             update_entries()
 
@@ -242,51 +303,10 @@ class AxisControlToolbar(QuietNavigationToolbar):
         ttk.Button(btn_frame, text='Auto', command=on_auto, width=8).pack(side=tk.LEFT, padx=3)
         ttk.Button(btn_frame, text='Close', command=dialog.destroy, width=8).pack(side=tk.LEFT, padx=3)
 
-        # Bind Enter key
-        min_entry.bind('<Return>', lambda e: on_apply())
-        max_entry.bind('<Return>', lambda e: on_apply())
+        # Bind Enter key to apply
+        for entry in [x_min_entry, x_max_entry, y_min_entry, y_max_entry]:
+            entry.bind('<Return>', lambda e: on_apply())
 
-        # Focus on min entry
-        min_entry.focus_set()
-        min_entry.select_range(0, tk.END)
-
-    def _apply_limits(self, axis_type, ax_name, min_val, max_val, auto=False):
-        """Apply limits to specified axis"""
-        if self.tab_instance is None:
-            return
-
-        canvas = getattr(self.tab_instance, 'canvas', None)
-        if canvas is None:
-            return
-
-        # Get the axis object
-        ax = getattr(self.tab_instance, ax_name, None)
-        if ax is None and ax_name == 'ax1':
-            ax = getattr(self.tab_instance, 'ax', None)
-
-        if ax is None:
-            return
-
-        if axis_type == 'x':
-            if auto:
-                ax.autoscale(axis='x')
-                # Also apply to ax2 if share_x is True
-                if self.share_x:
-                    ax2 = getattr(self.tab_instance, 'ax2', None)
-                    if ax2 is not None:
-                        ax2.autoscale(axis='x')
-            else:
-                ax.set_xlim(left=min_val, right=max_val)
-                # Also apply to ax2 if share_x is True
-                if self.share_x:
-                    ax2 = getattr(self.tab_instance, 'ax2', None)
-                    if ax2 is not None:
-                        ax2.set_xlim(left=min_val, right=max_val)
-        else:  # y axis
-            if auto:
-                ax.autoscale(axis='y')
-            else:
-                ax.set_ylim(bottom=min_val, top=max_val)
-
-        canvas.draw_idle()
-        self.push_current()
+        # Focus on x_min entry
+        x_min_entry.focus_set()
+        x_min_entry.select_range(0, tk.END)
