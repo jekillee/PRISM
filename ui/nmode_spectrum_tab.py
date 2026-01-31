@@ -610,7 +610,7 @@ def get_mode_color(n):
 def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
                        tmin, tmax, fmin, fmax, nmodes, msign, integrate,
                        plot_type='contour', numc=50):
-    """Plot n-mode spectrum (full frequency range, ylim set to fmin-fmax)"""
+    """Plot n-mode spectrum"""
     ax.clear()
 
     time = fft_result.time
@@ -618,14 +618,13 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
 
     sz = amp.shape
     n_time = sz[0]
-    n_freq = sz[1]
 
-    # Time indices for the specified range
     j1 = np.argmin(np.abs(time - tmin))
     j2 = np.argmin(np.abs(time - tmax))
+    k1 = np.argmin(np.abs(freq_use - fmin))
+    k2 = np.argmin(np.abs(freq_use - fmax))
 
-    # Use full frequency range for plotting (allow Axes control beyond fmin-fmax)
-    mode_plot = mode[j1:j2, :]
+    mode_plot = mode[j1:j2, k1:k2]
 
     if msign == 1:
         mode_filtered = (mode_plot > 0) * mode_plot
@@ -636,19 +635,18 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
     else:
         mode_filtered = mode_plot
 
-    amp_plot = np.abs(amp[j1:j2, :, 0])
+    amp_plot = np.abs(amp[j1:j2, k1:k2, 0])
 
     if not integrate:
         amp_plot = 2.0 * amp_plot
-        freq_hz = freq_use * 1e3
+        freq_hz = freq_use[k1:k2] * 1e3
         freq_hz_safe = np.where(freq_hz > 0, freq_hz, 1.0)
         amp_plot = amp_plot / (2.0 * np.pi * freq_hz_safe)
         amp_plot[:, freq_hz == 0] = 0
         amp_plot = amp_plot * 1e4
 
-    # Full time and frequency arrays for plotting
     x = np.arange(mode_plot.shape[0]) * (tmax - tmin) / (mode_plot.shape[0] - 1) + tmin
-    y = freq_use  # Use full frequency array
+    y = np.arange(k2 - k1) * (fmax - fmin) / (k2 - k1) + fmin
     
     if msign == 2:
         mxmode = np.max(np.abs((mode_filtered > 0) * mode_filtered))
