@@ -33,7 +33,7 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
 
         shot_frame = ttk.Frame(frame)
-        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='w')
 
         self.shot_entry = ttk.Entry(shot_frame, width=ENTRY_WIDTH_SHOT)
         self.shot_entry.pack(side=tk.LEFT)
