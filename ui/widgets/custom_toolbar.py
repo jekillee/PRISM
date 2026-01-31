@@ -110,12 +110,13 @@ class AxisControlToolbar(QuietNavigationToolbar):
                                 command=self._show_y2_dialog)
         self.y2_btn.pack(side=tk.LEFT, padx=1)
 
-    def configure_axes(self, has_y2=True, x_label='X', y1_label='Y1', y2_label='Y2'):
+    def configure_axes(self, has_y2=True, share_x=True, x_label='X', y1_label='Y1', y2_label='Y2'):
         """
         Configure which axis buttons to show and their labels
 
         Args:
             has_y2: Whether to show Y2 button
+            share_x: Whether X-axis is shared between ax1 and ax2
             x_label: Label for X button tooltip
             y1_label: Label for Y1 button tooltip
             y2_label: Label for Y2 button tooltip
@@ -123,6 +124,7 @@ class AxisControlToolbar(QuietNavigationToolbar):
         self.x_label = x_label
         self.y1_label = y1_label
         self.y2_label = y2_label
+        self.share_x = share_x
 
         if has_y2:
             self.y2_btn.pack(side=tk.LEFT, padx=1)
@@ -243,13 +245,16 @@ class AxisControlToolbar(QuietNavigationToolbar):
         if ax1 is None or canvas is None:
             return
 
+        # Check if X-axis is shared between ax1 and ax2
+        share_x = getattr(self, 'share_x', True)
+
         if auto:
             ax1.autoscale(axis='x')
-            if ax2 is not None:
+            if ax2 is not None and share_x:
                 ax2.autoscale(axis='x')
         else:
             ax1.set_xlim(left=min_val, right=max_val)
-            if ax2 is not None:
+            if ax2 is not None and share_x:
                 ax2.set_xlim(left=min_val, right=max_val)
 
         canvas.draw_idle()

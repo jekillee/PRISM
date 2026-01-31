@@ -872,7 +872,17 @@ class IRVBTab:
         
         # Create 2D profile axis (right column)
         self.ax_2d = self.figure.add_subplot(gs[:, 1])
-        
+
+        # Set ax1/ax2 for toolbar compatibility
+        # ax1 = first time trace (X=Time, Y=Prad)
+        # ax2 = 2D plot (X=R, Y=Z) - different X-axis, so share_x=False
+        self.ax1 = self.ax_traces[0] if self.ax_traces else None
+        self.ax2 = self.ax_2d
+
+        # Update toolbar: has_y2=True, share_x=False (time traces and 2D have different X)
+        if self.toolbar:
+            self.toolbar.configure_axes(has_y2=True, share_x=False)
+
         # Plot time traces
         self._plot_time_traces()
         
