@@ -101,23 +101,24 @@ class TVTab:
         self.ax.set_yticks([])
         self.ax.set_title("No image loaded")
 
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
-        self.canvas.draw()
-
-        # Create toolbar frame to hold canvas and toolbar
+        # Create plot frame to hold canvas and toolbar
         plot_frame = ttk.Frame(self.frame)
         plot_frame.pack(side=tk.LEFT, fill='both', expand=True)
 
+        # Create canvas inside plot_frame
+        self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
+        self.canvas.draw()
+
         canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.TOP, fill='both', expand=True, in_=plot_frame)
+        canvas_widget.pack(side=tk.TOP, fill='both', expand=True)
 
         # Bind mouse wheel event for frame navigation
         self.canvas.mpl_connect('scroll_event', self._on_mouse_wheel)
 
-        # Add axis control toolbar
+        # Add axis control toolbar at bottom of plot_frame
         self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
         self.toolbar.update()
-        self.toolbar.pack(side=tk.BOTTOM, fill='x', in_=plot_frame)
+        self.toolbar.pack(side=tk.BOTTOM, fill='x')
         self.toolbar.configure_axes(has_y2=False, ax1_label='TV Image')
 
         # Right: Control panel

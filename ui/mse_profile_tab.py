@@ -39,20 +39,21 @@ class MSEProfileTab(ProfileBaseTab):
         self.ax1.set_ylabel(r'$\gamma$ [rad]')
         self.ax2.set_xlabel('R [m]')
 
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
-        self.canvas.draw()
-
-        # Create toolbar frame to hold canvas and toolbar
+        # Create plot frame to hold canvas and toolbar
         plot_frame = ttk.Frame(self.frame)
         plot_frame.pack(side=tk.LEFT, fill='both', expand=True)
 
-        canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.TOP, fill='both', expand=True, in_=plot_frame)
+        # Create canvas inside plot_frame
+        self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
+        self.canvas.draw()
 
-        # Add axis control toolbar
+        canvas_widget = self.canvas.get_tk_widget()
+        canvas_widget.pack(side=tk.TOP, fill='both', expand=True)
+
+        # Add axis control toolbar at bottom of plot_frame
         self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
         self.toolbar.update()
-        self.toolbar.pack(side=tk.BOTTOM, fill='x', in_=plot_frame)
+        self.toolbar.pack(side=tk.BOTTOM, fill='x')
         self.toolbar.configure_axes(has_y2=True, ax1_label='γ [rad]', ax2_label='q / j')
 
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
