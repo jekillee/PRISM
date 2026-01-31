@@ -28,22 +28,19 @@ class TiVTProfileTab(ProfileBaseTab):
         frame = ttk.LabelFrame(parent, text="1. Load Ti/vT Data", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
 
-        frame.grid_columnconfigure(1, weight=1)
-
-        # Row 0: Shot label, entry with up/down, dropdown, Fetch, File
+        # Row 0: Shot label, entry, up/down buttons, dropdown, Fetch, File
         ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='e').grid(
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
 
-        shot_frame = ttk.Frame(frame)
-        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='w')
-
-        self.shot_entry = ttk.Entry(shot_frame, width=ENTRY_WIDTH_SHOT)
-        self.shot_entry.pack(side=tk.LEFT)
+        self.shot_entry = ttk.Entry(frame, width=ENTRY_WIDTH_SHOT)
+        self.shot_entry.grid(row=0, column=1, padx=(PAD_X, 0), pady=PAD_Y, sticky='w')
         self.shot_entry.bind('<Return>', lambda e: self.load_shot_data())
 
-        ttk.Button(shot_frame, text='\u25B2', width=2,
-                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
-        ttk.Button(shot_frame, text='\u25BC', width=2,
+        btn_updown = ttk.Frame(frame)
+        btn_updown.grid(row=0, column=2, padx=(2, PAD_X), pady=PAD_Y, sticky='w')
+        ttk.Button(btn_updown, text='\u25B2', width=2,
+                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT)
+        ttk.Button(btn_updown, text='\u25BC', width=2,
                    command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
 
         analysis_types = list(self.diag_config['analysis_types'].keys())
@@ -51,10 +48,10 @@ class TiVTProfileTab(ProfileBaseTab):
 
         analysis_dropdown = ttk.Combobox(frame, textvariable=self.selected_analysis_type,
                                         values=analysis_types, state="readonly", width=5)
-        analysis_dropdown.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='w')
+        analysis_dropdown.grid(row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky='w')
 
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky='e')
+        btn_frame.grid(row=0, column=4, padx=PAD_X, pady=PAD_Y, sticky='e')
 
         self.fetch_button = ttk.Button(btn_frame, text='Fetch', command=self.load_shot_data, width=8)
         self.fetch_button.pack(side=tk.LEFT)

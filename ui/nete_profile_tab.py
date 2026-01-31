@@ -29,22 +29,19 @@ class NeTeProfileTab(ProfileBaseTab):
         frame = ttk.LabelFrame(parent, text="1. Load ne, Te Data", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
 
-        frame.grid_columnconfigure(1, weight=1)
-
-        # Row 0: Shot label, entry with up/down, diagnostic dropdown, Fetch
+        # Row 0: Shot label, entry, up/down buttons, diagnostic dropdown, Fetch
         ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='e').grid(
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
 
-        shot_frame = ttk.Frame(frame)
-        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='w')
-
-        self.shot_entry = ttk.Entry(shot_frame, width=ENTRY_WIDTH_SHOT)
-        self.shot_entry.pack(side=tk.LEFT)
+        self.shot_entry = ttk.Entry(frame, width=ENTRY_WIDTH_SHOT)
+        self.shot_entry.grid(row=0, column=1, padx=(PAD_X, 0), pady=PAD_Y, sticky='w')
         self.shot_entry.bind('<Return>', lambda e: self.load_shot_data())
 
-        ttk.Button(shot_frame, text='\u25B2', width=2,
-                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
-        ttk.Button(shot_frame, text='\u25BC', width=2,
+        btn_updown = ttk.Frame(frame)
+        btn_updown.grid(row=0, column=2, padx=(2, PAD_X), pady=PAD_Y, sticky='w')
+        ttk.Button(btn_updown, text='\u25B2', width=2,
+                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT)
+        ttk.Button(btn_updown, text='\u25BC', width=2,
                    command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
 
         diag_options = ['TS+ECE', 'TS', 'ECE (100Hz)', 'ECE (1kHz)']
@@ -52,10 +49,10 @@ class NeTeProfileTab(ProfileBaseTab):
 
         diag_dropdown = ttk.Combobox(frame, textvariable=self.selected_diagnostic,
                                     values=diag_options, state="readonly", width=10)
-        diag_dropdown.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='w')
+        diag_dropdown.grid(row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky='w')
 
         self.fetch_button = ttk.Button(frame, text='Fetch', command=self.load_shot_data, width=8)
-        self.fetch_button.grid(row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky='e')
+        self.fetch_button.grid(row=0, column=4, padx=PAD_X, pady=PAD_Y, sticky='e')
 
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
