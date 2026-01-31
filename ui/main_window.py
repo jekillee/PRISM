@@ -17,7 +17,6 @@ from config.user_settings import (
 from data_loaders.efit_loader import EFITLoader
 from plotting.plot_manager import PlotManager
 from ui.tab_factory import TabFactory
-from ui.widgets.custom_toolbar import QuietNavigationToolbar
 
 
 class PRISMApp:
@@ -156,58 +155,24 @@ class PRISMApp:
         return tab
     
     def _on_tab_changed(self, event):
-        """Handle tab change - create tab if not exists, update toolbar"""
+        """Handle tab change - create tab if not exists"""
         current_tab_index = self.notebook.index(self.notebook.select())
-        
+
         # Create tab content if not already created
         if current_tab_index not in self.tab_cache:
             self._create_tab_content(current_tab_index)
-        
-        current_tab = self.tab_cache.get(current_tab_index)
-        
-        # Destroy existing toolbar
-        if hasattr(self, 'toolbar') and self.toolbar:
-            try:
-                if self.toolbar.mode != '':
-                    self.toolbar.mode = ''
-                if hasattr(self.toolbar.canvas, 'widgetlock'):
-                    self.toolbar.canvas.widgetlock.release(self.toolbar)
-            except:
-                pass
-            
-            try:
-                self.toolbar.destroy()
-            except:
-                pass
-            
-            self.toolbar = None
-        
-        # Create new toolbar for current tab
-        if current_tab and hasattr(current_tab, 'canvas') and current_tab.canvas:
-            try:
-                self.toolbar = QuietNavigationToolbar(current_tab.canvas, self.toolbar_frame_container)
-                self.toolbar.update()
-                current_tab.toolbar = self.toolbar
-            except Exception as e:
-                print(f"Warning: Failed to create toolbar: {e}")
-                self.toolbar = None
     
     def _create_bottom_bar(self):
-        """Create bottom bar with toolbar and manual button"""
+        """Create bottom bar with manual button"""
         self.bottom_frame = tk.Frame(self.root)
         self.bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=5)
-        
-        self.toolbar_frame_container = tk.Frame(self.bottom_frame)
-        self.toolbar_frame_container.pack(side=tk.LEFT, padx=5)
-        
-        self.toolbar = None
-        
-        manual_button = ttk.Button(self.bottom_frame, text="View KSTAR Diagnostics Manual", 
+
+        manual_button = ttk.Button(self.bottom_frame, text="View KSTAR Diagnostics Manual",
                                    command=self._show_manual)
         manual_button.pack(side=tk.RIGHT, padx=5)
-        
+
         developer_label = tk.Label(
-            self.bottom_frame, 
+            self.bottom_frame,
             text="Developed by Jekil Lee (jklee@kfe.re.kr)"
         )
         developer_label.pack(side=tk.RIGHT, padx=5)
