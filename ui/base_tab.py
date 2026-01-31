@@ -250,10 +250,16 @@ class BaseTab(ABC):
         ttk.Button(frame, text="Apply", command=self.apply_axis_limits).grid(
             row=0, column=4, rowspan=3, padx=PAD_X, pady=PAD_Y, sticky="nsew")
     
-    def _create_save_controls(self, parent):
+    def _create_save_controls(self, parent, section_num=None):
         """Create save controls (common for all tabs)"""
-        ttk.Button(parent, text='Save as .txt', command=self.save_data).pack(
-            fill='x', padx=PAD_X, pady=2)
+        if section_num:
+            frame = ttk.LabelFrame(parent, text=f"{section_num}. Save Data", labelanchor="n")
+        else:
+            frame = ttk.LabelFrame(parent, text="Save Data", labelanchor="n")
+        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+
+        ttk.Button(frame, text='Save as .txt', command=self.save_data).pack(
+            fill='x', padx=PAD_X, pady=PAD_Y)
     
     # ===== Loading state helper methods =====
     

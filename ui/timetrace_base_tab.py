@@ -45,7 +45,7 @@ class TimeTraceBaseTab(BaseTab):
         self._create_shot_input(control_frame)
         self._create_selection_listboxes(control_frame)
         self._create_plot_controls(control_frame)
-        self._create_save_controls(control_frame)
+        self._create_save_controls(control_frame, section_num=4)
 
     def _create_plot_controls(self, parent: ttk.Frame) -> None:
         """Create plot control buttons (default implementation)

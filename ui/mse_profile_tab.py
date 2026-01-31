@@ -51,7 +51,7 @@ class MSEProfileTab(ProfileBaseTab):
         self._create_selection_listboxes(control_frame)
         self._create_plot_controls(control_frame)
         self._create_efit_controls(control_frame)
-        self._create_save_controls(control_frame)
+        self._create_save_controls(control_frame, section_num=5)
 
     def _create_shot_input(self, parent):
         """Create data loading section"""
