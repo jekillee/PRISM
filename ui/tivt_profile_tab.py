@@ -28,12 +28,14 @@ class TiVTProfileTab(ProfileBaseTab):
         frame = ttk.LabelFrame(parent, text="1. Load Ti/vT Data", labelanchor="n")
         frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
 
+        frame.grid_columnconfigure(1, weight=1)
+
         # Row 0: Shot label, entry, up/down buttons, dropdown, Fetch, File
         ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='e').grid(
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
 
-        self.shot_entry = ttk.Entry(frame, width=ENTRY_WIDTH_SHOT)
-        self.shot_entry.grid(row=0, column=1, padx=(PAD_X, 0), pady=PAD_Y, sticky='w')
+        self.shot_entry = ttk.Entry(frame)
+        self.shot_entry.grid(row=0, column=1, padx=(PAD_X, 0), pady=PAD_Y, sticky='ew')
         self.shot_entry.bind('<Return>', lambda e: self.load_shot_data())
 
         btn_updown = ttk.Frame(frame)
