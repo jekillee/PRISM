@@ -18,7 +18,6 @@ from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
     ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_SHORT
 )
-from ui.widgets.custom_toolbar import AxisControlToolbar
 from config.user_settings import get_tab_settings, set_tab_settings
 from data_loaders.ecei_loader import ECEILoader
 from data_loaders.ece_loader import ECELoader
@@ -112,22 +111,10 @@ class SpectrogramTab:
         self.figure = Figure((10, 6), tight_layout=True)
         self.ax = self.figure.add_subplot(111)
 
-        # Create plot frame to hold canvas and toolbar
-        plot_frame = ttk.Frame(self.frame)
-        plot_frame.pack(side=tk.LEFT, fill='both', expand=True)
-
-        # Create canvas inside plot_frame
-        self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
+        # Create canvas
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
         self.canvas.draw()
-
-        canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.TOP, fill='both', expand=True)
-
-        # Add axis control toolbar at bottom of plot_frame
-        self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
-        self.toolbar.update()
-        self.toolbar.pack(side=tk.BOTTOM, fill='x')
-        self.toolbar.configure_axes(has_y2=False, ax1_label='Spectrogram')
+        self.canvas.get_tk_widget().pack(side=tk.LEFT, fill='both', expand=True)
 
         # Control panel
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)

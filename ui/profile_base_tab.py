@@ -16,7 +16,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from ui.base_tab import BaseTab
 from ui.ui_constants import CONTROL_PANEL_WIDTH, PAD_X, PAD_Y
-from ui.widgets.custom_toolbar import AxisControlToolbar
 
 
 class ProfileBaseTab(BaseTab):
@@ -39,26 +38,10 @@ class ProfileBaseTab(BaseTab):
         self.ax1, self.ax2 = self.plot_manager.setup_profile_plot(
             self.figure, self.param1['label'], self.param2['label'])
 
-        # Create plot frame to hold canvas and toolbar
-        plot_frame = ttk.Frame(self.frame)
-        plot_frame.pack(side=tk.LEFT, fill='both', expand=True)
-
-        # Create canvas inside plot_frame
-        self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
+        # Create canvas
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
         self.canvas.draw()
-
-        canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.TOP, fill='both', expand=True)
-
-        # Add axis control toolbar at bottom of plot_frame
-        self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
-        self.toolbar.update()
-        self.toolbar.pack(side=tk.BOTTOM, fill='x')
-        self.toolbar.configure_axes(
-            has_y2=self.param2 is not None,
-            ax1_label=self.param1['label'],
-            ax2_label=self.param2['label'] if self.param2 else 'Axes 2'
-        )
+        self.canvas.get_tk_widget().pack(side=tk.LEFT, fill='both', expand=True)
 
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
         control_frame.pack(side=tk.RIGHT, fill='y', expand=False)

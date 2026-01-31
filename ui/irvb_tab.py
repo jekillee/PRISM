@@ -20,7 +20,6 @@ from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
     ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_LONG
 )
-from ui.widgets.custom_toolbar import AxisControlToolbar
 from config.user_settings import get_tab_settings, set_tab_settings
 
 
@@ -172,25 +171,13 @@ class IRVBTab:
         # Main figure
         self.figure = Figure((8, 6), tight_layout=False)
 
-        # Create plot frame to hold canvas and toolbar
-        plot_frame = ttk.Frame(self.frame)
-        plot_frame.pack(side=tk.LEFT, fill='both', expand=True)
-
-        # Create canvas inside plot_frame
-        self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
+        # Create canvas
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
         self.canvas.draw()
-
-        canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.pack(side=tk.TOP, fill='both', expand=True)
+        self.canvas.get_tk_widget().pack(side=tk.LEFT, fill='both', expand=True)
 
         # Bind mouse wheel for frame navigation
         self.canvas.mpl_connect('scroll_event', self._on_mouse_wheel)
-
-        # Add axis control toolbar at bottom of plot_frame (will be reconfigured when data is loaded)
-        self.toolbar = AxisControlToolbar(self.canvas, plot_frame, tab_instance=self)
-        self.toolbar.update()
-        self.toolbar.pack(side=tk.BOTTOM, fill='x')
-        self.toolbar.configure_axes(has_y2=False, ax1_label='IRVB')
 
         # Control panel
         control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
@@ -874,18 +861,25 @@ class IRVBTab:
         # Create 2D profile axis (right column)
         self.ax_2d = self.figure.add_subplot(gs[:, 1])
 
-        # Set ax1/ax2 for toolbar compatibility
-        # ax1 = first time trace (X=Time, Y=Prad)
-        # ax2 = 2D plot (X=R, Y=Z) - different X-axis, so share_x=False
-        self.ax1 = self.ax_traces[0] if self.ax_traces else None
-        self.ax2 = self.ax_2d
+        # Set ax references for each time trace (for toolbar Axes access)
+        n_regions = len(self.psi_boundaries) + 1
+        boundaries = [0] + self.psi_boundaries + [np.inf]
+        for i, ax in enumerate(self.ax_traces):
+            setattr(self, f'ax_trace_{i}', ax)
 
-        # Update toolbar: has_y2=True, share_x=False (time traces and 2D have different X)
+        # Configure toolbar with all time traces (exclude 2D plot)
         if self.toolbar:
-            self.toolbar.configure_axes(
-                has_y2=True, share_x=False,
-                ax1_label='Time Traces', ax2_label='2D Prad'
-            )
+            figures_config = []
+            for i in range(n_regions):
+                psi_min = boundaries[i]
+                psi_max = boundaries[i + 1]
+                if psi_max == np.inf:
+                    label = f'ψ>{psi_min:.2f}'
+                else:
+                    label = f'ψ={psi_min:.2f}-{psi_max:.2f}'
+                figures_config.append((label, f'ax_trace_{i}'))
+            self.toolbar.figures_config = figures_config
+            self.toolbar.share_x = True
 
         # Plot time traces
         self._plot_time_traces()
