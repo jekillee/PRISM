@@ -5,7 +5,7 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.9] - 2026-01-30
+## [1.1.9] - 2026-02-02
 
 ### Changed
 - **Axis Control - Toolbar Integration**
@@ -13,12 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added X, Y1, Y2 axis control buttons to navigation toolbar
   - Click buttons to open dialog for setting axis min/max limits
   - "Auto" button for automatic axis scaling
-  - Applied to all tabs: Ti/vT, ne/Te, MSE (profile and time trace), Spectrogram, N-Mode Spectrum, TV, IRVB
+  - Toolbar moved to main window bottom bar (same row as "Developed by" label and Manual button)
+  - TV tab uses QuietNavigationToolbar (no Axes button)
+  - IRVB tab: All psi time traces selectable in Axes dialog (dynamic configuration based on psi boundaries), 2D plot excluded
+
+- **UI Consistency Improvements**
+  - Fetch button width unified (width=8) across all tabs
+  - TV tab: "Search" button renamed to "Fetch"
+  - Ti/vT, ne/Te, MSE tabs (profile & timetrace): Added shot up/down buttons (▲/▼) next to shot input
+  - ne/Te profile dropdown: Changed options to 'TS+ECE', 'TS', 'ECE (100Hz)', 'ECE (1kHz)' (removed "only" suffix), reduced width to 10
+  - ne/Te timetrace dropdown: Reduced width to 10
+  - Save buttons: Changed "Save as NPZ" to "Save as .npz" for consistency with ".txt" format
+
+- **Save Data Section**
+  - Ti/vT, ne/Te, MSE timetrace/profile tabs: Added numbered LabelFrame for Save Data section (consistent with standalone tabs)
 
 ### Technical
 - New `AxisControlToolbar` class in `ui/widgets/custom_toolbar.py`
-- Simplified base tab classes by removing axis control panel creation
-- Consistent toolbar-based axis control across all diagnostic tabs
+- New `QuietNavigationToolbar` class for tabs without Axes control (TV)
+- Toolbar management centralized in `main_window.py` with `_update_toolbar()` method
+- Dynamic axes configuration for IRVB with `_configure_irvb_axes()` method
+- Shot adjustment implemented via `_adjust_shot(delta)` method in profile/timetrace tabs
 
 ## [1.1.8] - 2026-01-29
 
