@@ -30,18 +30,27 @@ class TiVTProfileTab(ProfileBaseTab):
 
         frame.grid_columnconfigure(1, weight=1)
 
-        # Row 0: Shot label, entry, dropdown, Fetch, File
+        # Row 0: Shot label, entry with up/down, dropdown, Fetch, File
         ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='e').grid(
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
-        self.shot_entry = ttk.Entry(frame)
-        self.shot_entry.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+
+        shot_frame = ttk.Frame(frame)
+        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+
+        self.shot_entry = ttk.Entry(shot_frame)
+        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
         self.shot_entry.bind('<Return>', lambda e: self.load_shot_data())
+
+        ttk.Button(shot_frame, text='\u25B2', width=2,
+                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Button(shot_frame, text='\u25BC', width=2,
+                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
 
         analysis_types = list(self.diag_config['analysis_types'].keys())
         self.selected_analysis_type = tk.StringVar(value='mod')
 
         analysis_dropdown = ttk.Combobox(frame, textvariable=self.selected_analysis_type,
-                                        values=analysis_types, state="readonly", width=10)
+                                        values=analysis_types, state="readonly", width=5)
         analysis_dropdown.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='w')
 
         btn_frame = ttk.Frame(frame)
@@ -52,6 +61,16 @@ class TiVTProfileTab(ProfileBaseTab):
 
         ttk.Button(btn_frame, text='...', command=self.load_file_data, width=3).pack(
             side=tk.LEFT, padx=(2, 0))
+
+    def _adjust_shot(self, delta):
+        """Adjust shot number by delta"""
+        try:
+            current = int(self.shot_entry.get())
+            new_shot = max(1, current + delta)
+            self.shot_entry.delete(0, tk.END)
+            self.shot_entry.insert(0, str(new_shot))
+        except ValueError:
+            pass
 
     def _get_secondary_loader(self):
         """Get XICS loader for secondary diagnostic overlay"""

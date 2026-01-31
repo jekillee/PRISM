@@ -31,22 +31,41 @@ class NeTeProfileTab(ProfileBaseTab):
 
         frame.grid_columnconfigure(1, weight=1)
 
-        # Row 0: Shot label, entry, diagnostic dropdown, Fetch
+        # Row 0: Shot label, entry with up/down, diagnostic dropdown, Fetch
         ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='e').grid(
             row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
-        self.shot_entry = ttk.Entry(frame)
-        self.shot_entry.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+
+        shot_frame = ttk.Frame(frame)
+        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+
+        self.shot_entry = ttk.Entry(shot_frame)
+        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
         self.shot_entry.bind('<Return>', lambda e: self.load_shot_data())
 
-        diag_options = ['TS+ECE', 'TS only', 'ECE only (100Hz)', 'ECE only (1kHz)']
+        ttk.Button(shot_frame, text='\u25B2', width=2,
+                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
+        ttk.Button(shot_frame, text='\u25BC', width=2,
+                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
+
+        diag_options = ['TS+ECE', 'TS', 'ECE (100Hz)', 'ECE (1kHz)']
         self.selected_diagnostic = tk.StringVar(value='TS+ECE')
 
         diag_dropdown = ttk.Combobox(frame, textvariable=self.selected_diagnostic,
-                                    values=diag_options, state="readonly", width=15)
+                                    values=diag_options, state="readonly", width=10)
         diag_dropdown.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='w')
 
         self.fetch_button = ttk.Button(frame, text='Fetch', command=self.load_shot_data, width=8)
         self.fetch_button.grid(row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky='e')
+
+    def _adjust_shot(self, delta):
+        """Adjust shot number by delta"""
+        try:
+            current = int(self.shot_entry.get())
+            new_shot = max(1, current + delta)
+            self.shot_entry.delete(0, tk.END)
+            self.shot_entry.insert(0, str(new_shot))
+        except ValueError:
+            pass
 
     def _get_ece_loader(self):
         """On-demand initialization of ECE loader"""
@@ -65,7 +84,7 @@ class NeTeProfileTab(ProfileBaseTab):
             self.available_listbox.delete(0, tk.END)
 
             # Parse selection to determine mode and ECE sampling
-            if selection.startswith('ECE only'):
+            if selection.startswith('ECE'):
                 load_thomson = False
                 load_ece = True
                 if '100Hz' in selection:
@@ -74,7 +93,7 @@ class NeTeProfileTab(ProfileBaseTab):
                 else:  # 1kHz
                     sampling_rate = 0.001
                     sampling_key = '1kHz'
-            elif selection == 'TS only':
+            elif selection == 'TS':
                 load_thomson = True
                 load_ece = False
                 sampling_rate = None
@@ -92,7 +111,7 @@ class NeTeProfileTab(ProfileBaseTab):
                 self.data[cache_key] = data
 
                 # Label depends on mode
-                label = 'TS+ECE' if selection == 'TS+ECE' else 'TS'
+                label = selection if selection == 'TS+ECE' else 'TS'
 
                 for tp in data.time:
                     item_str = f'{shot_number:06d}_{tp*1e3:06.0f} ({label})'

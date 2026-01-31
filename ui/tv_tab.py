@@ -148,7 +148,7 @@ class TVTab:
         btn_frame = ttk.Frame(frame)
         btn_frame.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='e')
 
-        ttk.Button(btn_frame, text='Search', command=self._search_available_tvs, width=8).pack(
+        ttk.Button(btn_frame, text='Fetch', command=self._search_available_tvs, width=8).pack(
             side=tk.LEFT)
         ttk.Button(btn_frame, text='...', command=self._load_zip_file, width=3).pack(
             side=tk.LEFT, padx=(2, 0))

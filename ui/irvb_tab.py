@@ -394,7 +394,7 @@ class IRVBTab:
         btn_frame = ttk.Frame(frame)
         btn_frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
 
-        self.save_button = ttk.Button(btn_frame, text='Save as NPZ',
+        self.save_button = ttk.Button(btn_frame, text='Save as .npz',
                                        command=self._save_data, state='disabled')
         self.save_button.pack(side=tk.LEFT, expand=True, fill='x', padx=(0, 2))
 
