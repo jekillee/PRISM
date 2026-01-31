@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
 from ui.timetrace_base_tab import TimeTraceBaseTab
-from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT
+from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT, ENTRY_WIDTH_SHOT
 
 
 class NeTeTimeTraceTab(TimeTraceBaseTab):
@@ -35,7 +35,7 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
         shot_frame = ttk.Frame(frame)
         shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
 
-        self.shot_entry = ttk.Entry(shot_frame)
+        self.shot_entry = ttk.Entry(shot_frame, width=ENTRY_WIDTH_SHOT)
         self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
         self.shot_entry.bind('<Return>', lambda e: self.load_shot_data())
 
