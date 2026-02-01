@@ -19,24 +19,7 @@ class TCILoader(BaseDiagnosticLoader):
         '100Hz': 0.01,
         '1kHz': 0.001
     }
-    
-    def get_ip_fault_time(self, shot_number):
-        """Get IP fault time (last time when Ip > 100 kA)"""
-        try:
-            mds = self._connect_mds(shot_number)
-            ip_time = mds.get('dim_of(\\pcrc03)').data()
-            ip_data = mds.get('\\pcrc03/-1e3').data()  # Convert to kA
-            self._close_mds(mds, shot_number)
-            
-            # Find indices where Ip > 100 kA
-            valid_indices = np.where(ip_data > 100)[0]
-            if len(valid_indices) > 0:
-                return ip_time[valid_indices[-1]]  # Last valid time
-            return None
-        except Exception as e:
-            print(f"TCI: Could not get IP fault time: {str(e)}")
-            return None
-    
+
     def load_data(self, shot_number, analysis_type=None, sampling_rate=None):
         """Load TCI data from MDS+
         

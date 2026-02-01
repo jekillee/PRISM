@@ -44,24 +44,7 @@ class MSELoader(BaseDiagnosticLoader):
         tgamma_mean = np.mean(tgamma, axis=1)
         bad_mask = (tgamma_mean > -1.05) & (tgamma_mean < -0.95)
         return ~bad_mask  # Return good mask
-    
-    def get_ip_fault_time(self, shot_number):
-        """Get IP fault time (last time when Ip > 100 kA)"""
-        try:
-            mds = Connection(self.mds_ip)
-            mds.openTree('kstar', shot_number)
-            ip_time = mds.get('dim_of(\\pcrc03)').data()
-            ip_data = mds.get('\\pcrc03/-1e3').data()
-            mds.closeTree('kstar', shot_number)
-            
-            valid_indices = np.where(ip_data > 100)[0]
-            if len(valid_indices) > 0:
-                return ip_time[valid_indices[-1]]
-            return None
-        except Exception as e:
-            print(f"Warning: Could not get IP fault time: {str(e)}")
-            return None
-    
+
     def load_data(self, shot_number, analysis_type=None):
         """Load MSE data from MDS+"""
         try:

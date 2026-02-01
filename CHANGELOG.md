@@ -35,6 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dynamic axes configuration for IRVB with `_configure_irvb_axes()` method
 - Shot adjustment implemented via `_adjust_shot(delta)` method in profile/timetrace tabs
 
+### Refactoring
+- **Configuration Externalization**
+  - Thomson channel positions moved to `config/thomson_positions.json` (8 shot ranges)
+  - Mirnov coil configurations moved to `config/mirnov_config.json` (yearly signs, angles, channel names)
+  - Shot-to-year mapping now configurable via JSON
+
+- **Code Quality Improvements**
+  - Replaced all bare `except:` with specific exceptions (`TclError`, `Exception`)
+  - Moved `get_ip_fault_time()` to `BaseDiagnosticLoader` base class (removed from thomson, ece, mse, tci loaders)
+  - Added `IP_THRESHOLD_KA` constant for IP fault detection threshold
+
 ## [1.1.8] - 2026-01-29
 
 ### Added

@@ -6,7 +6,7 @@ Custom navigation toolbar for matplotlib with axis control buttons
 
 import os
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, TclError
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
 
 
@@ -28,7 +28,7 @@ class QuietNavigationToolbar(NavigationToolbar2Tk):
         # Hide hidden files in file dialog (Linux Tk)
         try:
             self.master.tk.call('tk_getOpenFile', '-foption')
-        except:
+        except TclError:
             pass
         self.master.tk.call('set', '::tk::dialog::file::showHiddenVar', '0')
 

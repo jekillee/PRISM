@@ -6,7 +6,7 @@ With line drawing feature for paper figures and TV1/TV2 compare mode
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, TclError
 import zipfile
 import io
 import re
@@ -580,7 +580,7 @@ class TVTab:
                 tck, u = splprep([x, y], s=0)
                 u_new = np.linspace(0, 1, 100)
                 x, y = splev(u_new, tck)
-            except:
+            except Exception:
                 pass  # Fall back to non-smooth
 
         color = self.line_color_var.get()
@@ -817,14 +817,14 @@ class TVTab:
         if self.tv1_zip:
             try:
                 self.tv1_zip.close()
-            except:
+            except Exception:
                 pass
             self.tv1_zip = None
         
         if self.tv2_zip:
             try:
                 self.tv2_zip.close()
-            except:
+            except Exception:
                 pass
             self.tv2_zip = None
         
@@ -843,7 +843,7 @@ class TVTab:
         if self.zip_file:
             try:
                 self.zip_file.close()
-            except:
+            except Exception:
                 pass
             self.zip_file = None
         self.cache.clear()
@@ -946,12 +946,12 @@ class TVTab:
         if self.zip_file:
             try:
                 self.zip_file.close()
-            except:
+            except Exception:
                 pass
-        
+
         self.cache.clear()
         self.im = None
-        
+
         self._set_status("Opening ZIP file...")
         print(f"TV: Opening ZIP file {file_path}")
         
@@ -1125,7 +1125,7 @@ class TVTab:
                                     img = Image.open(io.BytesIO(img_data))
                                     img_array = np.array(img)
                                 self.cache[frame_idx] = img_array
-                            except:
+                            except Exception:
                                 pass
     
     def _display_frame(self, frame_idx, update_ui=True):
@@ -1474,7 +1474,7 @@ class TVTab:
         if self.zip_file:
             try:
                 self.zip_file.close()
-            except:
+            except Exception:
                 pass
             self.zip_file = None
         

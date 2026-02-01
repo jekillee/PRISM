@@ -7,7 +7,7 @@ Supports ECE, Mirnov, and BES diagnostics
 
 import os
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, TclError
 import numpy as np
 from scipy.signal import spectrogram
 from matplotlib.figure import Figure
@@ -418,7 +418,7 @@ class SpectrogramTab:
         # Hide hidden files in file dialog (Linux Tk)
         try:
             self.frame.tk.call('tk_getOpenFile', '-foption')
-        except:
+        except TclError:
             pass
         self.frame.tk.call('set', '::tk::dialog::file::showHiddenVar', '0')
 

@@ -5,7 +5,7 @@ Standalone launcher for individual PRISM tabs
 """
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, TclError
 
 from config.app_config import AppConfig, VERSION
 from config.diagnostic_config import DIAGNOSTICS
@@ -340,7 +340,7 @@ class StandaloneLauncher:
         if hasattr(self, 'toolbar') and self.toolbar:
             try:
                 self.toolbar.destroy()
-            except:
+            except TclError:
                 pass
         
         if current_tab and hasattr(current_tab, 'canvas'):

@@ -7,7 +7,7 @@ IRVB (Infra-Red Video Bolometer) tab
 
 import os
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, TclError
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -502,7 +502,7 @@ class IRVBTab:
         # Hide hidden files in file dialog (Linux Tk)
         try:
             self.frame.tk.call('tk_getOpenFile', '-foption')
-        except:
+        except TclError:
             pass
         self.frame.tk.call('set', '::tk::dialog::file::showHiddenVar', '0')
 
@@ -672,7 +672,7 @@ class IRVBTab:
             self.ip_fault_time = mds.get('\\t_ip_fault').data()
             mds.closeTree('kstar', self.shot_number)
             print(f"IRVB: IP fault time = {self.ip_fault_time:.3f} s")
-        except:
+        except Exception:
             self.ip_fault_time = None
             print("IRVB: IP fault time not available")
     

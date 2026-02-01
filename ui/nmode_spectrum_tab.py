@@ -5,8 +5,10 @@ N-Mode Spectrum tab for toroidal mode number analysis
 Based on KSTARtMirnovAnalysis_module.py, integrated into PRISM
 """
 
+import json
+from pathlib import Path
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, TclError
 import numpy as np
 import gc
 import os
@@ -20,6 +22,11 @@ from MDSplus import Connection
 
 from ui.ui_constants import CONTROL_PANEL_WIDTH, PAD_X, PAD_Y
 from config.user_settings import get_tab_settings, set_tab_settings
+
+# Load Mirnov coil configuration
+_MIRNOV_CONFIG_PATH = Path(__file__).parent.parent / 'config' / 'mirnov_config.json'
+with open(_MIRNOV_CONFIG_PATH, 'r') as f:
+    _MIRNOV_CONFIG = json.load(f)
 
 
 # Example script for loading n-mode spectrum NPZ file
@@ -162,120 +169,36 @@ class FFTResult:
 # =============================================================================
 
 def get_shot_year(shot):
-    """Get year from shot number (KSTAR shot ranges)"""
-    if shot > 37741:
-        year = 2025
-    elif shot > 34836:
-        year = 2024
-    elif shot > 32768:
-        year = 2023
-    elif shot > 30445:
-        year = 2022
-    elif shot > 27400:
-        year = 2021
-    elif shot > 24081:
-        year = 2020
-    elif shot > 21758:
-        year = 2019
-    elif shot > 19396:
-        year = 2018
-    elif shot > 17376:
-        year = 2017
-    elif shot > 14407:
-        year = 2016
-    elif shot > 11724:
-        year = 2015
-    elif shot > 9427:
-        year = 2014
-    elif shot > 8354:
-        year = 2013
-    elif shot > 6470:
-        year = 2012
-    elif shot > 4468:
-        year = 2011
-    elif shot > 2342:
-        year = 2010
-    elif shot > 1283:
-        year = 2009
-    else:
-        year = 2008
-    return year
+    """Get year from shot number using config file"""
+    for year_str, (shot_min, shot_max) in _MIRNOV_CONFIG['shot_year_ranges'].items():
+        if year_str.startswith('_'):
+            continue
+        if shot_max is None:
+            shot_max = float('inf')
+        if shot_min <= shot <= shot_max:
+            return int(year_str)
+    return 2025  # Default to latest year
 
 
 def get_mirnov_config(year):
-    """Get Mirnov coil configuration for given year"""
-    if year == 2010:
-        signs = [ 1,  1,  1,  1,  1,  1,
-                  1,  1,  1,  1,  1,  0,
-                  1,  1,  1,  1,  1,  1,
-                  1,  0]
-    elif year == 2011:
-        signs = [ 1,  1,  1,  1,  1,  1,
-                  1,  1,  1,  1,  1, -1,
-                 -1, -1, -1, -1, -1, -1,
-                 -1,  0]
-    elif year == 2012:
-        signs = [ 1,  1,  1,  1,  1,  1,
-                  1,  1,  1,  1,  1, -1,
-                 -1, -1, -1, -1, -1, -1,
-                 -1,  1]
-    elif year == 2013:
-        signs = [ 1,  1,  1,  1,  1,  1,
-                  1,  1,  1,  1,  1, -1,
-                 -1, -1, -1, -1, -1, -1,
-                 -1,  0]
-    elif year == 2014:
-        signs = [ 0,  1,  1,  1,  1,  1,
-                  0,  0,  0,  1,  0, -1,
-                 -1, -1, -1, -1,  0, -1,
-                 -1,  0]
-    elif year == 2015:
-        signs = [ 0,  1,  1,  1,  1,  1,
-                  1,  1,  1, -1,  1, -1,
-                 -1, -1, -1, -1,  0,  0,
-                 -1, -1]
-    elif year == 2016:
-        signs = [ 0,  1,  1,  1,  1,  1,
-                  1,  1,  1,  0,  1, -1,
-                 -1, -1, -1, -1,  0,  1,
-                 -1, -1]
-    elif year == 2017:
-        signs = [ 0,  1,  1,  1,  1,  1,
-                  1,  1,  0, -1,  1, -1,
-                 -1, -1, -1, -1,  0,  0,
-                 -1,  0]
-    elif year == 2023 or year == 2024:
-        signs = [ 0,  1,  1,  1,  1,  1,
-                  1,  1,  0, -1,  0, -1,
-                 -1, -1, -1, -1,  0,  0,
-                 -1,  0]
-    elif year == 2025:
-        signs = [ 0,  1,  1,  1,  1,  1,
-                  1,  1,  0, -1,  0, -1,
-                 -1, -1, -1,  0,  0,  0,
-                 -1,  0]
-    else:
-        # Default for 2018-2022 and other years
-        signs = [ 0,  1,  1,  1,  1,  1,
-                  1,  1,  0, -1,  1, -1,
-                 -1, -1, -1, -1,  0,  0,
-                 -1,  0]
-    
-    names = ['MC1T01', 'MC1T02', 'MC1T03', 'MC1T04', 'MC1T05', 'MC1T06',
-             'MC1T07', 'MC1T08', 'MC1T09', 'MC1T10', 'MC1T11', 'MC1T12',
-             'MC1T13', 'MC1T14', 'MC1T15', 'MC1T16', 'MC1T17', 'MC1T18',
-             'MC1T19', 'MC1T20']
-    
-    angles = [  1.60,  20.35,  35.35,  49.30,  70.50,  91.60,
-              110.35, 132.50, 142.70, 160.50, 181.60, 200.35,
-              215.35, 229.30, 257.30, 271.60, 290.35, 312.50,
-              319.30, 343.90]
-    
+    """Get Mirnov coil configuration for given year from config file"""
+    year_str = str(year)
+    yearly_signs = _MIRNOV_CONFIG['yearly_signs']
+
+    # Get signs for the year, fallback to default
+    signs = yearly_signs.get(year_str, yearly_signs['default'])
+
+    # Get base channel names and angles
+    names = _MIRNOV_CONFIG['channel_names'].copy()
+    angles = _MIRNOV_CONFIG['toroidal_angles']
+
+    # Apply channel name overrides for 2017+
     if year >= 2017:
         names[9] = 'MC1P03'
-    
+
+    # Filter to valid channels only (signs != 0)
     valid_idx = [i for i, s in enumerate(signs) if s != 0]
-    
+
     return {
         'names': [names[i] for i in valid_idx],
         'angles': [angles[i] for i in valid_idx],
@@ -1083,7 +1006,7 @@ class NModeSpectrumTab:
         # Hide hidden files in file dialog (Linux Tk)
         try:
             self.frame.tk.call('tk_getOpenFile', '-foption')
-        except:
+        except TclError:
             pass
         self.frame.tk.call('set', '::tk::dialog::file::showHiddenVar', '0')
 

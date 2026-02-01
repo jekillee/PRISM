@@ -5,7 +5,7 @@ Main application window with on-demand tab initialization
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, TclError
 import subprocess
 import os
 
@@ -172,7 +172,7 @@ class PRISMApp:
         if hasattr(self, 'toolbar') and self.toolbar:
             try:
                 self.toolbar.destroy()
-            except:
+            except TclError:
                 pass
             self.toolbar = None
 

@@ -6,9 +6,13 @@ Abstract base class for diagnostic data loaders
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
+import numpy as np
 from MDSplus import Connection
 
 from core.data_structures import DiagnosticData
+
+# IP fault detection threshold in kA
+IP_THRESHOLD_KA = 100
 
 
 class BaseDiagnosticLoader(ABC):
@@ -74,3 +78,30 @@ class BaseDiagnosticLoader(ABC):
             shot_number: KSTAR shot number
         """
         mds.closeTree(self.diag_config['mds_tree'], shot_number)
+
+    def get_ip_fault_time(self, shot_number: int) -> Optional[float]:
+        """Get IP fault time (last time when Ip > threshold)
+
+        Used to mask invalid data after plasma current drops.
+
+        Args:
+            shot_number: KSTAR shot number
+
+        Returns:
+            IP fault time in seconds, or None if not available
+        """
+        try:
+            mds = Connection(self.mds_ip)
+            mds.openTree('kstar', shot_number)
+            ip_time = mds.get('dim_of(\\pcrc03)').data()
+            ip_data = mds.get('\\pcrc03/-1e3').data()  # Convert to kA
+            mds.closeTree('kstar', shot_number)
+
+            # Find indices where Ip > threshold
+            valid_indices = np.where(ip_data > IP_THRESHOLD_KA)[0]
+            if len(valid_indices) > 0:
+                return ip_time[valid_indices[-1]]  # Last valid time
+            return None
+        except Exception as e:
+            print(f"Warning: Could not get IP fault time: {str(e)}")
+            return None

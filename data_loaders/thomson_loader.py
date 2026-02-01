@@ -4,32 +4,22 @@
 Thomson Scattering data loader implementation
 """
 
+import json
+from pathlib import Path
 import numpy as np
 from MDSplus import MdsException
 from data_loaders.base_loader import BaseDiagnosticLoader
 from core.data_structures import DiagnosticData
 
+# Load Thomson positions configuration
+_CONFIG_PATH = Path(__file__).parent.parent / 'config' / 'thomson_positions.json'
+with open(_CONFIG_PATH, 'r') as f:
+    _THOMSON_CONFIG = json.load(f)
+
 
 class ThomsonLoader(BaseDiagnosticLoader):
     """Loader for Thomson Scattering diagnostic data"""
-    
-    def get_ip_fault_time(self, shot_number):
-        """Get IP fault time (last time when Ip > 100 kA)"""
-        try:
-            mds = self._connect_mds(shot_number)
-            ip_time = mds.get('dim_of(\\pcrc03)').data()
-            ip_data = mds.get('\\pcrc03/-1e3').data()  # Convert to kA
-            self._close_mds(mds, shot_number)
-            
-            # Find indices where Ip > 100 kA
-            valid_indices = np.where(ip_data > 100)[0]
-            if len(valid_indices) > 0:
-                return ip_time[valid_indices[-1]]  # Last valid time
-            return None
-        except Exception as e:
-            print(f"Warning: Could not get IP fault time: {str(e)}")
-            return None
-    
+
     def load_data(self, shot_number, analysis_type=None):
         """Load Thomson scattering data from MDS+
         
@@ -211,30 +201,14 @@ class ThomsonLoader(BaseDiagnosticLoader):
         return data
     
     def _get_hardcoded_positions(self, shot_num):
-        """Get hardcoded channel positions based on shot number"""
-        if shot_num < 21779:
-            core = [1806, 1826, 1848, 1871, 1894, 1917, 1942, 1966, 1991, 2016, 2041, 2068, 2093, 2119]
-            edge = [2124, 2137, 2143, 2149, 2156, 2162, 2177, 2191, 2202, 2216, 2229, 2242, 2257, 2271, 2285, 2297, 2311]
-        elif 21779 <= shot_num <= 24081:
-            core = [1806, 1826, 1848, 1871, 1894, 1917, 1942, 1966, 1991, 2016, 2041, 2068, 2093, 2119]
-            edge = [2124, 2137, 2143, 2149, 2156, 2162, 2177, 2191, 2202, 2216, 2229, 2242, 2257, 2271, 2285, 2297, 2311]
-        elif 24082 <= shot_num <= 27400:
-            core = [1802, 1823, 1845, 1866, 1889, 1912, 1937, 1961, 1986, 2011, 2036, 2061, 2086, 2114]
-            edge = [2114, 2126, 2138, 2150, 2164, 2177, 2189, 2196, 2202, 2208, 2214, 2221, 2235, 2248, 2261, 2275, 2289]
-        elif 27401 <= shot_num <= 30445:
-            core = [1797, 1818, 1841, 1862, 1884, 1908, 1931, 1954, 1979, 2004, 2030, 2056, 2082, 2108]
-            edge = [2108, 2120, 2133, 2146, 2153, 2171, 2183, 2190, 2197, 2203, 2209, 2216, 2229, 2243, 2254, 2269, 2282]
-        elif 30446 <= shot_num <= 32768:
-            core = [1800, 1820, 1842, 1864, 1887, 1909, 1933, 1956, 1983, 2008, 2033, 2058, 2083, 2109]
-            edge = [2111, 2124, 2136, 2149, 2161, 2174, 2187, 2194, 2200, 2207, 2212, 2219, 2232, 2245, 2259, 2272, 2285]
-        elif 32769 <= shot_num <= 34836:
-            core = [1800, 1820, 1842, 1864, 1887, 1911, 1933, 1958, 1981, 2006, 2030, 2058, 2083, 2110]
-            edge = [2111, 2124, 2137, 2147, 2162, 2175, 2187, 2195, 2200, 2205, 2210, 2217, 2233, 2245, 2259, 2271, 2290]
-        elif 34837 <= shot_num <= 37741:
-            core = [1795, 1817, 1839, 1861, 1884, 1908, 1930, 1954, 1978, 2003, 2029, 2054, 2081, 2108]
-            edge = [2108, 2116, 2125, 2136, 2145, 2155, 2163, 2171, 2180, 2191, 2200, 2213, 2222, 2232, 2253, 2274, 2296]
-        else:
-            core = [1785, 1807, 1828, 1851, 1873, 1896, 1920, 1944, 1968, 1993, 2018, 2043, 2070, 2095]
-            edge = [2096, 2105, 2113, 2123, 2131, 2141, 2149, 2158, 2168, 2178, 2197, 2217, 2237, 2258, 2280, None, None]
-        
-        return core, edge
+        """Get channel positions from config file based on shot number"""
+        for entry in _THOMSON_CONFIG['positions']:
+            shot_min, shot_max = entry['shot_range']
+            if shot_max is None:
+                shot_max = float('inf')
+            if shot_min <= shot_num <= shot_max:
+                return entry['core'], entry['edge']
+
+        # Fallback to last entry if no match (shouldn't happen)
+        last_entry = _THOMSON_CONFIG['positions'][-1]
+        return last_entry['core'], last_entry['edge']
