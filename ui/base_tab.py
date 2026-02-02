@@ -163,7 +163,7 @@ class BaseTab(ABC):
         for i in range(4):
             frame.grid_columnconfigure(i, weight=1)
         
-        ttk.Label(frame, text="EFIT Tree:").grid(row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky="e")
+        ttk.Label(frame, text="EFIT Tree").grid(row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky="w")
         
         efit_display_values = list(self.app_config.EFIT_TREES.keys())
         self.selected_efit_tree_display = tk.StringVar(value=efit_display_values[0])

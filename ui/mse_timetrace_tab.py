@@ -26,8 +26,8 @@ class MSETimeTraceTab(TimeTraceBaseTab):
         frame.grid_columnconfigure(1, weight=1)
 
         # Row 0: Shot label, entry with up/down, Fetch
-        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='e').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='e')
+        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='w').grid(
+            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
 
         shot_frame = ttk.Frame(frame)
         shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
