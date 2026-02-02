@@ -5,7 +5,7 @@ TCI (Two-Color Interferometer) data loader for line-averaged density
 """
 
 import numpy as np
-from data_loaders.base_loader import BaseDiagnosticLoader
+from data_loaders.base_loader import BaseDiagnosticLoader, IP_FAULT_OFFSET
 from core.data_structures import DiagnosticData
 
 
@@ -72,13 +72,13 @@ class TCILoader(BaseDiagnosticLoader):
             # Use channel numbers as radius placeholder
             radius = np.array(channels, dtype=float)
             
-            # Apply IP fault time masking
+            # Apply IP fault time masking using centralized method
             ip_fault_time = self.get_ip_fault_time(shot_number)
             if ip_fault_time is not None:
-                valid_time_mask = (time_data > 0) & (time_data <= ip_fault_time + 0.5)
+                valid_time_mask = self.get_valid_time_mask(time_data, ip_fault_time)
                 time_data = time_data[valid_time_mask]
                 ne_data = ne_data[:, valid_time_mask]
-                print(f"  Data masked to IP fault time + 0.5s: {ip_fault_time + 0.5:.3f} s")
+                print(f"  Data masked to IP fault time + {IP_FAULT_OFFSET}s: {ip_fault_time + IP_FAULT_OFFSET:.3f} s")
             
             measurements = {
                 'ne': {

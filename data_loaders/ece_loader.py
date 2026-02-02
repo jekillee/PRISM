@@ -6,7 +6,7 @@ ECE (Electron Cyclotron Emission) data loader
 
 import numpy as np
 from MDSplus import Connection, MdsException
-from data_loaders.base_loader import BaseDiagnosticLoader
+from data_loaders.base_loader import BaseDiagnosticLoader, IP_FAULT_OFFSET
 from core.data_structures import DiagnosticData
 
 
@@ -244,13 +244,13 @@ class ECELoader(BaseDiagnosticLoader):
             ip_fault_time = self.get_ip_fault_time(shot_number)
             if ip_fault_time is None:
                 raise RuntimeError(f"Shot {shot_number}: Ip did not exceed 100 kA (failed shot)")
-            
-            # Mask time range: 0 < time <= ip_fault_time
-            valid_time_mask = (time > 0) & (time <= ip_fault_time)
+
+            # Mask time range using centralized method
+            valid_time_mask = self.get_valid_time_mask(time, ip_fault_time)
             time = time[valid_time_mask]
             Te_data = Te_data[:, valid_time_mask]
-            
-            print(f"  Data masked to IP fault time: {ip_fault_time:.3f} s")
+
+            print(f"  Data masked to IP fault time + {IP_FAULT_OFFSET}s: {ip_fault_time + IP_FAULT_OFFSET:.3f} s")
             
             # Apply unit conversion (eV to keV)
             np.seterr(invalid='ignore')

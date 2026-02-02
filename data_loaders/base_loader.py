@@ -14,6 +14,9 @@ from core.data_structures import DiagnosticData
 # IP fault detection threshold in kA
 IP_THRESHOLD_KA = 100
 
+# Time offset after IP fault to include in valid data (seconds)
+IP_FAULT_OFFSET = 0.5
+
 
 class BaseDiagnosticLoader(ABC):
     """Abstract base class for all diagnostic loaders
@@ -105,3 +108,24 @@ class BaseDiagnosticLoader(ABC):
         except Exception as e:
             print(f"Warning: Could not get IP fault time: {str(e)}")
             return None
+
+    def get_valid_time_mask(
+        self,
+        time_array: np.ndarray,
+        ip_fault_time: Optional[float]
+    ) -> np.ndarray:
+        """Get boolean mask for valid time points
+
+        Returns mask where time > 0 and time <= ip_fault_time + IP_FAULT_OFFSET.
+        This provides consistent IP fault masking across all diagnostic loaders.
+
+        Args:
+            time_array: Array of time values in seconds
+            ip_fault_time: IP fault time from get_ip_fault_time(), or None
+
+        Returns:
+            Boolean numpy array (True = valid time point)
+        """
+        if ip_fault_time is None:
+            return time_array > 0
+        return (time_array > 0) & (time_array <= ip_fault_time + IP_FAULT_OFFSET)
