@@ -45,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Replaced all bare `except:` with specific exceptions (`TclError`, `Exception`)
   - Moved `get_ip_fault_time()` to `BaseDiagnosticLoader` base class (removed from thomson, ece, mse, tci loaders)
   - Added `IP_THRESHOLD_KA` constant for IP fault detection threshold
+  - Fixed division by zero risk in `EFITData2D.get_normalized_psi()` with denominator check
+  - Fixed IndexError risk in `CESFileParser` with array bounds validation
+  - Added None checks for time arrays in Thomson and TCI loaders
+  - Centralized hardcoded values: `CONTACT_EMAIL`, `AUTHOR_NAME`, `IRVB_SERVER` in `app_config.py`
+  - Fixed mixed indentation (tabs → spaces) in `main_window.py`
 
 - **IP Fault Masking Unification**
   - Added `IP_FAULT_OFFSET` constant (0.5s) to `base_loader.py`
