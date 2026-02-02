@@ -6,6 +6,7 @@ File parser for CES diagnostic result files
 
 import numpy as np
 from core.data_structures import DiagnosticData
+from config.app_config import CONTACT_EMAIL, AUTHOR_NAME
 
 
 class CESFileParser:
@@ -18,7 +19,7 @@ class CESFileParser:
             with open(filepath, 'r') as f:
                 lines = f.readlines()
         except Exception as e:
-            raise ValueError("Cannot read file. Invalid file format.\nPlease contact Jekil Lee (jklee@kfe.re.kr)")
+            raise ValueError(f"Cannot read file. Invalid file format.\nPlease contact {AUTHOR_NAME} ({CONTACT_EMAIL})")
         
         # Parse header
         metadata = {}
@@ -49,7 +50,7 @@ class CESFileParser:
                 break
         
         if data_start_idx is None or 'name' not in metadata or 'shot' not in metadata:
-            raise ValueError("Invalid file format.\nPlease contact Jekil Lee (jklee@kfe.re.kr)")
+            raise ValueError(f"Invalid file format.\nPlease contact {AUTHOR_NAME} ({CONTACT_EMAIL})")
         
         # Parse data section
         data_lines = []
@@ -91,8 +92,12 @@ class CESFileParser:
             t = row[0]
             r = row[1]
             
-            t_idx = np.where(unique_times == t)[0][0]
-            r_idx = np.where(unique_radii == r)[0][0]
+            t_matches = np.where(unique_times == t)[0]
+            r_matches = np.where(unique_radii == r)[0]
+            if len(t_matches) == 0 or len(r_matches) == 0:
+                continue  # Skip invalid data points
+            t_idx = t_matches[0]
+            r_idx = r_matches[0]
             
             temperature[r_idx, t_idx] = row[2]
             temp_error[r_idx, t_idx] = row[3]

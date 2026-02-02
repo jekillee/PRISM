@@ -9,7 +9,7 @@ from tkinter import ttk, messagebox, TclError
 import subprocess
 import os
 
-from config.app_config import AppConfig, VERSION
+from config.app_config import AppConfig, VERSION, CONTACT_EMAIL, AUTHOR_NAME
 from config.diagnostic_config import get_enabled_diagnostics
 from config.user_settings import (
     load_settings, save_settings, show_update_popup
@@ -97,12 +97,12 @@ class PRISMApp:
         self.tab_frames.append(placeholder)
         self.notebook.add(placeholder, text='Spectrogram')
 
-	# n-Mode Spectrum tab config
+        # n-Mode Spectrum tab config
         self.tab_configs.append({
-	    'diagnostic': None,
-	    'tab_type': 'nmode',
-	    'tab_name': TabFactory.get_tab_name(None, 'nmode')
-	})
+            'diagnostic': None,
+            'tab_type': 'nmode',
+            'tab_name': TabFactory.get_tab_name(None, 'nmode')
+        })
         placeholder = ttk.Frame(self.notebook)
         self.tab_frames.append(placeholder)
         self.notebook.add(placeholder, text='n-Mode Spectrum')
@@ -265,7 +265,7 @@ class PRISMApp:
 
         developer_label = tk.Label(
             self.bottom_frame,
-            text="Developed by Jekil Lee (jklee@kfe.re.kr)"
+            text=f"Developed by {AUTHOR_NAME} ({CONTACT_EMAIL})"
         )
         developer_label.pack(side=tk.RIGHT, padx=5)
     
@@ -273,8 +273,8 @@ class PRISMApp:
         """Open user manual PDF"""
         try:
             if not os.path.exists(self.config.MANUAL_PATH):
-                messagebox.showinfo("Manual Not Found", 
-                                  "User manual not found.\n\nPlease contact Jekil Lee (jklee@kfe.re.kr) for the manual.")
+                messagebox.showinfo("Manual Not Found",
+                                  f"User manual not found.\n\nPlease contact {AUTHOR_NAME} ({CONTACT_EMAIL}) for the manual.")
                 return
             
             subprocess.run(["xdg-open", self.config.MANUAL_PATH], check=True)
@@ -292,8 +292,8 @@ class PRISMApp:
         print("|" + " " * 62 + "|")
         print("+" + "=" * 62 + "+")
         print("|" + " " * 62 + "|")
-        print("|" + "Developed by Jekil Lee".center(62) + "|")
-        print("|" + "jklee@kfe.re.kr".center(62) + "|")
+        print("|" + f"Developed by {AUTHOR_NAME}".center(62) + "|")
+        print("|" + CONTACT_EMAIL.center(62) + "|")
         print("|" + " " * 62 + "|")
         print("+" + "=" * 62 + "+")
         print()

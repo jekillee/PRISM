@@ -11,7 +11,7 @@ import json
 import tkinter as tk
 from tkinter import messagebox
 
-from config.app_config import VERSION
+from config.app_config import VERSION, CONTACT_EMAIL
 
 
 # Settings file path
@@ -257,7 +257,7 @@ def show_update_popup(parent):
     ok_button.pack(side=tk.RIGHT)
     
     # Contact info (center)
-    contact_label = tk.Label(bottom_frame, text="Bug reports: jklee@kfe.re.kr", font=font_normal)
+    contact_label = tk.Label(bottom_frame, text=f"Bug reports: {CONTACT_EMAIL}", font=font_normal)
     contact_label.pack(side=tk.RIGHT, padx=20)
     
     # Changelog text with scrollbar

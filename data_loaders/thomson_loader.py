@@ -127,7 +127,7 @@ class ThomsonLoader(BaseDiagnosticLoader):
             
             self._close_mds(mds, shot_number)
             
-            if not te_data:
+            if not te_data or times is None:
                 raise RuntimeError("No valid Thomson data found")
             
             # Sort by radial position

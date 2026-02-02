@@ -7,7 +7,7 @@ Standalone launcher for individual PRISM tabs
 import tkinter as tk
 from tkinter import ttk, TclError
 
-from config.app_config import AppConfig, VERSION
+from config.app_config import AppConfig, VERSION, CONTACT_EMAIL, AUTHOR_NAME
 from config.diagnostic_config import DIAGNOSTICS
 from config.user_settings import (
     load_settings, save_settings, show_update_popup
@@ -360,7 +360,7 @@ class StandaloneLauncher:
         
         developer_label = tk.Label(
             self.bottom_frame,
-            text="Developed by Jekil Lee (jklee@kfe.re.kr)"
+            text=f"Developed by {AUTHOR_NAME} ({CONTACT_EMAIL})"
         )
         developer_label.pack(side=tk.RIGHT, padx=5)
     
@@ -388,8 +388,8 @@ class StandaloneLauncher:
         print("|" + " " * 50 + "|")
         print("+" + "=" * 50 + "+")
         print("|" + " " * 50 + "|")
-        print("|" + "Developed by Jekil Lee".center(50) + "|")
-        print("|" + "jklee@kfe.re.kr".center(50) + "|")
+        print("|" + f"Developed by {AUTHOR_NAME}".center(50) + "|")
+        print("|" + CONTACT_EMAIL.center(50) + "|")
         print("|" + " " * 50 + "|")
         print("+" + "=" * 50 + "+")
         print()

@@ -170,7 +170,10 @@ class EFITData2D:
         psirz = self.psirz[time_idx]
         simag = self.simag[time_idx]
         sibry = self.sibry[time_idx]
-        return (psirz - simag) / (sibry - simag)
+        denominator = sibry - simag
+        if denominator == 0:
+            raise ValueError(f"Cannot normalize psi: sibry ({sibry}) equals simag ({simag})")
+        return (psirz - simag) / denominator
 
     def get_boundary(
         self, time_idx: int

@@ -23,8 +23,7 @@ class IRVBData:
 
 class IRVBLoader:
     """Loader for IRVB radiation data"""
-    
-    IRVB_SERVER = 'http://172.17.112.125/data_ana'
+
     LOCAL_CACHE_DIR = '/tmp/prism_irvb_cache'
     
     # IRVB grid parameters (fixed)
@@ -52,7 +51,7 @@ class IRVBLoader:
         """Load IRVB data from server or cache"""
         mat_file = f'shot-{shot_number:06d}_data.mat'
         local_path = os.path.join(self.LOCAL_CACHE_DIR, mat_file)
-        url = f'{self.IRVB_SERVER}/{mat_file}'
+        url = f'{self.config.IRVB_SERVER}/{mat_file}'
         
         # Download if not cached
         if not os.path.isfile(local_path):

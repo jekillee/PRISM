@@ -53,9 +53,9 @@ class TCILoader(BaseDiagnosticLoader):
                 except Exception as e:
                     print(f"TCI channel {ch} not available: {str(e)}")
             
-            if not channels:
+            if not channels or time_data is None:
                 raise ValueError("No TCI channels available")
-            
+
             # Create data array (n_channels x n_time)
             n_time = len(time_data)
             ne_data = np.full((len(channels), n_time), np.nan)
