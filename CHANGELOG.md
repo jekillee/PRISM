@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ne/Te profile dropdown: Changed options to 'TS+ECE', 'TS', 'ECE (100Hz)', 'ECE (1kHz)' (removed "only" suffix), reduced width to 10
   - ne/Te timetrace dropdown: Reduced width to 10
   - Save buttons: Changed "Save as NPZ" to "Save as .npz" for consistency with ".txt" format
+  - IRVB tab: Changed limiter line color from black to white for better visibility
 
 - **Save Data Section**
   - Ti/vT, ne/Te, MSE timetrace/profile tabs: Added numbered LabelFrame for Save Data section (consistent with standalone tabs)

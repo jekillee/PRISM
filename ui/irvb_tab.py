@@ -1044,8 +1044,8 @@ class IRVBTab:
             self.limiter_line[0].remove()
         if self.efit_2d.limiter_r is not None:
             self.limiter_line = self.ax_2d.plot(
-                self.efit_2d.limiter_r, self.efit_2d.limiter_z, 
-                'k-', linewidth=1.5
+                self.efit_2d.limiter_r, self.efit_2d.limiter_z,
+                'w-', linewidth=1.5
             )
         
         # Update magnetic axis marker
