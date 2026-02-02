@@ -46,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Moved `get_ip_fault_time()` to `BaseDiagnosticLoader` base class (removed from thomson, ece, mse, tci loaders)
   - Added `IP_THRESHOLD_KA` constant for IP fault detection threshold
 
+- **IP Fault Masking Unification**
+  - Added `IP_FAULT_OFFSET` constant (0.5s) to `base_loader.py`
+  - Added `get_valid_time_mask()` method to `BaseDiagnosticLoader` for centralized masking
+  - All loaders (Thomson, ECE, TCI) now use unified masking logic
+  - Fixed ECE loader which was missing the +0.5s offset (now consistent with Thomson/TCI)
+
 ## [1.1.8] - 2026-01-29
 
 ### Added
