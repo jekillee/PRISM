@@ -14,6 +14,8 @@ from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT, ENTRY_WIDTH_SHOT
 class NeTeTimeTraceTab(TimeTraceBaseTab):
     """ne, Te Time Trace tab with unified Thomson/ECE/TCI loading"""
 
+    TAB_NAME = "ne/Te"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ece_loader = None
@@ -135,9 +137,9 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
                             'ch_label': ch_label
                         })
 
-                    print(f"Thomson data loaded: {len(ts_data.radius)} channels")
+                    print(f"[Thomson] Data loaded: {len(ts_data.radius)} channels")
                 except Exception as e:
-                    print(f"Thomson not available: {str(e)}")
+                    print(f"[Thomson] Not available: {str(e)}")
 
             if load_ece:
                 # Load ECE data
@@ -165,10 +167,10 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
 
                     n_valid = np.sum(ece_data.measurements['Te']['valid_mask'])
                     n_overlap = np.sum(ece_data.measurements['Te']['overlap_mask'])
-                    print(f"ECE data loaded: {len(ece_data.radius)} channels @ {sampling_key}")
-                    print(f"  Valid: {n_valid}, Overlap: {n_overlap}")
+                    print(f"[ECE] Data loaded: {len(ece_data.radius)} channels @ {sampling_key}")
+                    print(f"[ECE]   Valid: {n_valid}, Overlap: {n_overlap}")
                 except Exception as e:
-                    print(f"ECE not available: {str(e)}")
+                    print(f"[ECE] Not available: {str(e)}")
 
             if load_tci:
                 # Load TCI data with resampling
@@ -190,9 +192,9 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
                             'sampling_key': sampling_key
                         })
 
-                    print(f"TCI data loaded: {len(channels)} channels @ {sampling_key}")
+                    print(f"[TCI] Data loaded: {len(channels)} channels @ {sampling_key}")
                 except Exception as e:
-                    print(f"TCI not available: {str(e)}")
+                    print(f"[TCI] Not available: {str(e)}")
 
             if not all_channels:
                 messagebox.showerror("Error", "No data available for this shot")
@@ -206,7 +208,7 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
             for channel in all_channels:
                 self.available_listbox.insert(tk.END, channel['label'])
 
-            print(f"Total channels loaded: {len(all_channels)}")
+            print(f"[ne/Te] Total channels loaded: {len(all_channels)}")
 
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid shot number")
@@ -386,7 +388,7 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
                                      linewidth=1.5, label=label, zorder=5)
 
             except Exception as e:
-                print(f"Error plotting {entry}: {str(e)}")
+                print(f"[ne/Te] Error plotting {entry}: {str(e)}")
 
         # Set limits
         if te_max > 0:

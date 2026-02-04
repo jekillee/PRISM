@@ -117,9 +117,9 @@ class MSELoader(BaseDiagnosticLoader):
             nb_source = self._determine_nb_source(aa1[0])
             drr = np.array(self.DRR_TABLE[nb_source]) / 1000.0
             
-            print(f"MSE data loaded: NB source = {nb_source}")
-            print(f"  Raw: {tgamma.shape}, time = {time_raw[0]:.3f} ~ {time_raw[-1]:.3f} s")
-            print(f"  Profile: {q_data.shape}, time = {time_prof[0]:.3f} ~ {time_prof[-1]:.3f} s")
+            print(f"[MSE] Data loaded: NB source = {nb_source}")
+            print(f"[MSE]   Raw: {tgamma.shape}, time = {time_raw[0]:.3f} ~ {time_raw[-1]:.3f} s")
+            print(f"[MSE]   Profile: {q_data.shape}, time = {time_prof[0]:.3f} ~ {time_prof[-1]:.3f} s")
             
             # =================================================================
             # Detect bad channels
@@ -127,7 +127,7 @@ class MSELoader(BaseDiagnosticLoader):
             good_mask = self._detect_bad_channels(tgamma)
             bad_channels = np.where(~good_mask)[0] + 1
             if len(bad_channels) > 0:
-                print(f"  Bad channels: {list(bad_channels)}")
+                print(f"[MSE]   Bad channels: {list(bad_channels)}")
             
             # =================================================================
             # Get IP fault time and mask data
@@ -155,7 +155,7 @@ class MSELoader(BaseDiagnosticLoader):
             magx = magx[valid_prof_mask]
             magx_err = magx_err[valid_prof_mask]
             
-            print(f"  Data masked to IP fault time: {ip_fault_time:.3f} s")
+            print(f"[MSE]   Data masked to IP fault time: {ip_fault_time:.3f} s")
             
             # Clean negative error values
             np.seterr(invalid='ignore')

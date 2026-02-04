@@ -6,9 +6,9 @@ IRVB (Infra-Red Video Bolometer) tab
 """
 
 import os
+import time as tclock
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, TclError
-import time
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
@@ -224,7 +224,8 @@ class IRVBTab:
         self.fetch_button.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='e')
         
         # Status label (left-aligned)
-        self.status_label = ttk.Label(frame, text='', foreground='gray', anchor='w')
+        self.status_label = tk.Label(frame, text='', fg='gray', anchor='w',
+                                      font=('TkDefaultFont', 9, 'bold'))
         self.status_label.grid(row=1, column=0, columnspan=3, padx=PAD_X, pady=(0, 5), sticky='w')
     
     def _adjust_shot(self, delta):
@@ -584,7 +585,7 @@ class IRVBTab:
                      efit_limiter_z=self.efit_2d.limiter_z
             )
             
-            print(f"IRVB data saved to: {filepath}")
+            print(f"[IRVB] Data saved to: {filepath}")
             messagebox.showinfo("Saved", f"Data saved to:\n{filepath}")
             
         except Exception as e:
@@ -617,10 +618,21 @@ class IRVBTab:
             messagebox.showerror("Error", "Invalid psi boundary format. Use comma-separated numbers.")
             return None
     
-    def _update_status(self, message, success=True):
-        """Update status label with message"""
-        color = 'green' if success else 'red'
-        self.status_label.config(text=message, foreground=color)
+    def _update_status(self, message, color=None, success=None):
+        """Update status label with message and color
+
+        Args:
+            message: Status text
+            color: Direct color ('blue', 'green', 'red', 'gray')
+            success: If provided, True='green', False='red' (legacy support)
+        """
+        if color is None:
+            if success is not None:
+                color = 'green' if success else 'red'
+            else:
+                color = 'blue'
+        self.status_label.config(text=message, fg=color)
+        self.frame.update()
     
     def _load_data(self):
         """Load IRVB data from server"""
@@ -656,7 +668,7 @@ class IRVBTab:
             self.time_entry.insert(0, f'{self.irvb_data.time[0]:.3f}')
             
             self._update_status(f'Shot #{shot_number}: {self.total_frames} frames loaded', success=True)
-            print(f"IRVB: Data loaded for shot #{shot_number}")
+            print(f"[IRVB] Data loaded for shot #{shot_number}")
             
         except Exception as e:
             self._update_status(f'Failed: {str(e)[:30]}...', success=False)
@@ -671,10 +683,10 @@ class IRVBTab:
             mds.openTree('kstar', self.shot_number)
             self.ip_fault_time = mds.get('\\t_ip_fault').data()
             mds.closeTree('kstar', self.shot_number)
-            print(f"IRVB: IP fault time = {self.ip_fault_time:.3f} s")
+            print(f"[IRVB] IP fault time = {self.ip_fault_time:.3f} s")
         except Exception:
             self.ip_fault_time = None
-            print("IRVB: IP fault time not available")
+            print("[IRVB] IP fault time not available")
     
     def _slice_by_ip_fault(self):
         """Slice IRVB data by IP fault time"""
@@ -688,7 +700,7 @@ class IRVBTab:
         self.irvb_data.time = self.irvb_data.time[valid_mask]
         self.irvb_data.recon = self.irvb_data.recon[valid_mask]
         self.irvb_data.ptot = self.irvb_data.ptot[valid_mask]
-        print(f"IRVB: Data sliced to {len(self.irvb_data.time)} frames (before IP fault)")
+        print(f"[IRVB] Data sliced to {len(self.irvb_data.time)} frames (before IP fault)")
     
     def _slice_by_efit_time(self):
         """Slice IRVB data by valid time range (0 to EFIT last time)"""
@@ -706,7 +718,7 @@ class IRVBTab:
         self.irvb_data.ptot = self.irvb_data.ptot[valid_mask]
 
         if len(self.irvb_data.time) < n_before:
-            print(f"IRVB: Data sliced to {len(self.irvb_data.time)} frames (0 to EFIT end)")
+            print(f"[IRVB] Data sliced to {len(self.irvb_data.time)} frames (0 to EFIT end)")
     
     def _load_efit_data(self):
         """Load EFIT 2D equilibrium data using efit_loader"""
@@ -717,9 +729,9 @@ class IRVBTab:
         efit_tree = self.app_config.EFIT_TREES[efit_display]
         
         try:
-            print(f"IRVB: Loading 2D EFIT data from {efit_tree}...")
+            print(f"[IRVB] Loading 2D EFIT data from {efit_tree}...")
             self.efit_2d = self.efit_loader.load_efit_2d(self.shot_number, efit_tree)
-            print(f"IRVB: EFIT data loaded ({len(self.efit_2d.time)} timepoints)")
+            print(f"[IRVB] EFIT data loaded ({len(self.efit_2d.time)} timepoints)")
             return True
             
         except Exception as e:
@@ -757,7 +769,7 @@ class IRVBTab:
         dy = y_grid[1] - y_grid[0]
         vol_factor = 2 * np.pi * X * dx * dy
         
-        print("IRVB: Computing regional Prad...")
+        print("[IRVB] Computing regional Prad...")
         
         efit_idx_prev = -1
         psi_on_grid = None
@@ -790,38 +802,51 @@ class IRVBTab:
                 mask = (psi_on_grid >= psi_min) & (psi_on_grid < psi_max)
                 self.region_prad[r, i] = np.sum(recon * mask * vol_factor)
         
-        print("IRVB: Regional Prad computation complete")
+        print("[IRVB] Regional Prad computation complete")
     
     def _plot_data(self):
         """Main plot function"""
+        t0 = tclock.time()
+
         if self.irvb_data is None:
             messagebox.showwarning("Warning", "Please load IRVB data first")
             return
-        
+
         # Parse boundaries
+        self._update_status("Parsing psi boundaries...", color='blue')
         self.psi_boundaries = self._parse_psi_boundaries()
         if self.psi_boundaries is None:
+            self._update_status("Invalid psi boundaries", color='red')
             return
-        
+
         # Load EFIT
+        self._update_status("Loading EFIT data...", color='blue')
         if not self._load_efit_data():
+            self._update_status("Failed to load EFIT", color='red')
             return
-        
+
         # Slice data by EFIT time range and update frame controls
+        self._update_status("Slicing data...", color='blue')
         self._slice_by_efit_time()
         self._update_frame_controls()
-        
+
         # Compute regional Prad
+        self._update_status("Computing regional Prad...", color='blue')
         self._compute_regional_prad()
-        
+
         # Setup figure layout
+        self._update_status("Plotting...", color='blue')
         self._setup_figure()
-        
+
         # Initial plot
         self._update_plot(self.current_frame)
-        
+
         # Enable save button
         self.save_button.config(state='normal')
+
+        elapsed = tclock.time() - t0
+        self._update_status(f"Done ({elapsed:.1f}s)", color='green')
+        print(f"[IRVB] Plot completed in {elapsed:.2f}s")
     
     def _update_frame_controls(self):
         """Update frame controls after data slicing"""
@@ -1188,7 +1213,7 @@ class IRVBTab:
         """Start playback"""
         self.is_playing = True
         self.play_btn.config(text='Pause')
-        self._last_frame_time = time.time()
+        self._last_frame_time = tclock.time()
         self._fps_history = []
         self._play_next_frame()
     
@@ -1227,7 +1252,7 @@ class IRVBTab:
                 return
         
         # Measure actual frame time
-        now = time.time()
+        now = tclock.time()
         actual_frame_time = now - self._last_frame_time
         self._last_frame_time = now
         

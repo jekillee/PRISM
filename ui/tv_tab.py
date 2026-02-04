@@ -171,7 +171,8 @@ class TVTab:
         self.file_label.grid(row=2, column=0, columnspan=3, padx=PAD_X, pady=2, sticky='w')
         
         # Loading status label
-        self.status_label = ttk.Label(frame, text="", foreground='blue')
+        self.status_label = tk.Label(frame, text="", fg='blue',
+                                      font=('TkDefaultFont', 9, 'bold'))
         self.status_label.grid(row=3, column=0, columnspan=3, padx=PAD_X, pady=2, sticky='w')
     
     def _search_available_tvs(self):
@@ -212,7 +213,7 @@ class TVTab:
             self.tv_selection_var.set(dropdown_values[0])
         
         self.file_label.config(text=f"Found: {', '.join(available_tvs)} for #{shot_number}")
-        print(f"TV: Found {available_tvs} for shot #{shot_number}")
+        print(f"[TV] Found {available_tvs} for shot #{shot_number}")
 
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
@@ -682,7 +683,7 @@ class TVTab:
         base_path = '/Diag_TV'
         
         if not os.path.exists(base_path):
-            print(f"TV: Base path {base_path} not found")
+            print(f"[TV] Base path {base_path} not found")
             return None
         
         try:
@@ -694,7 +695,7 @@ class TVTab:
                 return campaign_dirs[-1]
             return None
         except Exception as e:
-            print(f"TV: Error listing campaigns: {str(e)}")
+            print(f"[TV] Error listing campaigns: {str(e)}")
             return None
     
     def _find_available_tvs(self, shot_number):
@@ -717,9 +718,9 @@ class TVTab:
             try:
                 if os.path.exists(full_path):
                     available_tvs.append(f'TV{tv_num}')
-                    print(f"TV: Found {full_path}")
+                    print(f"[TV] Found {full_path}")
             except Exception as e:
-                print(f"TV: Error checking {full_path}: {str(e)}")
+                print(f"[TV] Error checking {full_path}: {str(e)}")
         
         return available_tvs
     
@@ -848,28 +849,28 @@ class TVTab:
             self.zip_file = None
         self.cache.clear()
         
-        self._set_status("Loading TV01...")
-        print(f"TV: Loading TV01 from {tv1_path}")
-        
+        self._set_status("Loading TV01...", 'blue')
+        print(f"[TV] Loading TV01 from {tv1_path}")
+
         try:
             self.tv1_zip = zipfile.ZipFile(tv1_path, 'r')
             self.tv1_images = self._get_sorted_images(self.tv1_zip)
-            print(f"TV: TV01 has {len(self.tv1_images)} frames")
+            print(f"[TV] TV01 has {len(self.tv1_images)} frames")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load TV01:\n{str(e)}")
-            self._set_status("Failed")
+            self._set_status("Failed", 'red')
             return
-        
-        self._set_status("Loading TV02...")
-        print(f"TV: Loading TV02 from {tv2_path}")
-        
+
+        self._set_status("Loading TV02...", 'blue')
+        print(f"[TV] Loading TV02 from {tv2_path}")
+
         try:
             self.tv2_zip = zipfile.ZipFile(tv2_path, 'r')
             self.tv2_images = self._get_sorted_images(self.tv2_zip)
-            print(f"TV: TV02 has {len(self.tv2_images)} frames")
+            print(f"[TV] TV02 has {len(self.tv2_images)} frames")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load TV02:\n{str(e)}")
-            self._set_status("Failed")
+            self._set_status("Failed", 'red')
             self._cleanup_compare_mode()
             return
         
@@ -900,8 +901,8 @@ class TVTab:
         self._display_compare_frame(0)
         
         self._start_prefetch(0)
-        self._set_status("Ready")
-        print(f"TV: Compare mode ready")
+        self._set_status("Ready", 'green')
+        print(f"[TV] Compare mode ready")
     
     def _get_sorted_images(self, zip_file):
         """Get sorted list of image files from ZIP"""
@@ -932,9 +933,9 @@ class TVTab:
             self._setup_single_mode()
             self._load_zip_from_path(file_path)
     
-    def _set_status(self, text):
-        """Update status label"""
-        self.status_label.config(text=text)
+    def _set_status(self, text, color='blue'):
+        """Update status label with color"""
+        self.status_label.config(text=text, fg=color)
         self.status_label.update()
     
     def _load_zip_from_path(self, file_path):
@@ -952,29 +953,29 @@ class TVTab:
         self.cache.clear()
         self.im = None
 
-        self._set_status("Opening ZIP file...")
-        print(f"TV: Opening ZIP file {file_path}")
+        self._set_status("Opening ZIP file...", 'blue')
+        print(f"[TV] Opening ZIP file: {file_path}")
         
         try:
             self.zip_file = zipfile.ZipFile(file_path, 'r')
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open ZIP file:\n{str(e)}")
-            self._set_status("Failed to open ZIP")
-            print(f"TV: Failed to open ZIP: {str(e)}")
+            self._set_status("Failed to open ZIP", 'red')
+            print(f"[TV] Failed to open ZIP: {str(e)}")
             return
         
-        self._set_status("Reading file list...")
+        self._set_status("Reading file list...", 'blue')
         self.image_files = self._get_sorted_images(self.zip_file)
         
         if not self.image_files:
             messagebox.showerror("Error", "No image files found in ZIP")
-            self._set_status("No images found")
+            self._set_status("No images found", 'red')
             return
         
         self.total_frames = len(self.image_files)
-        print(f"TV: Found {self.total_frames} image files")
+        print(f"[TV] Found {self.total_frames} image files")
         
-        self._set_status("Updating UI...")
+        self._set_status("Updating UI...", 'blue')
         self.file_label.config(text=file_path.split('/')[-1])
         self.frame_slider.config(to=self.total_frames - 1)
         self.frame_total_entry.config(state='normal')
@@ -982,18 +983,18 @@ class TVTab:
         self.frame_total_entry.insert(0, str(self.total_frames))
         self.frame_total_entry.config(state='readonly')
         
-        self._set_status("Loading first frame...")
+        self._set_status("Loading first frame...", 'blue')
         self.current_frame = 0
         self.frame_var.set(0)
         
         if not self._display_frame(0):
-            self._set_status("Failed to load first frame")
+            self._set_status("Failed to load first frame", 'red')
             messagebox.showerror("Error", "Failed to load first frame from ZIP")
             return
         
         self._start_prefetch(0)
-        self._set_status("Ready")
-        print(f"TV: Successfully loaded {self.total_frames} images")
+        self._set_status("Ready", 'green')
+        print(f"[TV] Successfully loaded {self.total_frames} images")
     
     # =========================================================================
     # Image loading and display
@@ -1025,7 +1026,7 @@ class TVTab:
             return img_array
             
         except Exception as e:
-            print(f"TV: Error loading frame {frame_idx}: {str(e)}")
+            print(f"[TV] Error loading frame {frame_idx}: {str(e)}")
             return None
     
     def _get_image_from_tv(self, tv_num, frame_idx):
@@ -1068,7 +1069,7 @@ class TVTab:
             return img_array
             
         except Exception as e:
-            print(f"TV: Error loading TV{tv_num} frame {frame_idx}: {str(e)}")
+            print(f"[TV] Error loading TV{tv_num} frame {frame_idx}: {str(e)}")
             return None
     
     def _cleanup_cache(self, center_frame):

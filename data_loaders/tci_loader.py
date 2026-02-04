@@ -51,7 +51,7 @@ class TCILoader(BaseDiagnosticLoader):
                         time_data = time
                         
                 except Exception as e:
-                    print(f"TCI channel {ch} not available: {str(e)}")
+                    print(f"[TCI] Channel {ch} not available: {str(e)}")
             
             if not channels or time_data is None:
                 raise ValueError("No TCI channels available")
@@ -78,7 +78,7 @@ class TCILoader(BaseDiagnosticLoader):
                 valid_time_mask = self.get_valid_time_mask(time_data, ip_fault_time)
                 time_data = time_data[valid_time_mask]
                 ne_data = ne_data[:, valid_time_mask]
-                print(f"  Data masked to IP fault time + {IP_FAULT_OFFSET}s: {ip_fault_time + IP_FAULT_OFFSET:.3f} s")
+                print(f"[TCI]   Data masked to IP fault time + {IP_FAULT_OFFSET}s: {ip_fault_time + IP_FAULT_OFFSET:.3f} s")
             
             measurements = {
                 'ne': {

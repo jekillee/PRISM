@@ -161,7 +161,7 @@ class ECELoader(BaseDiagnosticLoader):
             Te_list = []
             loaded_indices = []
             
-            print(f"  Loading ECE data for {len(ch)} channels...")
+            print(f"[ECE]   Loading ECE data for {len(ch)} channels...")
             import time as time_module
             start_time = time_module.time()
             
@@ -171,17 +171,17 @@ class ECELoader(BaseDiagnosticLoader):
                     Te_list.append(data)
                     loaded_indices.append(idx)
                 except MdsException:
-                    print(f'    ECE{channel:02d} not available')
+                    print(f'[ECE]     ECE{channel:02d} not available')
                 
                 # Progress bar
                 progress = (idx + 1) / len(ch)
                 bar_length = 40
                 filled = int(bar_length * progress)
                 bar = '█' * filled + '░' * (bar_length - filled)
-                print(f'\r    [{bar}] {idx+1}/{len(ch)} ({progress*100:.1f}%)', end='', flush=True)
+                print(f'\r[ECE]     [{bar}] {idx+1}/{len(ch)} ({progress*100:.1f}%)', end='', flush=True)
             
             elapsed = time_module.time() - start_time
-            print(f'\n  Completed in {elapsed:.2f} sec')
+            print(f'\n[ECE]   Completed in {elapsed:.2f} sec')
             
             mds.get('SetTimeContext(,,)').data()
             
@@ -201,7 +201,7 @@ class ECELoader(BaseDiagnosticLoader):
             mds.get(f'SetTimeContext(-1,0,{sampling_rate})').data()
             baseline_list = []
             
-            print(f"  Loading baseline data (-1 to 0 s)...")
+            print(f"[ECE]   Loading baseline data (-1 to 0 s)...")
             for channel in ch_arr:
                 try:
                     baseline_data = mds.get(f'\\ECE{channel:02d}').data()
@@ -213,7 +213,7 @@ class ECELoader(BaseDiagnosticLoader):
             # Subtract baseline from main data
             baseline_arr = np.array(baseline_list).reshape(-1, 1)
             Te_data = Te_data - baseline_arr
-            print(f"  Baseline correction applied")
+            print(f"[ECE]   Baseline correction applied")
             
             mds.get('SetTimeContext(,,)').data()
             mds.closeTree('kstar', shot_number)
@@ -224,7 +224,7 @@ class ECELoader(BaseDiagnosticLoader):
             
             if np.sum(~mask_good) > 0:
                 bad_channels = ch_arr[~mask_good]
-                print(f"  Removing bad channels: {bad_channels}")
+                print(f"[ECE]   Removing bad channels: {bad_channels}")
             
             Te_data = Te_data[mask_good]
             R_arr = R_arr[mask_good]
@@ -250,7 +250,7 @@ class ECELoader(BaseDiagnosticLoader):
             time = time[valid_time_mask]
             Te_data = Te_data[:, valid_time_mask]
 
-            print(f"  Data masked to IP fault time + {IP_FAULT_OFFSET}s: {ip_fault_time + IP_FAULT_OFFSET:.3f} s")
+            print(f"[ECE]   Data masked to IP fault time + {IP_FAULT_OFFSET}s: {ip_fault_time + IP_FAULT_OFFSET:.3f} s")
             
             # Apply unit conversion (eV to keV)
             np.seterr(invalid='ignore')
@@ -314,5 +314,5 @@ class ECELoader(BaseDiagnosticLoader):
             }
             
         except Exception as e:
-            print(f"Error getting ECE profile: {str(e)}")
+            print(f"[ECE] Error getting profile: {str(e)}")
             return None

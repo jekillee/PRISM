@@ -170,7 +170,7 @@ class ThomsonLoader(BaseDiagnosticLoader):
             density_error_upper = density_error_upper[:, valid_time_mask]
             density_error_lower = density_error_lower[:, valid_time_mask]
 
-            print(f"  Data masked to IP fault time + {IP_FAULT_OFFSET}s: {ip_fault_time + IP_FAULT_OFFSET:.3f} s")
+            print(f"[Thomson]   Data masked to IP fault time + {IP_FAULT_OFFSET}s: {ip_fault_time + IP_FAULT_OFFSET:.3f} s")
             
             measurements = {
                 'Te': {

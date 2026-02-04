@@ -55,16 +55,16 @@ class IRVBLoader:
         
         # Download if not cached
         if not os.path.isfile(local_path):
-            print(f"IRVB: Downloading {mat_file} from server...")
+            print(f"[IRVB] Downloading {mat_file} from server...")
             try:
                 urllib.request.urlretrieve(url, local_path)
                 # Set file permissions so other users can overwrite
                 os.chmod(local_path, 0o666)
-                print(f"IRVB: Download complete")
+                print(f"[IRVB] Download complete")
             except Exception as e:
                 raise RuntimeError(f"Failed to download IRVB data: {str(e)}")
         else:
-            print(f"IRVB: Using cached file {mat_file}")
+            print(f"[IRVB] Using cached file {mat_file}")
         
         # Load .mat file
         try:
@@ -86,7 +86,7 @@ class IRVBLoader:
                 self.NY
             )
             
-            print(f"IRVB: Loaded {len(time)} timepoints, grid {self.NX}x{self.NY}")
+            print(f"[IRVB] Loaded {len(time)} timepoints, grid {self.NX}x{self.NY}")
             
             return IRVBData(time, recon, ptot, x_grid, y_grid)
             

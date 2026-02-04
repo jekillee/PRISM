@@ -106,7 +106,7 @@ class BaseDiagnosticLoader(ABC):
                 return ip_time[valid_indices[-1]]  # Last valid time
             return None
         except Exception as e:
-            print(f"Warning: Could not get IP fault time: {str(e)}")
+            print(f"[Loader] Warning: Could not get IP fault time: {str(e)}")
             return None
 
     def get_valid_time_mask(

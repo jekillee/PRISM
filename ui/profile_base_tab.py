@@ -27,6 +27,9 @@ class ProfileBaseTab(BaseTab):
     - Secondary diagnostic overlay (XICS for TiVT, ECE for NeTe)
     """
 
+    # Override in subclass for console logging prefix
+    TAB_NAME = "Profile"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.secondary_data_cache: Dict[str, Any] = {}
@@ -125,7 +128,7 @@ class ProfileBaseTab(BaseTab):
                 y1_max, y2_max, y2_min = self._plot_single_entry(
                     entry, colors[i], y1_max, y2_max, y2_min)
             except Exception as e:
-                print(f"Error plotting {entry}: {str(e)}")
+                print(f"[{self.TAB_NAME}] Error plotting {entry}: {str(e)}")
 
         # Apply axis limits
         self._apply_plot_limits(y1_max, y2_max, y2_min)
@@ -236,7 +239,7 @@ class ProfileBaseTab(BaseTab):
                     entry, colors[i], interp_func, y1_max, y2_max, y2_min)
 
             except Exception as e:
-                print(f"Error plotting {entry}: {str(e)}")
+                print(f"[{self.TAB_NAME}] Error plotting {entry}: {str(e)}")
 
         # Set axis labels and limits
         self.ax1.set_xlabel(x_label)

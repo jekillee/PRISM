@@ -110,7 +110,7 @@ def load_settings():
             _settings = _merge_defaults(_settings, DEFAULT_SETTINGS)
             
         except (json.JSONDecodeError, IOError) as e:
-            print(f"Warning: Failed to load settings, using defaults: {e}")
+            print(f"[Settings] Warning: Failed to load settings, using defaults: {e}")
             _settings = DEFAULT_SETTINGS.copy()
     else:
         _settings = DEFAULT_SETTINGS.copy()
@@ -146,9 +146,9 @@ def save_settings():
     try:
         with open(SETTINGS_FILE, 'w') as f:
             json.dump(_settings, f, indent=4)
-        print(f"Settings saved to {SETTINGS_FILE}")
+        print(f"[Settings] Saved to {SETTINGS_FILE}")
     except IOError as e:
-        print(f"Warning: Failed to save settings: {e}")
+        print(f"[Settings] Warning: Failed to save settings: {e}")
 
 
 def get_settings():
@@ -418,5 +418,5 @@ def get_changelog_for_version(version):
         return (full_changelog, latest_date)
         
     except Exception as e:
-        print(f"Warning: Could not read CHANGELOG.md: {e}")
+        print(f"[Settings] Warning: Could not read CHANGELOG.md: {e}")
         return ("Bug fixes and improvements.", "")

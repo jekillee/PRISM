@@ -135,8 +135,6 @@ class PRISMApp:
         config = self.tab_configs[tab_index]
         placeholder = self.tab_frames[tab_index]
         
-        print(f"Creating tab: {config['tab_name']}...")
-        
         # Create the actual tab with placeholder as parent
         tab = TabFactory.create_tab(
             placeholder,
@@ -146,12 +144,11 @@ class PRISMApp:
             self.efit_loader,
             self.plot_manager
         )
-        
+
         if tab is not None:
             # Pack tab's frame inside placeholder
             tab.frame.pack(expand=True, fill='both')
             self.tab_cache[tab_index] = tab
-            print(f"  Tab created: {config['tab_name']}")
         
         return tab
     

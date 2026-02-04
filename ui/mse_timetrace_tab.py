@@ -15,6 +15,8 @@ from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT
 class MSETimeTraceTab(TimeTraceBaseTab):
     """MSE Time Trace tab with TGAMMA and j/q time traces"""
 
+    TAB_NAME = "MSE"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -103,8 +105,8 @@ class MSETimeTraceTab(TimeTraceBaseTab):
                 item_str = f'{shot_number:06d}_{R_val*1e3:.0f} (MSE{ch_num:02d})'
                 self.available_listbox.insert(tk.END, item_str)
 
-            print(f"MSE data loaded: {np.sum(good_mask)} good channels")
-            print(f"  NB source: {data.nb_source}")
+            print(f"[MSE] Data loaded: {np.sum(good_mask)} good channels")
+            print(f"[MSE]   NB source: {data.nb_source}")
 
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid shot number")
@@ -223,7 +225,7 @@ class MSETimeTraceTab(TimeTraceBaseTab):
                 param_min = min(param_min, np.nanmin(param_trace))
 
             except Exception as e:
-                print(f"Error plotting {entry}: {str(e)}")
+                print(f"[MSE] Error plotting {entry}: {str(e)}")
 
         # Set limits and styling
         self.ax1.axhline(0, color='gray', linestyle='--', alpha=0.5)

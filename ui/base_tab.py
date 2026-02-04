@@ -378,7 +378,7 @@ class BaseTab(ABC):
         self.efit_data.clear()
         
         print("\n" + "="*50)
-        print(f"      EFIT Mapping ({efit_tree})")
+        print(f"[EFIT] Mapping ({efit_tree})")
         print("-" * 50)
         
         # Group by shot
@@ -393,19 +393,19 @@ class BaseTab(ABC):
         
         for shot_number, entry_list in shot_groups.items():
             try:
-                print(f"-> Loading EFIT data for shot #{shot_number}...")
+                print(f"[EFIT] Loading data for shot #{shot_number}...")
                 efit_data = self.efit_loader.load_efit_data(shot_number, efit_tree)
                 
                 for entry, time_point in entry_list:
                     if not (np.min(efit_data.time) <= time_point <= np.max(efit_data.time)):
-                        print(f"   -> Skipping {entry}: EFIT out of range")
+                        print(f"[EFIT]   Skipping {entry}: out of range")
                         continue
                     
                     time_idx = np.argmin(np.abs(efit_data.time - time_point))
                     closest_time = efit_data.time[time_idx]
                     
                     if abs(closest_time - time_point) > 0.05:
-                        print(f"   -> Skipping {entry}: No EFIT within ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±50ms")
+                        print(f"[EFIT]   Skipping {entry}: No data within ±50ms")
                         continue
                     
                     valid_entries.append(entry)
@@ -417,10 +417,10 @@ class BaseTab(ABC):
                         'rho_tor': efit_data.rho_tor[time_idx]
                     }
                     
-                    print(f"   -> {entry} processed...")
+                    print(f"[EFIT]   {entry} processed")
                 
             except Exception as e:
-                print(f"-> Error: {str(e)}")
+                print(f"[EFIT] Error: {str(e)}")
         
         if len(valid_entries) != len(selected_entries):
             missing = set(selected_entries) - set(valid_entries)
@@ -471,7 +471,7 @@ class BaseTab(ABC):
         
         try:
             self._write_data_to_file(file_path, selected_entries)
-            print(f"Data saved to {file_path}")
+            print(f"[{self.TAB_NAME}] Data saved to {file_path}")
             messagebox.showinfo("Success", f"Data saved to {file_path}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save data: {str(e)}")

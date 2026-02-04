@@ -14,6 +14,8 @@ from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT, ENTRY_WIDTH_SHOT
 class TiVTTimeTraceTab(TimeTraceBaseTab):
     """Ti/vT Time Trace tab with CES and XICS support"""
 
+    TAB_NAME = "Ti/vT"
+
     def __init__(self, parent, app_config, diagnostic_name, tab_type,
                  data_loader, efit_loader, plot_manager, file_parser):
         super().__init__(parent, app_config, diagnostic_name, tab_type,
@@ -98,9 +100,9 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
             cache_key = f'{shot_number}_{analysis_type}'
             self.data[cache_key] = data
             ces_loaded = True
-            print(f"CES {analysis_type} data loaded: {len(data.radius)} channels, {len(data.time)} timepoints")
+            print(f"[CES] {analysis_type} Data loaded: {len(data.radius)} channels, {len(data.time)} timepoints")
         except Exception as e:
-            print(f"CES {analysis_type} not available: {str(e)}")
+            print(f"[CES] {analysis_type} Not available: {str(e)}")
 
         # Try to load XICS data
         try:
@@ -110,9 +112,9 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
                 xics_cache_key = f'{shot_number}_XICS'
                 self.xics_data_cache[xics_cache_key] = xics_data
                 xics_loaded = True
-                print(f"XICS data loaded: {len(xics_data.time)} timepoints")
+                print(f"[XICS] Data loaded: {len(xics_data.time)} timepoints")
         except Exception as e:
-            print(f"XICS not available: {str(e)}")
+            print(f"[XICS] Not available: {str(e)}")
 
         # Check if any data loaded
         if not ces_loaded and not xics_loaded:
@@ -163,7 +165,7 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
             file_key = f'file_{shot_number}_{data.source}'
             self.data[file_key] = data
 
-            print(f"CES result file loaded: {data.source}")
+            print(f"[CES] Result file loaded: {data.source}")
 
             # Try to load XICS data for this shot
             loader = self._get_xics_loader()
@@ -172,7 +174,7 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
             if xics_data is not None:
                 xics_cache_key = f'{shot_number}_XICS'
                 self.xics_data_cache[xics_cache_key] = xics_data
-                print(f"XICS data loaded: {len(xics_data.time)} timepoints")
+                print(f"[XICS] Data loaded: {len(xics_data.time)} timepoints")
 
             # Build list of all channels with R positions
             all_channels = []
@@ -355,7 +357,7 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
                     self.ax2.errorbar(x_data, vT_trace, vT_err_trace, **plot_kwargs)
 
             except Exception as e:
-                print(f"Error plotting {entry}: {str(e)}")
+                print(f"[Ti/vT] Error plotting {entry}: {str(e)}")
 
         # Set limits
         ti_margin = ti_max * 0.1

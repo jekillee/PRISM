@@ -19,6 +19,8 @@ from ui.ui_constants import (
 class MSEProfileTab(ProfileBaseTab):
     """MSE Profile tab with TGAMMA and j/q profiles"""
 
+    TAB_NAME = "MSE"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -127,8 +129,8 @@ class MSEProfileTab(ProfileBaseTab):
                 item_str = f'{shot_number:06d}_{tp*1e3:06.0f} (MSE)'
                 self.available_listbox.insert(tk.END, item_str)
 
-            print(f"MSE data loaded: {len(data.time_prof)} timepoints")
-            print(f"  NB source: {data.nb_source}")
+            print(f"[MSE] Data loaded: {len(data.time_prof)} timepoints")
+            print(f"[MSE]   NB source: {data.nb_source}")
 
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid shot number")
@@ -270,7 +272,7 @@ class MSEProfileTab(ProfileBaseTab):
                 param_min = min(param_min, np.nanmin(param_data))
 
             except Exception as e:
-                print(f"Error plotting {entry}: {str(e)}")
+                print(f"[MSE] Error plotting {entry}: {str(e)}")
 
         # Set limits
         self.ax1.axhline(0, color='gray', linestyle='--', alpha=0.5)
@@ -410,7 +412,7 @@ class MSEProfileTab(ProfileBaseTab):
                 param_min = min(param_min, np.nanmin(param_data))
 
             except Exception as e:
-                print(f"Error plotting {entry}: {str(e)}")
+                print(f"[MSE] Error plotting {entry}: {str(e)}")
 
         self.ax1.set_xlabel(x_label)
         self.ax2.set_xlabel(x_label)

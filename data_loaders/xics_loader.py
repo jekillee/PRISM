@@ -67,7 +67,7 @@ class XICSLoader(BaseDiagnosticLoader):
         overlap_end = min(xics_time[-1], ces_time[-1])
         
         if overlap_start >= overlap_end:
-            print(f"XICS: No time overlap with CES (XICS: {xics_time[0]:.2f}-{xics_time[-1]:.2f}s, "
+            print(f"[XICS] No time overlap with CES (XICS: {xics_time[0]:.2f}-{xics_time[-1]:.2f}s, "
                   f"CES: {ces_time[0]:.2f}-{ces_time[-1]:.2f}s)")
             return 0.0
         
@@ -86,7 +86,7 @@ class XICSLoader(BaseDiagnosticLoader):
         # Offset = XICS - CES (to be subtracted from XICS)
         offset = first_xics_vt - ces_vt_interp
         
-        print(f"XICS: Offset calc at t={first_overlap_time:.3f}s: "
+        print(f"[XICS] Offset calc at t={first_overlap_time:.3f}s: "
               f"XICS_vT={first_xics_vt:.1f}, CES_vT={ces_vt_interp:.1f}")
         
         return offset
@@ -117,9 +117,9 @@ class XICSLoader(BaseDiagnosticLoader):
             vt_data_corrected = vt_data - offset
             
             if ces_type:
-                print(f"XICS vT offset: {offset:.3f} km/s (based on CES {ces_type})")
+                print(f"[XICS] vT offset: {offset:.3f} km/s (based on CES {ces_type})")
             else:
-                print(f"XICS vT offset: not applied (no CES data)")
+                print(f"[XICS] vT offset: not applied (no CES data)")
             
             # XICS Ti is already in keV, vT is already in km/s
             # No unit conversion needed
@@ -146,7 +146,7 @@ class XICSLoader(BaseDiagnosticLoader):
             
         except Exception as e:
             # Return None instead of raising error (silent skip)
-            print(f"XICS data not available for shot {shot_number}: {str(e)}")
+            print(f"[XICS] Data not available for shot {shot_number}: {str(e)}")
             return None
     
     def get_data_at_time(self, shot_number, time_point, dt_avg=0.01):

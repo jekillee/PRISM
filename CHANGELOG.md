@@ -5,6 +5,23 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.10] - 2026-02-04
+
+### Fixed
+- **n-Mode Spectrum**: Fixed "too many values to unpack" error when loading Mirnov data
+  - `_comment` key in mirnov_config.json was causing unpacking failure in `get_shot_year()`
+
+### Changed
+- **Console Output Consistency**: Unified print message format across all tabs and loaders
+  - All messages now use `[DiagnosticName]` prefix (e.g., `[CES]`, `[Thomson]`, `[ECE]`, `[IRVB]`)
+  - Sub-messages indented with `[DiagnosticName]   ` format
+  - Diagnostic-specific prefixes: `[CES]`, `[XICS]`, `[Thomson]`, `[ECE]`, `[TCI]`, `[MSE]`, `[IRVB]`, `[TV]`, `[n-Mode]`, `[Spectrogram]`, `[EFIT]`
+  - Removed redundant "Creating tab:" messages
+  - Capitalized first letter of messages for consistency (e.g., "Data loaded", "Not available")
+
+- **Status Label**: Added bold font and color-coded status labels to Spectrogram, TV, IRVB tabs
+  - Gray: Ready, Blue: Running, Green: Done, Red: Error
+
 ## [1.1.9] - 2026-02-02
 
 ### Changed

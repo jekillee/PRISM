@@ -6,6 +6,7 @@ Supports ECE, Mirnov, and BES diagnostics
 """
 
 import os
+import time as tclock
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, TclError
 import numpy as np
@@ -268,6 +269,11 @@ class SpectrogramTab:
         # Plot button
         ttk.Button(frame, text='Plot Spectrogram', command=self._plot_spectrogram).grid(
             row=3, column=0, columnspan=4, padx=PAD_X, pady=10, sticky='ew')
+
+        # Status label
+        self.status_label = tk.Label(frame, text='Ready', fg='gray', anchor='w',
+                                      font=('TkDefaultFont', 9, 'bold'))
+        self.status_label.grid(row=4, column=0, columnspan=4, padx=PAD_X, pady=(0, 5), sticky='w')
     
     def _create_color_controls(self, parent):
         """Create color range control section"""
@@ -465,8 +471,8 @@ class SpectrogramTab:
                      power=Sxx_log_sliced.T  # Transpose: (time, freq)
             )
             
-            print(f"Spectrogram data saved to: {filepath}")
-            print(f"  Time: {len(t_full)} points, Freq: {len(f_sliced)} points")
+            print(f"[Spectrogram] Data saved to: {filepath}")
+            print(f"[Spectrogram]   Time: {len(t_full)} points, Freq: {len(f_sliced)} points")
             messagebox.showinfo("Saved", f"Data saved to:\n{filepath}")
             
         except Exception as e:
@@ -522,7 +528,7 @@ class SpectrogramTab:
             return
         
         try:
-            print(f"Loading ECE channel info for #{shot_number}...")
+            print(f"[Spectrogram] Loading ECE channel info for #{shot_number}...")
             
             # Use ECELoader to get channel positions
             positions = self.ece_loader.get_channel_positions(shot_number)
@@ -530,7 +536,7 @@ class SpectrogramTab:
             # Cache the info
             self.ece_info[shot_number] = positions
             
-            print(f"  I_TF = {positions['I_TF']:.2f} kA, {len(positions['channels'])} channels in range")
+            print(f"[Spectrogram]   I_TF = {positions['I_TF']:.2f} kA, {len(positions['channels'])} channels")
             
             self._update_channel_dropdown_ece(positions)
             
@@ -555,7 +561,7 @@ class SpectrogramTab:
             return
         
         try:
-            print(f"Loading BES channel info for #{shot_number}...")
+            print(f"[Spectrogram] Loading BES channel info for #{shot_number}...")
             
             # Use BESLoader to get channel positions
             positions = self.bes_loader.get_channel_positions(shot_number)
@@ -567,7 +573,7 @@ class SpectrogramTab:
             # Cache the info
             self.bes_info[shot_number] = positions
             
-            print(f"  {len(positions['channels'])} BES channels loaded")
+            print(f"[Spectrogram]   {len(positions['channels'])} BES channels loaded")
             
             self._update_channel_dropdown_bes(positions)
             
@@ -618,7 +624,7 @@ class SpectrogramTab:
             return
         
         try:
-            print(f"Loading ECEI-{device} channel info for #{shot_number}...")
+            print(f"[Spectrogram] Loading ECEI-{device} channel info for #{shot_number}...")
             
             # Use ECEILoader to get channel positions
             positions = self.ecei_loader.get_channel_positions(shot_number, device)
@@ -654,9 +660,9 @@ class SpectrogramTab:
                 'LO': positions['LO']
             }
             
-            print(f"  Bt = {positions['Bt']:.1f} T, mode = {positions['mode']}, LO = {positions['LO']} GHz")
-            print(f"  R range: {min(R_values):.3f} - {max(R_values):.3f} m")
-            print(f"  {len(channels)} channels loaded")
+            print(f"[Spectrogram]   Bt = {positions['Bt']:.1f} T, mode = {positions['mode']}, LO = {positions['LO']} GHz")
+            print(f"[Spectrogram]   R range: {min(R_values):.3f} - {max(R_values):.3f} m")
+            print(f"[Spectrogram]   {len(channels)} channels loaded")
             
             self._update_channel_dropdown_ecei(self.ecei_info[cache_key], device)
             
@@ -750,7 +756,7 @@ class SpectrogramTab:
                 # Mirnov channel name directly
                 node_name = f'\\{channel_str}'
             
-            print(f"Loading {node_name}...")
+            print(f"[Spectrogram] Loading {node_name}...")
             data = mds.get(node_name).data()
             time = mds.get(f'dim_of({node_name})').data()
             
@@ -796,15 +802,26 @@ class SpectrogramTab:
             messagebox.showerror("Error", f"Failed to load signal: {str(e)}")
             return None
     
+    def _update_status(self, message, color='blue'):
+        """Update status label with message and color"""
+        self.status_label.config(text=message, fg=color)
+        self.frame.update()
+
     def _plot_spectrogram(self):
         """Calculate and plot spectrogram"""
+        t0 = tclock.time()
+
+        # Update status
+        self._update_status('Loading signal...', 'blue')
+
         # Load signal data
         signal = self._load_signal_data()
         if signal is None:
+            self._update_status('Failed to load signal', 'red')
             return
-        
+
         self.signal_data = signal
-        
+
         # Get parameters
         try:
             t_min = float(self.time_min_entry.get())
@@ -814,31 +831,34 @@ class SpectrogramTab:
             nfft = int(self.selected_nfft.get())
         except ValueError:
             messagebox.showerror("Error", "Invalid parameter values")
+            self._update_status('Error', 'red')
             return
-        
+
         # Time slice
         time = signal['time']
         data = signal['data']
-        
+
         mask = (time >= t_min) & (time <= t_max)
         if np.sum(mask) < nfft:
             messagebox.showerror("Error", "Time range too short for selected NFFT")
+            self._update_status('Error', 'red')
             return
-        
+
         time_slice = time[mask]
         data_slice = data[mask]
-        
+
         # Calculate sampling frequency
         fs = 1.0 / (time[1] - time[0])
-        
+
         # Calculate spectrogram
-        print(f"Calculating spectrogram (NFFT={nfft}, fs={fs/1e6:.2f}MHz)...")
+        self._update_status('Calculating spectrogram...', 'blue')
+        print(f"[Spectrogram] Calculating (NFFT={nfft}, fs={fs/1e6:.2f}MHz)...")
         f, t_spec, Sxx = spectrogram(data_slice, fs, nperseg=nfft)
-        
+
         # Convert to log scale (a.u.)
         Sxx_log = np.log10(Sxx + 1e-20)  # Avoid log(0)
         vmax = np.max(Sxx_log)
-        
+
         # Store spectrogram data
         self.spectrogram_data = {
             'f': f,
@@ -846,31 +866,32 @@ class SpectrogramTab:
             'Sxx_log': Sxx_log,
             'vmax': vmax
         }
-        
+
         # Clear and plot
+        self._update_status('Plotting...', 'blue')
         self.ax.clear()
-        
+
         # Frequency mask
         f_mask = (f >= f_min) & (f <= f_max)
-        
+
         # Calculate vmin from dynamic range slider
         dyn_range = self.dyn_range_var.get()
         vmin = vmax - dyn_range
-        
+
         self.im = self.ax.imshow(
             Sxx_log[f_mask, :],
             aspect='auto',
             origin='lower',
-            extent=[t_spec[0] + t_min, t_spec[-1] + t_min, 
+            extent=[t_spec[0] + t_min, t_spec[-1] + t_min,
                     f[f_mask][0]/1e3, f[f_mask][-1]/1e3],
             vmin=vmin,
             vmax=vmax,
             cmap='viridis'
         )
-        
+
         self.ax.set_xlabel('Time [s]')
         self.ax.set_ylabel('Frequency [kHz]')
-        
+
         # Build title with position info for ECEI and sampling rate
         if signal.get('diag_type', '').startswith('ECEI-') and 'R' in signal:
             R = signal['R']
@@ -879,20 +900,23 @@ class SpectrogramTab:
             title = f"#{signal['shot']} ECEI_{ch_name} (R={R:.3f}m, Z={Z:.3f}m)"
         else:
             title = f"#{signal['shot']} {signal['channel']}"
-        
+
         # Add sampling rate to title
         fs_str = self._format_frequency(fs)
         title += f" - {fs_str}"
         self.ax.set_title(title)
-        
+
         # Update or create colorbar
         if self.colorbar is not None:
             self.colorbar.remove()
         self.colorbar = self.figure.colorbar(self.im, ax=self.ax, label='log$_{10}$(Power) [a.u.]')
-        
+
         self.canvas.draw()
-        print("Spectrogram plotted.")
-        
+
+        elapsed = tclock.time() - t0
+        self._update_status(f'Done ({elapsed:.1f}s)', 'green')
+        print(f"[Spectrogram] Completed in {elapsed:.2f}s")
+
         # Enable save button
         self.save_button.config(state='normal')
     

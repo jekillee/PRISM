@@ -138,7 +138,6 @@ class StandaloneLauncher:
     
     def _create_single_tab(self, tab_type):
         """Create a single tab instance"""
-        print(f"Creating tab: {self._get_tab_display_name(tab_type)}...")
         
         if tab_type == 'tivt_profile':
             from ui.tivt_profile_tab import TiVTProfileTab
@@ -296,10 +295,9 @@ class StandaloneLauncher:
             tab.create_widgets()
             
         else:
-            print(f"  Unknown tab type: {tab_type}")
+            print(f"Unknown tab type: {tab_type}")
             return None
-        
-        print(f"  Tab created: {self._get_tab_display_name(tab_type)}")
+
         return tab
     
     def _create_tab_content(self, tab_index):

@@ -15,6 +15,8 @@ from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT, ENTRY_WIDTH_SHOT
 class NeTeProfileTab(ProfileBaseTab):
     """ne, Te Profile tab supporting Thomson and/or ECE"""
 
+    TAB_NAME = "ne/Te"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ece_loader = None
@@ -116,7 +118,7 @@ class NeTeProfileTab(ProfileBaseTab):
                     item_str = f'{shot_number:06d}_{tp*1e3:06.0f} ({label})'
                     self.available_listbox.insert(tk.END, item_str)
 
-                print(f"Thomson data loaded: {len(data.radius)} channels, {len(data.time)} timepoints")
+                print(f"[Thomson] Data loaded: {len(data.radius)} channels, {len(data.time)} timepoints")
 
             if load_ece:
                 loader = self._get_ece_loader()
@@ -133,8 +135,8 @@ class NeTeProfileTab(ProfileBaseTab):
 
                 n_valid = np.sum(ece_data.measurements['Te']['valid_mask'])
                 n_overlap = np.sum(ece_data.measurements['Te']['overlap_mask'])
-                print(f"ECE data loaded: {len(ece_data.radius)} channels, {len(ece_data.time)} timepoints @ {sampling_key}")
-                print(f"  Valid: {n_valid}, Overlap: {n_overlap}")
+                print(f"[ECE] Data loaded: {len(ece_data.radius)} channels, {len(ece_data.time)} timepoints @ {sampling_key}")
+                print(f"[ECE]   Valid: {n_valid}, Overlap: {n_overlap}")
 
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid shot number")
@@ -322,7 +324,7 @@ class NeTeProfileTab(ProfileBaseTab):
                     self._add_channel_labels(self.ax1, valid_R, valid_Te, 'ECE', valid_ch)
 
             except Exception as e:
-                print(f"Error plotting {entry}: {str(e)}")
+                print(f"[ne/Te] Error plotting {entry}: {str(e)}")
 
         # Set limits
         self.ax1.set_xlim(self.app_config.R_LIMITS)
@@ -506,7 +508,7 @@ class NeTeProfileTab(ProfileBaseTab):
                         self._add_channel_labels(self.ax1, valid_x, valid_Te, 'ECE', valid_ch)
 
             except Exception as e:
-                print(f"Error plotting {entry}: {str(e)}")
+                print(f"[ne/Te] Error plotting {entry}: {str(e)}")
 
         self.ax1.set_xlabel(x_label)
         self.ax2.set_xlabel(x_label)

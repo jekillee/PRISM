@@ -170,9 +170,12 @@ class FFTResult:
 
 def get_shot_year(shot):
     """Get year from shot number using config file"""
-    for year_str, (shot_min, shot_max) in _MIRNOV_CONFIG['shot_year_ranges'].items():
+    for year_str, shot_range in _MIRNOV_CONFIG['shot_year_ranges'].items():
         if year_str.startswith('_'):
             continue
+        if not isinstance(shot_range, list) or len(shot_range) != 2:
+            continue
+        shot_min, shot_max = shot_range
         if shot_max is None:
             shot_max = float('inf')
         if shot_min <= shot <= shot_max:
@@ -244,10 +247,10 @@ def load_mirnov_data(shot, tmin, tmax):
     config = get_mirnov_config(year)
     n_channels = len(config['names'])
     
-    print(f"Loading Mirnov data for shot #{shot} (year {year})...")
-    print(f"  Time range: {tmin:.2f} - {tmax:.2f} s")
-    print(f"  Channels ({n_channels}): {config['names']}")
-    print(f"  Threads: {n_channels}")
+    print(f"[n-Mode] Loading Mirnov data for shot #{shot} (year {year})...")
+    print(f"[n-Mode]   Time range: {tmin:.2f} - {tmax:.2f} s")
+    print(f"[n-Mode]   Channels ({n_channels}): {config['names']}")
+    print(f"[n-Mode]   Threads: {n_channels}")
     
     args_list = [
         (shot, name, angle, sign, tmin, tmax)
@@ -265,9 +268,9 @@ def load_mirnov_data(shot, tmin, tmax):
             completed += 1
             progress = completed / n_channels            
             bar = '█' * int(40 * progress) + '░' * (40 - int(40 * progress))
-            print(f'\r  [{bar}] {completed}/{n_channels}', end='', flush=True)
-    
-    print(f'\n  Completed in {tclock.time() - t0:.2f} sec')
+            print(f'\r[n-Mode]   [{bar}] {completed}/{n_channels}', end='', flush=True)
+
+    print(f'\n[n-Mode]   Completed in {tclock.time() - t0:.2f} sec')
     
     valid_results = []
     results.sort(key=lambda x: x['angle'])
@@ -287,7 +290,7 @@ def load_mirnov_data(shot, tmin, tmax):
     if common_tmin >= common_tmax:
         raise RuntimeError(f"No overlapping time range found across channels")
 
-    print(f"  Common time range: {common_tmin:.4f} - {common_tmax:.4f} s")
+    print(f"[n-Mode]   Common time range: {common_tmin:.4f} - {common_tmax:.4f} s")
 
     # Use the channel with finest sampling as reference
     ref_result = min(valid_results, key=lambda r: (r['time'][-1] - r['time'][0]) / r['n_points'])
@@ -298,7 +301,7 @@ def load_mirnov_data(shot, tmin, tmax):
     time_arr = ref_time[ref_mask]
     n_points = len(time_arr)
 
-    print(f"  Reference channel: {ref_result['name']} ({n_points} points in common range)")
+    print(f"[n-Mode]   Reference channel: {ref_result['name']} ({n_points} points)")
 
     # Interpolate all channels to common time grid
     signals, valid_names, valid_angles = [], [], []
@@ -320,7 +323,7 @@ def load_mirnov_data(shot, tmin, tmax):
         valid_names.append(result['name'])
         valid_angles.append(result['angle'])
 
-    print(f"  Aligned {len(signals)} channels to common time grid")
+    print(f"[n-Mode]   Aligned {len(signals)} channels to common time grid")
     
     mirnov = MirnovData()
     mirnov.time = np.array(time_arr, dtype=np.float32)
@@ -329,7 +332,7 @@ def load_mirnov_data(shot, tmin, tmax):
     mirnov.channel_names = valid_names
     mirnov.shot = shot
     
-    print(f"  Loaded {len(valid_names)} channels, {len(time_arr)} points")
+    print(f"[n-Mode]   Loaded {len(valid_names)} channels, {len(time_arr)} points")
     return mirnov
 
 
@@ -359,10 +362,10 @@ def calculate_fft(mirnov, t_interval, integrate=False, run_detrend=True, tmin=No
     p = int(n_points / q)
     n_windows, points_per_window = q, p
     
-    print(f"FFT: fs={fs/1e6:.2f}MHz, windows={n_windows}, pts/win={points_per_window}")
-    
+    print(f"[n-Mode] FFT: fs={fs/1e6:.2f}MHz, windows={n_windows}, pts/win={points_per_window}")
+
     # Step 1: Preprocessing
-    print('  1/4 Preprocessing...')
+    print('[n-Mode]   1/4 Preprocessing...')
     if integrate:
         for i in range(n_channels):
             signals[i] = np.cumsum(signals[i]) * dt * 1e4
@@ -373,7 +376,7 @@ def calculate_fft(mirnov, t_interval, integrate=False, run_detrend=True, tmin=No
     signals_reshaped = signals.reshape(n_channels, n_windows, points_per_window)
     
     # Step 2: Detrend
-    print('  2/4 Detrending...')
+    print('[n-Mode]   2/4 Detrending...')
     if run_detrend:
         n_segments = 8
         denom = points_per_window % n_segments
@@ -395,7 +398,7 @@ def calculate_fft(mirnov, t_interval, integrate=False, run_detrend=True, tmin=No
                 n_channels, n_windows, denom)
     
     # Step 3: FFT calculation
-    print('  3/4 FFT...')
+    print('[n-Mode]   3/4 FFT...')
     n_freq_half = points_per_window // 2 + 1
     overp = 1.0 / float(points_per_window)
     
@@ -408,7 +411,7 @@ def calculate_fft(mirnov, t_interval, integrate=False, run_detrend=True, tmin=No
     phase = np.transpose(np.angle(fft_half), (1, 2, 0)).astype(np.float32)
     
     # Step 4: Post-processing
-    print('  4/4 Finalizing...')
+    print('[n-Mode]   4/4 Finalizing...')
     window_start_indices = np.arange(n_windows) * points_per_window
     time_centers = (time_trimmed[window_start_indices] + 
                    time_trimmed[window_start_indices + points_per_window - 1]) / 2.0
@@ -426,7 +429,7 @@ def calculate_fft(mirnov, t_interval, integrate=False, run_detrend=True, tmin=No
     result.p = points_per_window
     result.dt = dt
     
-    print(f'\n  Completed in {tclock.time() - t0:.2f} sec')
+    print(f'\n[n-Mode]   Completed in {tclock.time() - t0:.2f} sec')
     return result
 
 
@@ -514,7 +517,7 @@ def calculate_mode_numbers(fft_result, fmin, fmax, tol, nmodes, frac, msign, int
                 amp_evolution[i + offset, :] = temp[:, freq_idx].max(axis=1)
                 temp[ind1] = 0.0
     
-    print(f"Mode calculation completed in {tclock.time() - t0:.2f} sec")
+    print(f"[n-Mode] Mode calculation completed in {tclock.time() - t0:.2f} sec")
     return mode, freq, amp_evolution
 
 
@@ -1060,7 +1063,7 @@ class NModeSpectrumTab:
                      amplitude=self.amp_evolution
             )
             
-            print(f"N-mode spectrum data saved to: {filepath}")
+            print(f"[n-Mode] Data saved to: {filepath}")
             messagebox.showinfo("Saved", f"Data saved to:\n{filepath}")
             
         except Exception as e:
@@ -1099,6 +1102,8 @@ class NModeSpectrumTab:
     
     def _run_calculation(self):
         """Run complete workflow"""
+        t0 = tclock.time()
+
         try:
             shot = int(self.shot_var.get())
             use_full_shot = self.use_full_shot_var.get()
@@ -1157,18 +1162,18 @@ class NModeSpectrumTab:
                 # Update display (entry fields are disabled but show the values)
                 self.tmin_var.set(f"{tmin:.3f}")
                 self.tmax_var.set(f"{tmax:.3f}")
-                print(f"  Using full shot: {tmin:.3f} - {tmax:.3f} s")
+                print(f"[n-Mode] Using full shot: {tmin:.3f} - {tmax:.3f} s")
             else:
                 tmin = float(self.tmin_var.get())
                 tmax = float(self.tmax_var.get())
                 # Adjust if exceeds actual range
                 if tmin < actual_tmin:
-                    print(f"  tmin adjusted: {tmin:.3f} -> {actual_tmin:.3f} s")
+                    print(f"[n-Mode] tmin adjusted: {tmin:.3f} -> {actual_tmin:.3f} s")
                     tmin = actual_tmin
                     self.tmin_var.set(f"{tmin:.3f}")
 
                 if tmax > actual_tmax:
-                    print(f"  tmax adjusted: {tmax:.3f} -> {actual_tmax:.3f} s")
+                    print(f"[n-Mode] tmax adjusted: {tmax:.3f} -> {actual_tmax:.3f} s")
                     tmax = actual_tmax
                     self.tmax_var.set(f"{tmax:.3f}")
             
@@ -1190,13 +1195,15 @@ class NModeSpectrumTab:
             gc.collect()
             
             self._update_plot()
-            
-            self.status_label.config(text='Done', fg='green')
+
+            elapsed = tclock.time() - t0
+            self.status_label.config(text=f'Done ({elapsed:.1f}s)', fg='green')
             self.run_button.config(state='normal')
-            
+            print(f"[n-Mode] Total calculation completed in {elapsed:.2f}s")
+
             # Enable save button
             self.save_button.config(state='normal')
-            
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed: {str(e)}")
             self.status_label.config(text='Error', fg='red')
