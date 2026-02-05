@@ -15,6 +15,7 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 - **Spectrogram Analysis**: FFT-based spectrogram for ECE, Mirnov, BES, TCI, ECEI
 - **n-Mode Spectrum Analysis**: Toroidal mode number analysis from Mirnov coils
 - **TV Image Viewer**: Sequential image viewer for visible camera data with line drawing
+- **TV Startup Comparison**: Compare plasma startup sequences across multiple shots
 - **IRVB Viewer**: 2D radiation profile with EFIT overlay and regional Prad analysis
 
 ## Supported Diagnostics
@@ -41,9 +42,11 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 | `prism tivt` | Ti, vT (CES/XICS) viewer |
 | `prism nete` | ne, Te (Thomson/ECE) viewer |
 | `prism mse` | MSE viewer |
-| `prism spec` | Spectrogram & n-Mode viewer |
+| `prism spec` | Spectrogram viewer |
+| `prism nmode` | n-Mode Spectrum viewer |
 | `prism tv` | TV image viewer |
 | `prism irvb` | IRVB viewer |
+| `prism startup` | TV Startup Comparison viewer |
 
 ## Installation
 
@@ -60,8 +63,10 @@ prism tivt
 prism nete
 prism mse
 prism spec
+prism nmode
 prism tv
 prism irvb
+prism startup
 ```
 
 ### For External Users
@@ -116,6 +121,8 @@ PRISM/
 │   ├── spectrogram_tab.py       # Spectrogram tab
 │   ├── nmode_spectrum_tab.py    # n-Mode Spectrum tab
 │   ├── tv_tab.py                # TV image viewer tab
+│   ├── tv_startup_tab.py        # TV Startup Comparison tab
+│   ├── tv_utils.py              # TV utility functions
 │   ├── irvb_tab.py              # IRVB viewer tab
 │   └── widgets/
 │       └── custom_toolbar.py    # Custom matplotlib toolbar
