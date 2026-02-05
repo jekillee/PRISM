@@ -5,6 +5,37 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.11] - 2026-02-05
+
+### Added
+- **TV Startup Comparison Tab**: New tab for comparing plasma startup sequences across multiple shots
+  - Support for TV01 or TV02 camera selection (locked after first shot added)
+  - Fetch button to check TV availability before adding shot
+  - Configurable frame range (start/end, max 50 frames)
+  - Stack multiple shots vertically for visual comparison
+  - Shot number with up/down buttons for easy navigation
+  - Add button next to TV radio buttons (disabled until Fetch pressed)
+  - Time labels displayed at top (every 4 frames)
+  - Shot number labels on left side
+  - Plot button to generate comparison image
+  - Keyboard delete support (Delete/Backspace) for removing shots from list
+  - Settings persistence (shot, frame range, TV type)
+  - Standalone mode support: `prism startup`
+
+### Changed
+- **Standalone Commands**: Split `prism spec` into two separate commands
+  - `prism spec` - Spectrogram only
+  - `prism nmode` - n-Mode Spectrum only
+
+### Refactored
+- **TV Utilities Module** (`ui/tv_utils.py`): Extracted common TV functions
+  - `TV_FPS`, `TV_OFFSET` constants
+  - `get_year_from_shot()`, `get_campaign_from_shot()`, `get_campaign_from_year()`
+  - `get_tv_zip_path()`, `get_tv_startup_zip_path()`
+  - `find_available_tvs()` with startup option
+  - `frame_to_time()`, `time_to_frame()`, `frame_to_time_ms()`
+  - Applied to both TV tab and TV Startup tab (reduced code duplication)
+
 ## [1.1.10] - 2026-02-04
 
 ### Fixed

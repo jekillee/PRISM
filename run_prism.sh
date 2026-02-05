@@ -9,8 +9,10 @@
 #   prism nete         # ne, Te Profile + TimeTrace
 #   prism mse          # MSE Profile + TimeTrace
 #   prism spec         # Spectrogram
+#   prism nmode        # n-Mode Spectrum
 #   prism tv           # TV Viewer
 #   prism irvb         # IRVB Viewer
+#   prism startup      # TV Startup Comparison
 #   prism --help       # Show help
 #
 # Author: Jekil Lee (jklee@kfe.re.kr)
@@ -50,8 +52,10 @@ show_help() {
     echo "  nete      ne, Te Profile + TimeTrace viewer (Thomson/ECE)"
     echo "  mse       MSE Profile + TimeTrace viewer"
     echo "  spec      Spectrogram analyzer"
+    echo "  nmode     n-Mode Spectrum analyzer"
     echo "  tv        TV image sequence viewer"
     echo "  irvb      IRVB 2D radiation profile viewer"
+    echo "  startup   TV Startup Comparison viewer"
     echo "  --help    Show this help message"
     echo ""
     echo "Examples:"
@@ -60,8 +64,10 @@ show_help() {
     echo "  prism nete         # Launch ne, Te standalone"
     echo "  prism mse          # Launch MSE standalone"
     echo "  prism spec         # Launch Spectrogram standalone"
+    echo "  prism nmode        # Launch n-Mode Spectrum standalone"
     echo "  prism tv           # Launch TV Viewer standalone"
     echo "  prism irvb         # Launch IRVB Viewer standalone"
+    echo "  prism startup      # Launch TV Startup Comparison standalone"
     echo ""
     echo "Author: Jekil Lee (jklee@kfe.re.kr)"
     echo ""
@@ -73,7 +79,7 @@ case "$1" in
         show_help
         exit 0
         ;;
-    tivt|nete|mse|spec|tv|irvb|"")
+    tivt|nete|mse|spec|nmode|tv|irvb|startup|"")
         cd "$PRISM_HOME"
         $PYTHON_PATH main.py "$1"
         ;;

@@ -235,6 +235,17 @@ DIAGNOSTICS = {
         'standalone_viewer': True,  # Uses IRVB Viewer tab
     },
 
+    'TV_Startup': {
+        'name': 'TV_Startup',
+        'full_name': 'TV Startup Comparison (TV01/TV02)',
+        'mds_tree': None,  # File-based, not MDS+
+        'enabled': True,
+        'file_loadable': True,
+        'analysis_types': None,
+        'standalone_viewer': True,  # Uses TV Startup Viewer tab
+        'supported_formats': ['.bmp', '.png', '.jpg', '.jpeg'],
+    },
+
     'ECEI': {
         'name': 'ECEI',
         'full_name': 'Electron Cyclotron Emission Imaging',

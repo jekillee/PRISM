@@ -22,15 +22,15 @@ from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
     ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_SHORT
 )
+from ui.tv_utils import (
+    TV_FPS, TV_OFFSET, get_year_from_shot, get_campaign_from_year,
+    get_tv_zip_path, find_available_tvs, frame_to_time, time_to_frame
+)
 from config.user_settings import get_tab_settings, set_tab_settings
 
 
 class TVTab:
     """TV image sequence viewer tab with line drawing and compare mode"""
-
-    # TV camera parameters
-    TV_FPS = 210.0
-    TV_OFFSET = 0.1  # 100ms trigger offset
 
     # Label column width for consistent alignment
     LABEL_COLUMN_WIDTH = 90
@@ -183,7 +183,7 @@ class TVTab:
             messagebox.showerror("Error", "Please enter a valid shot number")
             return
         
-        available_tvs = self._find_available_tvs(shot_number)
+        available_tvs = find_available_tvs(shot_number)
         
         if not available_tvs:
             messagebox.showinfo("Not Found", 
@@ -609,133 +609,21 @@ class TVTab:
     # =========================================================================
     # Time/Frame conversion utilities
     # =========================================================================
-    
-    def _frame_to_time(self, frame_idx):
-        """Convert frame index to time in seconds"""
-        return (frame_idx + 1) / self.TV_FPS - self.TV_OFFSET
-    
-    def _time_to_frame(self, time_sec, total_frames):
-        """Convert time in seconds to nearest frame index"""
-        frame_idx = int(round((time_sec + self.TV_OFFSET) * self.TV_FPS - 1))
-        return max(0, min(frame_idx, total_frames - 1))
-    
+
     def _find_matching_frame(self, master_frame, master_total, slave_total):
         """Find slave frame that matches master frame's time. Returns None if out of range."""
-        time_sec = self._frame_to_time(master_frame)
-        
+        time_sec = frame_to_time(master_frame)
+
         # Calculate the time range of slave TV
-        slave_min_time = self._frame_to_time(0)
-        slave_max_time = self._frame_to_time(slave_total - 1)
-        
+        slave_min_time = frame_to_time(0)
+        slave_max_time = frame_to_time(slave_total - 1)
+
         # Check if master time is within slave's time range
         if time_sec < slave_min_time or time_sec > slave_max_time:
             return None
-        
-        return self._time_to_frame(time_sec, slave_total)
-    
-    # =========================================================================
-    # Shot/Campaign utilities
-    # =========================================================================
-    
-    def _get_year_from_shot(self, shot_number):
-        """Get year from shot number (KSTAR shot ranges)"""
-        if shot_number >= 40464:
-            return 2026
-        elif shot_number > 37741:
-            return 2025
-        elif shot_number > 34836:
-            return 2024
-        elif shot_number > 32768:
-            return 2023
-        elif shot_number > 30445:
-            return 2022
-        elif shot_number > 27400:
-            return 2021
-        elif shot_number > 24081:
-            return 2020
-        elif shot_number > 21758:
-            return 2019
-        elif shot_number > 19396:
-            return 2018
-        elif shot_number > 17376:
-            return 2017
-        elif shot_number > 14407:
-            return 2016
-        elif shot_number > 11724:
-            return 2015
-        elif shot_number > 9427:
-            return 2014
-        elif shot_number > 8354:
-            return 2013
-        elif shot_number > 6470:
-            return 2012
-        elif shot_number > 4468:
-            return 2011
-        elif shot_number > 2342:
-            return 2010
-        elif shot_number > 1283:
-            return 2009
-        else:
-            return 2008
-    
-    def _get_campaign_from_year(self, year):
-        """Get campaign folder name from year"""
-        base_path = '/Diag_TV'
-        
-        if not os.path.exists(base_path):
-            print(f"[TV] Base path {base_path} not found")
-            return None
-        
-        try:
-            entries = os.listdir(base_path)
-            campaign_dirs = [d for d in entries if d.startswith(f'{year}C')]
-            
-            if campaign_dirs:
-                campaign_dirs.sort()
-                return campaign_dirs[-1]
-            return None
-        except Exception as e:
-            print(f"[TV] Error listing campaigns: {str(e)}")
-            return None
-    
-    def _find_available_tvs(self, shot_number):
-        """Find available TV01/TV02 ZIP files for given shot"""
-        year = self._get_year_from_shot(shot_number)
-        campaign = self._get_campaign_from_year(year)
-        
-        if campaign is None:
-            return []
-        
-        base_path = f'/Diag_TV/{campaign}'
-        available_tvs = []
-        shot_str = f'{shot_number:06d}'
-        
-        for tv_num in ['01', '02']:
-            tv_path = f'{base_path}/TV{tv_num}'
-            zip_filename = f'{shot_str}_tv{tv_num}.zip'
-            full_path = f'{tv_path}/{zip_filename}'
-            
-            try:
-                if os.path.exists(full_path):
-                    available_tvs.append(f'TV{tv_num}')
-                    print(f"[TV] Found {full_path}")
-            except Exception as e:
-                print(f"[TV] Error checking {full_path}: {str(e)}")
-        
-        return available_tvs
-    
-    def _get_tv_zip_path(self, shot_number, tv_name):
-        """Get full path to TV ZIP file"""
-        year = self._get_year_from_shot(shot_number)
-        campaign = self._get_campaign_from_year(year)
-        
-        if campaign is None:
-            return None
-        
-        shot_str = f'{shot_number:06d}'
-        tv_num = tv_name.replace('TV', '')
-        return f'/Diag_TV/{campaign}/{tv_name}/{shot_str}_tv{tv_num}.zip'
-    
+
+        return time_to_frame(time_sec, slave_total)
+
     def _load_selected_tv(self):
         """Load selected TV ZIP file(s)"""
         try:
@@ -752,8 +640,8 @@ class TVTab:
         
         # Handle TV01 + TV02 compare mode
         if tv_selection == 'TV01 + TV02':
-            tv1_path = self._get_tv_zip_path(shot_number, 'TV01')
-            tv2_path = self._get_tv_zip_path(shot_number, 'TV02')
+            tv1_path = get_tv_zip_path(shot_number, 'TV01')
+            tv2_path = get_tv_zip_path(shot_number, 'TV02')
             
             if tv1_path is None or tv2_path is None:
                 messagebox.showerror("Error", "Failed to get TV file paths")
@@ -762,7 +650,7 @@ class TVTab:
             self._load_compare_mode(tv1_path, tv2_path)
         else:
             # Single TV mode
-            zip_path = self._get_tv_zip_path(shot_number, tv_selection)
+            zip_path = get_tv_zip_path(shot_number, tv_selection)
             
             if zip_path is None:
                 messagebox.showerror("Error", "Campaign folder not found")
@@ -1153,7 +1041,7 @@ class TVTab:
         else:
             self.im.set_data(img_array)
         
-        time_sec = self._frame_to_time(frame_idx)
+        time_sec = frame_to_time(frame_idx)
         self.ax.set_title(f"Frame {frame_idx + 1}/{self.total_frames} (t = {time_sec:.3f} s)")
         
         self.canvas.draw_idle()
@@ -1179,7 +1067,7 @@ class TVTab:
         """Display frames in compare mode (TV01 and TV02 side by side)"""
         # TV01 frame (master)
         tv1_img = self._get_image_from_tv(1, frame_idx)
-        tv1_time = self._frame_to_time(frame_idx)
+        tv1_time = frame_to_time(frame_idx)
         
         # Find matching TV02 frame by time (returns None if out of range)
         tv2_frame = self._find_matching_frame(
@@ -1190,7 +1078,7 @@ class TVTab:
         tv2_time = tv1_time  # Use same time for display
         if tv2_frame is not None:
             tv2_img = self._get_image_from_tv(2, tv2_frame)
-            tv2_time = self._frame_to_time(tv2_frame)
+            tv2_time = frame_to_time(tv2_frame)
         
         # Check if at least one has data
         if tv1_img is None and tv2_img is None:
@@ -1331,7 +1219,7 @@ class TVTab:
         
         try:
             time_sec = float(self.time_entry.get())
-            frame_idx = self._time_to_frame(time_sec, self.total_frames)
+            frame_idx = time_to_frame(time_sec, self.total_frames)
             
             self.current_frame = frame_idx
             self.frame_var.set(frame_idx)

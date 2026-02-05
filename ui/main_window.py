@@ -117,6 +117,16 @@ class PRISMApp:
         self.tab_frames.append(placeholder)
         self.notebook.add(placeholder, text='TV')
         
+        # TV Startup tab config
+        self.tab_configs.append({
+            'diagnostic': None,
+            'tab_type': 'tv_startup',
+            'tab_name': TabFactory.get_tab_name(None, 'tv_startup')
+        })
+        placeholder = ttk.Frame(self.notebook)
+        self.tab_frames.append(placeholder)
+        self.notebook.add(placeholder, text='TV Startup')
+
         # IRVB tab config
         self.tab_configs.append({
             'diagnostic': None,
@@ -180,8 +190,8 @@ class PRISMApp:
         config = self.tab_configs[tab_index]
         tab_type = config['tab_type']
 
-        # TV: Use QuietNavigationToolbar (no Axes button)
-        if tab_type == 'tv':
+        # TV and TV Startup: Use QuietNavigationToolbar (no Axes button)
+        if tab_type in ('tv', 'tv_startup'):
             self.toolbar = QuietNavigationToolbar(current_tab.canvas, self.toolbar_frame)
             self.toolbar.update()
             current_tab.toolbar = self.toolbar
@@ -303,16 +313,22 @@ class PRISMApp:
         print("  - Spectrogram analysis (ECE, Mirnov, BES, TCI)")
         print("  - n-Mode spectrum analysis (toroidal mode numbers)")
         print("  - TV image sequence viewer with line drawing")
+        print("  - TV Startup comparison viewer (TV01/TV02)")
         print("  - IRVB 2D radiation profile viewer")
         print()
         print("Enabled diagnostics:")
         for diag in get_enabled_diagnostics():
             print(f"  - {diag}")
         print()
-        print("Standalone tools:")
-        print("  - Spectrogram & n-Mode (spec)")
-        print("  - TV Viewer (tv)")
-        print("  - IRVB Viewer (irvb)")
+        print("Standalone commands:")
+        print("  $ prism tivt    - Ti, vT Viewer")
+        print("  $ prism nete    - ne, Te Viewer")
+        print("  $ prism mse     - MSE Viewer")
+        print("  $ prism spec    - Spectrogram")
+        print("  $ prism nmode   - n-Mode Spectrum")
+        print("  $ prism tv      - TV Viewer")
+        print("  $ prism irvb    - IRVB Viewer")
+        print("  $ prism startup - TV Startup Comparison")
         print()
         print("=" * 64)
         print()

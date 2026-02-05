@@ -35,7 +35,11 @@ class StandaloneLauncher:
         },
         'spec': {
             'title': 'Spectrogram Analyzer',
-            'tabs': ['spectrogram', 'nmode']
+            'tabs': ['spectrogram']
+        },
+        'nmode': {
+            'title': 'n-Mode Spectrum Analyzer',
+            'tabs': ['nmode']
         },
         'tv': {
             'title': 'TV Image Viewer',
@@ -44,6 +48,10 @@ class StandaloneLauncher:
         'irvb': {
             'title': 'IRVB Viewer',
             'tabs': ['irvb']
+        },
+        'startup': {
+            'title': 'TV Startup Comparison',
+            'tabs': ['tv_startup']
         }
     }
     
@@ -132,7 +140,8 @@ class StandaloneLauncher:
             'spectrogram': 'Spectrogram',
             'nmode': 'n-Mode Spectrum',
             'tv': 'TV',
-            'irvb': 'IRVB'
+            'irvb': 'IRVB',
+            'tv_startup': 'TV Startup'
         }
         return names.get(tab_type, tab_type)
     
@@ -285,7 +294,7 @@ class StandaloneLauncher:
             
         elif tab_type == 'irvb':
             from ui.irvb_tab import IRVBTab
-            
+
             tab = IRVBTab(
                 parent=self.root,
                 app_config=self.config,
@@ -293,7 +302,17 @@ class StandaloneLauncher:
                 efit_loader=self.efit_loader
             )
             tab.create_widgets()
-            
+
+        elif tab_type == 'tv_startup':
+            from ui.tv_startup_tab import TVStartupTab
+
+            tab = TVStartupTab(
+                parent=self.root,
+                app_config=self.config,
+                diagnostic_config=DIAGNOSTICS
+            )
+            tab.create_widgets()
+
         else:
             print(f"Unknown tab type: {tab_type}")
             return None

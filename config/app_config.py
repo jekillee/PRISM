@@ -5,7 +5,7 @@ PRISM - Plasma Research Integrated System for Multi-diagnostics
 Global application configuration
 """
 
-VERSION = "1.1.10"
+VERSION = "1.1.11"
 APP_NAME = "PRISM"
 APP_FULL_NAME = "Plasma Research Integrated System for Multi-diagnostics"
 

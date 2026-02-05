@@ -17,6 +17,7 @@ from ui.mse_timetrace_tab import MSETimeTraceTab
 from ui.spectrogram_tab import SpectrogramTab
 from ui.nmode_spectrum_tab import NModeSpectrumTab
 from ui.tv_tab import TVTab
+from ui.tv_startup_tab import TVStartupTab
 from ui.irvb_tab import IRVBTab
 
 # Data loaders
@@ -93,7 +94,10 @@ class TabFactory:
         
         if tab_type == 'irvb':
             return 'IRVB'
-        
+
+        if tab_type == 'tv_startup':
+            return 'TV Startup'
+
         if diagnostic_name in TabFactory.TAB_NAMES:
             name = TabFactory.TAB_NAMES[diagnostic_name].get(tab_type)
             if name is not None:
@@ -119,7 +123,10 @@ class TabFactory:
         
         if tab_type == 'irvb':
             return True
-        
+
+        if tab_type == 'tv_startup':
+            return True
+
         if tab_type == 'profile':
             return diagnostic_name in TabFactory.PROFILE_TAB_MAP
         else:
@@ -169,7 +176,17 @@ class TabFactory:
             )
             tab.create_widgets()
             return tab
-        
+
+        # Special case: TV Startup tab
+        if tab_type == 'tv_startup':
+            tab = TVStartupTab(
+                parent=notebook,
+                app_config=app_config,
+                diagnostic_config=DIAGNOSTICS
+            )
+            tab.create_widgets()
+            return tab
+
         # For other tab types, diagnostic_name must be valid
         if diagnostic_name is None or diagnostic_name not in DIAGNOSTICS:
             raise ValueError(f"Unknown diagnostic: {diagnostic_name}")

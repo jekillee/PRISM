@@ -16,12 +16,14 @@ A modular viewer for KSTAR diagnostic data including:
 
 Usage:
     python main.py          # Full PRISM
-    python main.py ces      # CES standalone
+    python main.py tivt     # Ti,vT standalone
     python main.py nete     # ne,Te standalone
     python main.py mse      # MSE standalone
     python main.py spec     # Spectrogram standalone
+    python main.py nmode    # n-Mode Spectrum standalone
     python main.py tv       # TV standalone
     python main.py irvb     # IRVB standalone
+    python main.py startup  # TV Startup Comparison standalone
 
 Author: Jekil Lee (jklee@kfe.re.kr)
 """
