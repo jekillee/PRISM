@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 XICS (X-ray Imaging Crystal Spectrometer) data loader
 Provides Ti and vT at R=1.8m with offset correction

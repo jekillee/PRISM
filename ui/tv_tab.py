@@ -1,12 +1,8 @@
-#!/usr/bin/python3.8
-
 """
 TV (Visible Camera) tab for viewing image sequences from ZIP files
 With line drawing feature for paper figures and TV1/TV2 compare mode
 """
 
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, TclError
 import zipfile
 import io
 import re
@@ -16,12 +12,17 @@ import threading
 import numpy as np
 from PIL import Image
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
-from ui.ui_constants import (
-    CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
-    ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_SHORT
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLabel, QLineEdit, QPushButton, QComboBox, QGroupBox,
+    QCheckBox, QSlider, QSplitter, QMessageBox, QFileDialog,
+    QApplication, QStyle, QScrollArea,
 )
+from PySide6.QtCore import Qt, QTimer
+
+from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_icon
 from ui.tv_utils import (
     TV_FPS, TV_OFFSET, get_year_from_shot, get_campaign_from_year,
     get_tv_zip_path, find_available_tvs, frame_to_time, time_to_frame
@@ -34,21 +35,21 @@ class TVTab:
 
     # Label column width for consistent alignment
     LABEL_COLUMN_WIDTH = 90
-    
+
     def __init__(self, parent, app_config, diagnostic_config):
         self.parent = parent
         self.app_config = app_config
         self.diag_config = diagnostic_config
-        
-        self.frame = ttk.Frame(parent)
+
+        self.frame = QWidget()
         self.toolbar = None
-        
+
         # Single TV mode data storage
         self.zip_file = None
         self.image_files = []
         self.current_frame = 0
         self.total_frames = 0
-        
+
         # Compare mode data storage
         self.compare_mode = False
         self.tv1_zip = None
@@ -57,21 +58,22 @@ class TVTab:
         self.tv2_images = []
         self.tv1_cache = {}
         self.tv2_cache = {}
-        
+
         # Image cache (store nearby frames for smooth playback)
         self.cache = {}
         self.cache_size = 100
-        
+
         # Playback state
         self.is_playing = False
-        self.play_job = None
+        self._play_timer = QTimer()
+        self._play_timer.timeout.connect(self._play_next_frame)
         self._last_frame_time = 0
-        
+
         # Prefetch thread control
         self._prefetch_lock = threading.Lock()
         self._prefetch_thread = None
         self._prefetch_stop = False
-        
+
         # Plot references
         self.im = None
         self.im1 = None  # For compare mode (TV01)
@@ -79,7 +81,7 @@ class TVTab:
         self.ax = None
         self.ax1 = None  # For compare mode
         self.ax2 = None  # For compare mode
-        
+
         # Line drawing
         self.line_points = []
         self.drawn_lines = []  # List of (line_obj, ax) tuples for finalized lines
@@ -90,357 +92,418 @@ class TVTab:
         self.motion_cid = None
         self._draw_background = None  # For blitting optimization
         self.current_draw_ax = None  # Track which axis current line is being drawn on
-    
+
+        # Slider debounce timer
+        self._slider_timer = QTimer()
+        self._slider_timer.setSingleShot(True)
+        self._slider_timer.timeout.connect(self._do_slider_update)
+
+        # Slider value tracking
+        self._slider_value = 0
+
     def create_widgets(self):
         """Create TV tab widgets"""
+        main_layout = QHBoxLayout(self.frame)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        splitter = QSplitter(Qt.Horizontal)
+        main_layout.addWidget(splitter)
+
         # Left: Image display area
-        self.figure = Figure((8, 6), tight_layout=True)
+        canvas_widget = QWidget()
+        canvas_layout = QVBoxLayout(canvas_widget)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
         self.ax = self.figure.add_subplot(111)
         self.ax.set_xticks([])
         self.ax.set_yticks([])
         self.ax.set_title("No image loaded")
+        apply_dark_figure_style(self.figure)
 
         # Create canvas
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
+        self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(side=tk.LEFT, fill='both', expand=True)
+        canvas_layout.addWidget(self.canvas)
 
         # Bind mouse wheel event for frame navigation
         self.canvas.mpl_connect('scroll_event', self._on_mouse_wheel)
 
-        # Right: Control panel
-        control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
-        control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
-        control_frame.pack_propagate(False)
+        splitter.addWidget(canvas_widget)
 
-        self._create_file_controls(control_frame)
-        self._create_frame_controls(control_frame)
-        self._create_playback_controls(control_frame)
-        self._create_draw_line_controls(control_frame)
+        # Right: Scrollable control panel
+        scroll_area = QScrollArea()
+        scroll_area.setFixedWidth(CONTROL_PANEL_WIDTH)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        control_widget = QWidget()
+        control_layout = QVBoxLayout(control_widget)
+
+        self._create_file_controls(control_layout)
+        self._create_frame_controls(control_layout)
+        self._create_playback_controls(control_layout)
+        self._create_draw_line_controls(control_layout)
+        control_layout.addStretch()
+
+        scroll_area.setWidget(control_widget)
+        scroll_area.viewport().setAutoFillBackground(False)
+        control_widget.setAutoFillBackground(False)
+        splitter.addWidget(scroll_area)
 
         # Load saved settings
         self.load_settings()
-    
-    def _create_file_controls(self, parent):
+
+    def _create_file_controls(self, parent_layout):
         """Create file loading section"""
-        frame = ttk.LabelFrame(parent, text="1. Load TV Data", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        group = QGroupBox("1. Load TV Data")
+        grid = QGridLayout(group)
 
-        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
-        frame.grid_columnconfigure(1, weight=1)
-        
         # Row 0: Shot label, entry with up/down, Search button, ... button
-        ttk.Label(frame, text='Shot', anchor='w').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
+        grid.addWidget(QLabel('Shot'), 0, 0)
 
-        shot_frame = ttk.Frame(frame)
-        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        shot_layout = QHBoxLayout()
+        self.shot_entry = QLineEdit()
+        self.shot_entry.setMinimumWidth(80)
+        self.shot_entry.returnPressed.connect(self._search_available_tvs)
+        shot_layout.addWidget(self.shot_entry, 1)
 
-        self.shot_entry = ttk.Entry(shot_frame, width=10)
-        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
-        self.shot_entry.bind('<Return>', lambda e: self._search_available_tvs())
+        btn_updown = QWidget()
+        btn_updown_layout = QVBoxLayout(btn_updown)
+        btn_updown_layout.setContentsMargins(0, 0, 0, 0)
+        btn_updown_layout.setSpacing(0)
+        mini_btn_style = "padding: 0px; border-radius: 2px;"
+        up_btn = QPushButton()
+        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
+        up_btn.setFixedSize(24, 15)
+        up_btn.setStyleSheet(mini_btn_style)
+        up_btn.clicked.connect(lambda: self._adjust_shot(1))
+        btn_updown_layout.addWidget(up_btn)
+        down_btn = QPushButton()
+        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
+        down_btn.setFixedSize(24, 15)
+        down_btn.setStyleSheet(mini_btn_style)
+        down_btn.clicked.connect(lambda: self._adjust_shot(-1))
+        btn_updown_layout.addWidget(down_btn)
+        shot_layout.addWidget(btn_updown)
 
-        ttk.Button(shot_frame, text='\u25B2', width=2,
-                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
-        ttk.Button(shot_frame, text='\u25BC', width=2,
-                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
+        grid.addLayout(shot_layout, 0, 1)
 
-        btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='e')
+        btn_layout = QHBoxLayout()
+        fetch_btn = QPushButton('Fetch')
+        fetch_btn.setFixedWidth(70)
+        fetch_btn.clicked.connect(self._search_available_tvs)
+        btn_layout.addWidget(fetch_btn)
 
-        ttk.Button(btn_frame, text='Fetch', command=self._search_available_tvs, width=8).pack(
-            side=tk.LEFT)
-        ttk.Button(btn_frame, text='...', command=self._load_zip_file, width=3).pack(
-            side=tk.LEFT, padx=(2, 0))
-        
+        browse_btn = QPushButton()
+        browse_btn.setIcon(get_icon(QStyle.SP_DirOpenIcon))
+        browse_btn.setFixedWidth(30)
+        browse_btn.clicked.connect(self._load_zip_file)
+        btn_layout.addWidget(browse_btn)
+
+        grid.addLayout(btn_layout, 0, 2)
+
         # Row 1: TV dropdown and Load button
-        ttk.Label(frame, text='TV', width=LABEL_WIDTH_SHORT, anchor='w').grid(
-            row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
-        
-        self.tv_selection_var = tk.StringVar(value='-- Select --')
-        self.tv_dropdown = ttk.Combobox(frame, textvariable=self.tv_selection_var,
-                                         state='readonly', width=12)
-        self.tv_dropdown['values'] = []
-        self.tv_dropdown.grid(row=1, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
-        
-        ttk.Button(frame, text='Load', command=self._load_selected_tv, width=8).grid(
-            row=1, column=2, padx=PAD_X, pady=PAD_Y, sticky='w')
-        
+        grid.addWidget(QLabel('TV'), 1, 0)
+
+        self.tv_dropdown = QComboBox()
+        self.tv_dropdown.addItem('-- Select --')
+        grid.addWidget(self.tv_dropdown, 1, 1)
+
+        load_btn = QPushButton('Load')
+        load_btn.setFixedWidth(70)
+        load_btn.clicked.connect(self._load_selected_tv)
+        grid.addWidget(load_btn, 1, 2)
+
         # File label
-        self.file_label = ttk.Label(frame, text="No file loaded", wraplength=360)
-        self.file_label.grid(row=2, column=0, columnspan=3, padx=PAD_X, pady=2, sticky='w')
-        
+        self.file_label = QLabel("No file loaded")
+        self.file_label.setWordWrap(True)
+        grid.addWidget(self.file_label, 2, 0, 1, 3)
+
         # Loading status label
-        self.status_label = tk.Label(frame, text="", fg='blue',
-                                      font=('TkDefaultFont', 9, 'bold'))
-        self.status_label.grid(row=3, column=0, columnspan=3, padx=PAD_X, pady=2, sticky='w')
-    
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("color: blue; font-weight: bold; font-size: 9pt;")
+        grid.addWidget(self.status_label, 3, 0, 1, 3)
+
+        parent_layout.addWidget(group)
+
     def _search_available_tvs(self):
         """Search for available TVs and update dropdown"""
         try:
-            shot_number = int(self.shot_entry.get())
+            shot_number = int(self.shot_entry.text())
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid shot number")
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
             return
-        
+
         available_tvs = find_available_tvs(shot_number)
-        
+
         if not available_tvs:
-            messagebox.showinfo("Not Found", 
+            QMessageBox.information(self.frame, "Not Found",
                 f"No TV data found for shot #{shot_number}")
-            self.tv_dropdown['values'] = []
-            self.tv_selection_var.set('-- Select --')
-            self.file_label.config(text="No TV files found")
+            self.tv_dropdown.clear()
+            self.tv_dropdown.addItem('-- Select --')
+            self.file_label.setText("No TV files found")
             return
-        
+
         # Build dropdown values based on availability
         dropdown_values = []
         has_both = 'TV01' in available_tvs and 'TV02' in available_tvs
-        
+
         if has_both:
             dropdown_values.append('TV01 + TV02')
         if 'TV01' in available_tvs:
             dropdown_values.append('TV01')
         if 'TV02' in available_tvs:
             dropdown_values.append('TV02')
-        
-        self.tv_dropdown['values'] = dropdown_values
-        
+
+        self.tv_dropdown.clear()
+        self.tv_dropdown.addItems(dropdown_values)
+
         # Set default: TV01 + TV02 if both available, otherwise first available
         if has_both:
-            self.tv_selection_var.set('TV01 + TV02')
+            self.tv_dropdown.setCurrentText('TV01 + TV02')
         else:
-            self.tv_selection_var.set(dropdown_values[0])
-        
-        self.file_label.config(text=f"Found: {', '.join(available_tvs)} for #{shot_number}")
+            self.tv_dropdown.setCurrentIndex(0)
+
+        self.file_label.setText(f"Found: {', '.join(available_tvs)} for #{shot_number}")
         print(f"[TV] Found {available_tvs} for shot #{shot_number}")
 
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
         try:
-            current = int(self.shot_entry.get())
+            current = int(self.shot_entry.text())
             new_shot = max(1, current + delta)
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, str(new_shot))
+            self.shot_entry.setText(str(new_shot))
         except ValueError:
             pass
 
-    def _create_frame_controls(self, parent):
+    def _create_frame_controls(self, parent_layout):
         """Create frame navigation controls"""
-        frame = ttk.LabelFrame(parent, text="2. Frame Control", labelanchor="n")
-        frame.pack(fill='x', padx=5, pady=5)
-
-        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
-        frame.grid_columnconfigure(1, weight=1)
-
-        row = 0
+        group = QGroupBox("2. Frame Control")
+        layout = QVBoxLayout(group)
 
         # Frame slider with < > buttons
-        slider_frame = ttk.Frame(frame)
-        slider_frame.grid(row=row, column=0, columnspan=3, padx=5, pady=5, sticky='ew')
+        slider_layout = QHBoxLayout()
 
-        ttk.Button(slider_frame, text='<', width=3, command=lambda: self._step_frame(-1)).pack(
-            side=tk.LEFT, padx=(0, 2))
+        prev_btn = QPushButton()
+        prev_btn.setIcon(get_icon(QStyle.SP_ArrowBack))
+        prev_btn.setFixedWidth(30)
+        prev_btn.clicked.connect(lambda: self._step_frame(-1))
+        slider_layout.addWidget(prev_btn)
 
-        self.frame_var = tk.IntVar(value=0)
-        self.frame_slider = ttk.Scale(
-            slider_frame, from_=0, to=0, orient='horizontal',
-            variable=self.frame_var, command=self._on_slider_change
-        )
-        self.frame_slider.pack(side=tk.LEFT, fill='x', expand=True)
+        self.frame_slider = QSlider(Qt.Horizontal)
+        self.frame_slider.setMinimum(0)
+        self.frame_slider.setMaximum(0)
+        self.frame_slider.valueChanged.connect(self._on_slider_change)
+        slider_layout.addWidget(self.frame_slider)
 
-        ttk.Button(slider_frame, text='>', width=3, command=lambda: self._step_frame(1)).pack(
-            side=tk.LEFT, padx=(2, 0))
-        row += 1
+        next_btn = QPushButton()
+        next_btn.setIcon(get_icon(QStyle.SP_ArrowForward))
+        next_btn.setFixedWidth(30)
+        next_btn.clicked.connect(lambda: self._step_frame(1))
+        slider_layout.addWidget(next_btn)
+
+        layout.addLayout(slider_layout)
 
         # Frame number input
-        ttk.Label(frame, text='Frame', anchor='w').grid(
-            row=row, column=0, padx=5, pady=2, sticky='w')
+        frame_input_layout = QHBoxLayout()
+        frame_input_layout.addWidget(QLabel('Frame'))
 
-        frame_input = ttk.Frame(frame)
-        frame_input.grid(row=row, column=1, columnspan=2, padx=5, pady=2, sticky='w')
+        self.frame_entry = QLineEdit('0')
+        self.frame_entry.setFixedWidth(60)
+        self.frame_entry.returnPressed.connect(self._goto_frame)
+        frame_input_layout.addWidget(self.frame_entry)
 
-        self.frame_entry = ttk.Entry(frame_input, width=8)
-        self.frame_entry.pack(side=tk.LEFT)
-        self.frame_entry.insert(0, '0')
-        self.frame_entry.bind('<Return>', self._on_frame_entry)
+        frame_input_layout.addWidget(QLabel('/'))
 
-        ttk.Label(frame_input, text='/').pack(side=tk.LEFT, padx=2)
+        self.frame_total_entry = QLineEdit()
+        self.frame_total_entry.setFixedWidth(60)
+        self.frame_total_entry.setReadOnly(True)
+        frame_input_layout.addWidget(self.frame_total_entry)
 
-        self.frame_total_entry = ttk.Entry(frame_input, width=8, state='readonly')
-        self.frame_total_entry.pack(side=tk.LEFT)
+        go_btn = QPushButton()
+        go_btn.setIcon(get_icon(QStyle.SP_MediaPlay))
+        go_btn.setFixedWidth(32)
+        go_btn.setToolTip("Go to frame")
+        go_btn.clicked.connect(self._goto_frame)
+        frame_input_layout.addWidget(go_btn)
+        frame_input_layout.addStretch()
 
-        ttk.Button(frame_input, text='Go', width=5, command=self._goto_frame).pack(
-            side=tk.LEFT, padx=(10, 0))
-        row += 1
+        layout.addLayout(frame_input_layout)
 
         # Time input
-        ttk.Label(frame, text='Time [s]', anchor='w').grid(
-            row=row, column=0, padx=5, pady=2, sticky='w')
+        time_input_layout = QHBoxLayout()
+        time_input_layout.addWidget(QLabel('Time [s]'))
 
-        time_input = ttk.Frame(frame)
-        time_input.grid(row=row, column=1, columnspan=2, padx=5, pady=2, sticky='w')
+        self.time_entry = QLineEdit('0.0')
+        self.time_entry.setFixedWidth(60)
+        self.time_entry.returnPressed.connect(self._goto_time)
+        time_input_layout.addWidget(self.time_entry)
 
-        self.time_entry = ttk.Entry(time_input, width=8)
-        self.time_entry.pack(side=tk.LEFT)
-        self.time_entry.insert(0, '0.0')
-        self.time_entry.bind('<Return>', self._on_time_entry)
+        go_time_btn = QPushButton()
+        go_time_btn.setIcon(get_icon(QStyle.SP_MediaPlay))
+        go_time_btn.setFixedWidth(32)
+        go_time_btn.setToolTip("Go to time")
+        go_time_btn.clicked.connect(self._goto_time)
+        time_input_layout.addStretch()
 
-        ttk.Button(time_input, text='Go', width=5, command=self._goto_time).pack(
-            side=tk.LEFT, padx=(10, 0))
-        row += 1
+        layout.addLayout(time_input_layout)
 
         # Current filename display
-        self.filename_label = ttk.Label(frame, text="", wraplength=320)
-        self.filename_label.grid(row=row, column=0, columnspan=3, padx=5, pady=5, sticky='w')
-        row += 1
+        self.filename_label = QLabel("")
+        self.filename_label.setWordWrap(True)
+        layout.addWidget(self.filename_label)
 
         # Mouse wheel hint
-        hint_label = ttk.Label(frame, text="(Mouse wheel: navigate frames)",
-                               font=('TkDefaultFont', 8), foreground='gray')
-        hint_label.grid(row=row, column=0, columnspan=3, pady=(0, 5))
-    
-    def _create_playback_controls(self, parent):
+        hint_label = QLabel("(Mouse wheel: navigate frames)")
+        hint_label.setStyleSheet("color: gray; font-size: 8pt;")
+        hint_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(hint_label)
+
+        parent_layout.addWidget(group)
+
+    def _create_playback_controls(self, parent_layout):
         """Create playback control section"""
-        frame = ttk.LabelFrame(parent, text="3. Playback Control", labelanchor="n")
-        frame.pack(fill='x', padx=5, pady=5)
-        
-        # Play/Pause/Stop buttons
-        btn_frame = ttk.Frame(frame)
-        btn_frame.pack(fill='x', padx=5, pady=5)
-        
-        self.play_btn = ttk.Button(btn_frame, text='Play', command=self._toggle_play)
-        self.play_btn.pack(side=tk.LEFT, expand=True, fill='x', padx=2)
-        
-        ttk.Button(btn_frame, text='Stop', command=self._stop_play).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=2)
-        
-        # Speed control (1x = 10 FPS base)
-        speed_frame = ttk.Frame(frame)
-        speed_frame.pack(fill='x', padx=5, pady=5)
-        
-        ttk.Label(speed_frame, text='Speed:').pack(side=tk.LEFT)
-        
-        self.speed_var = tk.StringVar(value='1x')
-        speed_combo = ttk.Combobox(speed_frame, textvariable=self.speed_var,
-                                    values=['0.5x', '1x', '2x', 'Max'],
-                                    state='readonly', width=6)
-        speed_combo.pack(side=tk.LEFT, padx=5)
-        
-        # Loop checkbox
-        self.loop_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(speed_frame, text='Loop', variable=self.loop_var).pack(
-            side=tk.LEFT, padx=10)
-        
-        # Actual FPS display
-        fps_display_frame = ttk.Frame(frame)
-        fps_display_frame.pack(fill='x', padx=5, pady=2)
-        
-        self.actual_fps_label = ttk.Label(fps_display_frame, text='Actual: -- FPS', 
-                                           foreground='gray')
-        self.actual_fps_label.pack(side=tk.LEFT)
-    
-    def _create_draw_line_controls(self, parent):
+        group = QGroupBox("3. Playback Control")
+        layout = QVBoxLayout(group)
+
+        # Row 1: Speed dropdown | Play | Stop
+        row1 = QHBoxLayout()
+
+        self.speed_combo = QComboBox()
+        self.speed_combo.addItems(['0.5x', '1x', 'Max'])
+        self.speed_combo.setCurrentText('1x')
+        row1.addWidget(self.speed_combo)
+
+        self.play_btn = QPushButton()
+        self.play_btn.setIcon(get_icon(QStyle.SP_MediaPlay))
+        self.play_btn.clicked.connect(self._toggle_play)
+        row1.addWidget(self.play_btn)
+
+        stop_btn = QPushButton()
+        stop_btn.setIcon(get_icon(QStyle.SP_MediaStop))
+        stop_btn.clicked.connect(self._stop_play)
+        row1.addWidget(stop_btn)
+
+        layout.addLayout(row1)
+
+        # Row 2: FPS + Loop
+        row2 = QHBoxLayout()
+        self.actual_fps_label = QLabel('Actual: -- FPS')
+        self.actual_fps_label.setStyleSheet("color: gray;")
+        row2.addWidget(self.actual_fps_label)
+        self.loop_checkbox = QCheckBox('Loop')
+        self.loop_checkbox.setChecked(True)
+        row2.addWidget(self.loop_checkbox)
+        row2.addStretch()
+        layout.addLayout(row2)
+
+        parent_layout.addWidget(group)
+
+    def _create_draw_line_controls(self, parent_layout):
         """Create line drawing controls"""
-        frame = ttk.LabelFrame(parent, text="4. Draw Line", labelanchor="n")
-        frame.pack(fill='x', padx=5, pady=5)
-        
+        group = QGroupBox("4. Draw Line")
+        layout = QVBoxLayout(group)
+
         # Draw mode button and Clear button
-        btn_frame = ttk.Frame(frame)
-        btn_frame.pack(fill='x', padx=5, pady=5)
+        btn_layout = QHBoxLayout()
 
-        self.draw_btn = tk.Button(btn_frame, text='Draw Mode: OFF',
-                                  command=self._toggle_draw_mode, width=14)
-        self.draw_btn.pack(side=tk.LEFT, expand=True, fill='x', padx=2)
+        self.draw_btn = QPushButton('Draw Mode: OFF')
+        self.draw_btn.clicked.connect(self._toggle_draw_mode)
+        btn_layout.addWidget(self.draw_btn)
 
-        tk.Button(btn_frame, text='Clear', command=self._clear_line, width=8).pack(
-            side=tk.LEFT, expand=True, fill='x', padx=2)
-        
+        clear_btn = QPushButton('Clear')
+        clear_btn.clicked.connect(self._clear_line)
+        btn_layout.addWidget(clear_btn)
+
+        layout.addLayout(btn_layout)
+
         # Show line checkbox and smooth curve checkbox
-        check_frame = ttk.Frame(frame)
-        check_frame.pack(fill='x', padx=5, pady=5)
-        
-        self.show_line_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(check_frame, text='Show Line', 
-                       variable=self.show_line_var,
-                       command=self._update_line_display).pack(side=tk.LEFT)
-        
-        self.smooth_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(check_frame, text='Smooth', 
-                       variable=self.smooth_var,
-                       command=self._update_line_display).pack(side=tk.LEFT, padx=10)
-        
+        check_layout = QHBoxLayout()
+
+        self.show_line_checkbox = QCheckBox('Show Line')
+        self.show_line_checkbox.setChecked(True)
+        self.show_line_checkbox.stateChanged.connect(lambda: self._update_line_display())
+        check_layout.addWidget(self.show_line_checkbox)
+
+        self.smooth_checkbox = QCheckBox('Smooth')
+        self.smooth_checkbox.setChecked(True)
+        self.smooth_checkbox.stateChanged.connect(lambda: self._update_line_display())
+        check_layout.addWidget(self.smooth_checkbox)
+
+        check_layout.addStretch()
+
         # Points count label
-        self.points_label = ttk.Label(check_frame, text='Points: 0')
-        self.points_label.pack(side=tk.RIGHT, padx=5)
-        
-        # Line style options (grid layout for even spacing)
-        style_frame = ttk.Frame(frame)
-        style_frame.pack(fill='x', padx=5, pady=5)
-        for i in range(3):
-            style_frame.columnconfigure(i, weight=1)
+        self.points_label = QLabel('Points: 0')
+        check_layout.addWidget(self.points_label)
+
+        layout.addLayout(check_layout)
+
+        # Line style options
+        style_layout = QHBoxLayout()
 
         # Color
-        color_frame = ttk.Frame(style_frame)
-        color_frame.grid(row=0, column=0, sticky='w')
-        ttk.Label(color_frame, text='Color:').pack(side=tk.LEFT, padx=(0, 2))
-        self.line_color_var = tk.StringVar(value='white')
-        color_combo = ttk.Combobox(color_frame, textvariable=self.line_color_var,
-                                    values=['white', 'black', 'red', 'blue', 'yellow', 'green'],
-                                    state='readonly', width=6)
-        color_combo.pack(side=tk.LEFT)
-        color_combo.bind('<<ComboboxSelected>>', lambda e: self._update_line_display())
+        style_layout.addWidget(QLabel('Color:'))
+        self.line_color_combo = QComboBox()
+        self.line_color_combo.addItems(['white', 'black', 'red', 'blue', 'yellow', 'green'])
+        self.line_color_combo.setCurrentText('white')
+        self.line_color_combo.setFixedWidth(80)
+        self.line_color_combo.currentIndexChanged.connect(lambda: self._update_line_display())
+        style_layout.addWidget(self.line_color_combo)
 
         # Linestyle
-        linestyle_frame = ttk.Frame(style_frame)
-        linestyle_frame.grid(row=0, column=1)
-        ttk.Label(linestyle_frame, text='Linestyle:').pack(side=tk.LEFT, padx=(0, 2))
-        self.line_style_var = tk.StringVar(value='dashed')
-        style_combo = ttk.Combobox(linestyle_frame, textvariable=self.line_style_var,
-                                    values=['dashed', 'solid', 'dotted'],
-                                    state='readonly', width=6)
-        style_combo.pack(side=tk.LEFT)
-        style_combo.bind('<<ComboboxSelected>>', lambda e: self._update_line_display())
+        style_layout.addWidget(QLabel('Style:'))
+        self.line_style_combo = QComboBox()
+        self.line_style_combo.addItems(['dashed', 'solid', 'dotted'])
+        self.line_style_combo.setCurrentText('dashed')
+        self.line_style_combo.setFixedWidth(80)
+        self.line_style_combo.currentIndexChanged.connect(lambda: self._update_line_display())
+        style_layout.addWidget(self.line_style_combo)
 
         # Width
-        width_frame = ttk.Frame(style_frame)
-        width_frame.grid(row=0, column=2, sticky='e')
-        ttk.Label(width_frame, text='Width:').pack(side=tk.LEFT, padx=(0, 2))
-        self.line_width_var = tk.StringVar(value='2')
-        width_combo = ttk.Combobox(width_frame, textvariable=self.line_width_var,
-                                    values=['1', '2', '3', '4', '5'],
-                                    state='readonly', width=3)
-        width_combo.pack(side=tk.LEFT)
-        width_combo.bind('<<ComboboxSelected>>', lambda e: self._update_line_display())
-        
+        style_layout.addWidget(QLabel('Width:'))
+        self.line_width_combo = QComboBox()
+        self.line_width_combo.addItems(['1', '2', '3', '4', '5'])
+        self.line_width_combo.setCurrentText('2')
+        self.line_width_combo.setFixedWidth(60)
+        self.line_width_combo.currentIndexChanged.connect(lambda: self._update_line_display())
+        style_layout.addWidget(self.line_width_combo)
+
+        layout.addLayout(style_layout)
+
         # Hint label
-        hint_label = ttk.Label(frame, text="(Left-click: add point, Right-click: finish)", 
-                               font=('TkDefaultFont', 8), foreground='gray')
-        hint_label.pack(pady=(0, 5))
-    
+        hint_label = QLabel("(Left-click: add point, Right-click: finish)")
+        hint_label.setStyleSheet("color: gray; font-size: 8pt;")
+        hint_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(hint_label)
+
+        parent_layout.addWidget(group)
+
     def _toggle_draw_mode(self):
         """Toggle line drawing mode"""
         self.draw_mode = not self.draw_mode
 
         if self.draw_mode:
-            self.draw_btn.config(text='Draw Mode: ON', bg='#90EE90', activebackground='#7CCD7C')
+            self.draw_btn.setText('Draw Mode: ON')
+            self.draw_btn.setStyleSheet('background-color: #90EE90; color: black;')
             self.click_cid = self.canvas.mpl_connect('button_press_event',
                                                       self._on_line_click)
             self.motion_cid = self.canvas.mpl_connect('motion_notify_event',
                                                        self._on_mouse_motion)
-            self.canvas.get_tk_widget().config(cursor='crosshair')
+            self.canvas.setCursor(Qt.CrossCursor)
             # Capture background for blitting optimization
             self.canvas.draw()
             self._draw_background = self.canvas.copy_from_bbox(self.figure.bbox)
         else:
-            self.draw_btn.config(text='Draw Mode: OFF', bg='#d9d9d9', activebackground='#ececec')
+            self.draw_btn.setText('Draw Mode: OFF')
+            self.draw_btn.setStyleSheet('')
             if self.click_cid:
                 self.canvas.mpl_disconnect(self.click_cid)
                 self.click_cid = None
             if self.motion_cid:
                 self.canvas.mpl_disconnect(self.motion_cid)
                 self.motion_cid = None
-            self.canvas.get_tk_widget().config(cursor='')
+            self.canvas.setCursor(Qt.ArrowCursor)
             # Clear blitting background
             self._draw_background = None
             # Remove preview line
@@ -448,7 +511,7 @@ class TVTab:
                 self.preview_line.remove()
                 self.preview_line = None
                 self.canvas.draw_idle()
-    
+
     def _on_line_click(self, event):
         """Handle mouse click for line drawing"""
         if event.inaxes is None:
@@ -474,11 +537,11 @@ class TVTab:
 
             self.current_draw_ax = target_ax
             self.line_points.append((event.xdata, event.ydata))
-            self.points_label.config(text=f'Points: {len(self.line_points)}')
+            self.points_label.setText(f'Points: {len(self.line_points)}')
             self._update_line_display()
         elif event.button == 3:  # Right click - finish current line
             self._finalize_current_line()
-    
+
     def _on_mouse_motion(self, event):
         """Handle mouse motion for preview line"""
         if not self.draw_mode:
@@ -510,7 +573,7 @@ class TVTab:
             self.canvas.blit(self.figure.bbox)
         else:
             self.canvas.draw_idle()
-    
+
     def _finalize_current_line(self):
         """Finalize the current line and prepare for a new one"""
         # Move current line to finalized lines list
@@ -520,7 +583,7 @@ class TVTab:
         # Clear points for new line
         self.line_points = []
         self.current_draw_ax = None
-        self.points_label.config(text='Points: 0')
+        self.points_label.setText('Points: 0')
         # Remove preview line
         if self.preview_line:
             self.preview_line.remove()
@@ -533,7 +596,7 @@ class TVTab:
         """Clear all drawn lines"""
         self.line_points = []
         self.current_draw_ax = None
-        self.points_label.config(text='Points: 0')
+        self.points_label.setText('Points: 0')
 
         # Remove current line being drawn
         if self.current_line_obj is not None:
@@ -564,7 +627,7 @@ class TVTab:
 
     def _update_line_display(self):
         """Update line display based on current settings"""
-        if not self.show_line_var.get() or len(self.line_points) < 2:
+        if not self.show_line_checkbox.isChecked() or len(self.line_points) < 2:
             self.canvas.draw_idle()
             return
 
@@ -575,7 +638,7 @@ class TVTab:
         x, y = points[:, 0], points[:, 1]
 
         # Apply smoothing if enabled
-        if self.smooth_var.get() and len(points) >= 4:
+        if self.smooth_checkbox.isChecked() and len(points) >= 4:
             try:
                 from scipy.interpolate import splprep, splev
                 tck, u = splprep([x, y], s=0)
@@ -584,10 +647,10 @@ class TVTab:
             except Exception:
                 pass  # Fall back to non-smooth
 
-        color = self.line_color_var.get()
-        width = int(self.line_width_var.get())
+        color = self.line_color_combo.currentText()
+        width = int(self.line_width_combo.currentText())
         style_map = {'dashed': '--', 'solid': '-', 'dotted': ':'}
-        linestyle = style_map.get(self.line_style_var.get(), '--')
+        linestyle = style_map.get(self.line_style_combo.currentText(), '--')
 
         # Remove previous version of current line if exists
         if self.current_line_obj is not None:
@@ -605,7 +668,7 @@ class TVTab:
         if self.draw_mode:
             self.canvas.draw()
             self._draw_background = self.canvas.copy_from_bbox(self.figure.bbox)
-    
+
     # =========================================================================
     # Time/Frame conversion utilities
     # =========================================================================
@@ -627,80 +690,80 @@ class TVTab:
     def _load_selected_tv(self):
         """Load selected TV ZIP file(s)"""
         try:
-            shot_number = int(self.shot_entry.get())
+            shot_number = int(self.shot_entry.text())
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid shot number")
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
             return
-        
-        tv_selection = self.tv_selection_var.get()
-        
+
+        tv_selection = self.tv_dropdown.currentText()
+
         if not tv_selection or tv_selection == '-- Select --':
-            messagebox.showerror("Error", "Please search and select a TV first")
+            QMessageBox.critical(self.frame, "Error", "Please search and select a TV first")
             return
-        
+
         # Handle TV01 + TV02 compare mode
         if tv_selection == 'TV01 + TV02':
             tv1_path = get_tv_zip_path(shot_number, 'TV01')
             tv2_path = get_tv_zip_path(shot_number, 'TV02')
-            
+
             if tv1_path is None or tv2_path is None:
-                messagebox.showerror("Error", "Failed to get TV file paths")
+                QMessageBox.critical(self.frame, "Error", "Failed to get TV file paths")
                 return
-            
+
             self._load_compare_mode(tv1_path, tv2_path)
         else:
             # Single TV mode
             zip_path = get_tv_zip_path(shot_number, tv_selection)
-            
+
             if zip_path is None:
-                messagebox.showerror("Error", "Campaign folder not found")
+                QMessageBox.critical(self.frame, "Error", "Campaign folder not found")
                 return
-            
+
             self.compare_mode = False
             self._setup_single_mode()
             self._load_zip_from_path(zip_path)
-    
+
     def _setup_single_mode(self):
         """Setup figure for single TV display"""
         self._cleanup_compare_mode()
-        
+
         self.figure.clear()
         self.ax = self.figure.add_subplot(111)
         self.ax.set_xticks([])
         self.ax.set_yticks([])
         self.ax.set_title("No image loaded")
-        
+
         self.im = None
         self.ax1 = None
         self.ax2 = None
         self.im1 = None
         self.im2 = None
-        
+
         self.canvas.draw()
-    
+
     def _setup_compare_mode(self):
         """Setup figure for TV1/TV2 comparison (side by side)"""
         self.figure.clear()
-        
+
         # Left: TV02, Right: TV01
         self.ax2 = self.figure.add_subplot(121)
         self.ax1 = self.figure.add_subplot(122)
-        
+
         self.ax1.set_xticks([])
         self.ax1.set_yticks([])
         self.ax2.set_xticks([])
         self.ax2.set_yticks([])
-        
+
         self.ax1.set_title("TV01")
         self.ax2.set_title("TV02")
-        
+
         self.im = None
         self.ax = None
         self.im1 = None
         self.im2 = None
-        
+
         self.canvas.draw()
-    
+
     def _cleanup_compare_mode(self):
         """Cleanup compare mode resources"""
         if self.tv1_zip:
@@ -709,25 +772,25 @@ class TVTab:
             except Exception:
                 pass
             self.tv1_zip = None
-        
+
         if self.tv2_zip:
             try:
                 self.tv2_zip.close()
             except Exception:
                 pass
             self.tv2_zip = None
-        
+
         self.tv1_images = []
         self.tv2_images = []
         self.tv1_cache.clear()
         self.tv2_cache.clear()
-    
+
     def _load_compare_mode(self, tv1_path, tv2_path):
         """Load both TV01 and TV02 for comparison"""
         self._stop_play()
         self._stop_prefetch()
         self._cleanup_compare_mode()
-        
+
         # Close single mode zip if open
         if self.zip_file:
             try:
@@ -736,7 +799,7 @@ class TVTab:
                 pass
             self.zip_file = None
         self.cache.clear()
-        
+
         self._set_status("Loading TV01...", 'blue')
         print(f"[TV] Loading TV01 from {tv1_path}")
 
@@ -745,7 +808,7 @@ class TVTab:
             self.tv1_images = self._get_sorted_images(self.tv1_zip)
             print(f"[TV] TV01 has {len(self.tv1_images)} frames")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load TV01:\n{str(e)}")
+            QMessageBox.critical(self.frame, "Error", f"Failed to load TV01:\n{str(e)}")
             self._set_status("Failed", 'red')
             return
 
@@ -757,81 +820,82 @@ class TVTab:
             self.tv2_images = self._get_sorted_images(self.tv2_zip)
             print(f"[TV] TV02 has {len(self.tv2_images)} frames")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load TV02:\n{str(e)}")
+            QMessageBox.critical(self.frame, "Error", f"Failed to load TV02:\n{str(e)}")
             self._set_status("Failed", 'red')
             self._cleanup_compare_mode()
             return
-        
+
         if not self.tv1_images or not self.tv2_images:
-            messagebox.showerror("Error", "No images found in one or both ZIP files")
+            QMessageBox.critical(self.frame, "Error", "No images found in one or both ZIP files")
             self._cleanup_compare_mode()
             return
-        
+
         # Enable compare mode
         self.compare_mode = True
         self._setup_compare_mode()
-        
+
         # Use TV01 as master for frame count
         self.total_frames = len(self.tv1_images)
         self.image_files = self.tv1_images  # For compatibility
-        
+
         # Update UI
-        self.file_label.config(text=f"TV01: {len(self.tv1_images)} frames, TV02: {len(self.tv2_images)} frames")
-        self.frame_slider.config(to=self.total_frames - 1)
-        self.frame_total_entry.config(state='normal')
-        self.frame_total_entry.delete(0, tk.END)
-        self.frame_total_entry.insert(0, str(self.total_frames))
-        self.frame_total_entry.config(state='readonly')
-        
+        self.file_label.setText(f"TV01: {len(self.tv1_images)} frames, TV02: {len(self.tv2_images)} frames")
+        self.frame_slider.setMaximum(self.total_frames - 1)
+        self.frame_total_entry.setReadOnly(False)
+        self.frame_total_entry.setText(str(self.total_frames))
+        self.frame_total_entry.setReadOnly(True)
+
         # Display first frame
         self.current_frame = 0
-        self.frame_var.set(0)
+        self.frame_slider.setValue(0)
         self._display_compare_frame(0)
-        
+
         self._start_prefetch(0)
         self._set_status("Ready", 'green')
         print(f"[TV] Compare mode ready")
-    
+
     def _get_sorted_images(self, zip_file):
         """Get sorted list of image files from ZIP"""
         all_files = zip_file.namelist()
-        
+
         image_extensions = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
-        image_files = [f for f in all_files 
+        image_files = [f for f in all_files
                       if f.lower().endswith(image_extensions) and not f.startswith('__MACOSX')]
-        
+
         def natural_sort_key(s):
             return [int(text) if text.isdigit() else text.lower()
                    for text in re.split('([0-9]+)', s)]
-        
+
         image_files.sort(key=natural_sort_key)
         return image_files
-    
+
     def _load_zip_file(self):
         """Open file dialog and load selected ZIP file"""
-        initial_dir = '/Diag_TV' if os.path.exists('/Diag_TV') else None
-        file_path = filedialog.askopenfilename(
-            title="Select TV ZIP file",
-            initialdir=initial_dir,
-            filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")]
+        initial_dir = '/Diag_TV' if os.path.exists('/Diag_TV') else ''
+        file_path, _ = QFileDialog.getOpenFileName(
+            self.frame,
+            "Select TV ZIP file",
+            initial_dir,
+            "ZIP files (*.zip);;All files (*.*)"
         )
-        
+
         if file_path:
             self.compare_mode = False
             self._setup_single_mode()
             self._load_zip_from_path(file_path)
-    
+
     def _set_status(self, text, color='blue'):
         """Update status label with color"""
-        self.status_label.config(text=text, fg=color)
-        self.status_label.update()
-    
+        self.status_label.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 9pt;")
+        self.status_label.setText(text)
+        QApplication.processEvents()
+
     def _load_zip_from_path(self, file_path):
         """Load images from ZIP file (single TV mode)"""
         self._stop_play()
         self._stop_prefetch()
         self._cleanup_compare_mode()
-        
+
         if self.zip_file:
             try:
                 self.zip_file.close()
@@ -843,80 +907,79 @@ class TVTab:
 
         self._set_status("Opening ZIP file...", 'blue')
         print(f"[TV] Opening ZIP file: {file_path}")
-        
+
         try:
             self.zip_file = zipfile.ZipFile(file_path, 'r')
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to open ZIP file:\n{str(e)}")
+            QMessageBox.critical(self.frame, "Error", f"Failed to open ZIP file:\n{str(e)}")
             self._set_status("Failed to open ZIP", 'red')
             print(f"[TV] Failed to open ZIP: {str(e)}")
             return
-        
+
         self._set_status("Reading file list...", 'blue')
         self.image_files = self._get_sorted_images(self.zip_file)
-        
+
         if not self.image_files:
-            messagebox.showerror("Error", "No image files found in ZIP")
+            QMessageBox.critical(self.frame, "Error", "No image files found in ZIP")
             self._set_status("No images found", 'red')
             return
-        
+
         self.total_frames = len(self.image_files)
         print(f"[TV] Found {self.total_frames} image files")
-        
+
         self._set_status("Updating UI...", 'blue')
-        self.file_label.config(text=file_path.split('/')[-1])
-        self.frame_slider.config(to=self.total_frames - 1)
-        self.frame_total_entry.config(state='normal')
-        self.frame_total_entry.delete(0, tk.END)
-        self.frame_total_entry.insert(0, str(self.total_frames))
-        self.frame_total_entry.config(state='readonly')
-        
+        self.file_label.setText(file_path.split('/')[-1])
+        self.frame_slider.setMaximum(self.total_frames - 1)
+        self.frame_total_entry.setReadOnly(False)
+        self.frame_total_entry.setText(str(self.total_frames))
+        self.frame_total_entry.setReadOnly(True)
+
         self._set_status("Loading first frame...", 'blue')
         self.current_frame = 0
-        self.frame_var.set(0)
-        
+        self.frame_slider.setValue(0)
+
         if not self._display_frame(0):
             self._set_status("Failed to load first frame", 'red')
-            messagebox.showerror("Error", "Failed to load first frame from ZIP")
+            QMessageBox.critical(self.frame, "Error", "Failed to load first frame from ZIP")
             return
-        
+
         self._start_prefetch(0)
         self._set_status("Ready", 'green')
         print(f"[TV] Successfully loaded {self.total_frames} images")
-    
+
     # =========================================================================
     # Image loading and display
     # =========================================================================
-    
+
     def _get_image(self, frame_idx):
         """Get image from cache or load from ZIP (single mode)"""
         if frame_idx < 0 or frame_idx >= self.total_frames:
             return None
-        
+
         if self.zip_file is None:
             return None
-        
+
         with self._prefetch_lock:
             if frame_idx in self.cache:
                 return self.cache[frame_idx]
-        
+
         try:
             filename = self.image_files[frame_idx]
             with self.zip_file.open(filename) as f:
                 img_data = f.read()
                 img = Image.open(io.BytesIO(img_data))
                 img_array = np.array(img)
-            
+
             with self._prefetch_lock:
                 self.cache[frame_idx] = img_array
                 self._cleanup_cache(frame_idx)
-            
+
             return img_array
-            
+
         except Exception as e:
             print(f"[TV] Error loading frame {frame_idx}: {str(e)}")
             return None
-    
+
     def _get_image_from_tv(self, tv_num, frame_idx):
         """Get image from specific TV cache or load from ZIP"""
         if tv_num == 1:
@@ -927,24 +990,24 @@ class TVTab:
             zip_file = self.tv2_zip
             images = self.tv2_images
             cache = self.tv2_cache
-        
+
         if frame_idx < 0 or frame_idx >= len(images):
             return None
-        
+
         if zip_file is None:
             return None
-        
+
         with self._prefetch_lock:
             if frame_idx in cache:
                 return cache[frame_idx]
-        
+
         try:
             filename = images[frame_idx]
             with zip_file.open(filename) as f:
                 img_data = f.read()
                 img = Image.open(io.BytesIO(img_data))
                 img_array = np.array(img)
-            
+
             with self._prefetch_lock:
                 cache[frame_idx] = img_array
                 # Limit cache size
@@ -953,13 +1016,13 @@ class TVTab:
                     for k in keys[:len(cache) - self.cache_size // 2]:
                         if k != frame_idx:
                             del cache[k]
-            
+
             return img_array
-            
+
         except Exception as e:
             print(f"[TV] Error loading TV{tv_num} frame {frame_idx}: {str(e)}")
             return None
-    
+
     def _cleanup_cache(self, center_frame):
         """Remove frames far from current position"""
         if len(self.cache) > self.cache_size:
@@ -969,11 +1032,11 @@ class TVTab:
                     keys_to_remove.append(key)
             for key in keys_to_remove[:len(self.cache) - self.cache_size]:
                 del self.cache[key]
-    
+
     def _start_prefetch(self, center_frame, direction=1):
         """Start background thread to prefetch frames"""
         self._stop_prefetch()
-        
+
         self._prefetch_stop = False
         self._prefetch_thread = threading.Thread(
             target=self._prefetch_worker,
@@ -981,21 +1044,21 @@ class TVTab:
             daemon=True
         )
         self._prefetch_thread.start()
-    
+
     def _stop_prefetch(self):
         """Stop prefetch thread"""
         self._prefetch_stop = True
         if self._prefetch_thread and self._prefetch_thread.is_alive():
             self._prefetch_thread.join(timeout=0.1)
-    
+
     def _prefetch_worker(self, center_frame, direction):
         """Background worker to prefetch frames"""
         prefetch_count = min(30, self.total_frames)
-        
+
         for i in range(1, prefetch_count + 1):
             if self._prefetch_stop:
                 break
-            
+
             frame_idx = center_frame + (i * direction)
             if 0 <= frame_idx < self.total_frames:
                 if self.compare_mode:
@@ -1016,19 +1079,19 @@ class TVTab:
                                 self.cache[frame_idx] = img_array
                             except Exception:
                                 pass
-    
+
     def _display_frame(self, frame_idx, update_ui=True):
         """Display specified frame (single TV mode)"""
         if self.compare_mode:
             return self._display_compare_frame(frame_idx, update_ui)
-        
+
         img_array = self._get_image(frame_idx)
-        
+
         if img_array is None:
             return False
-        
+
         filename = self.image_files[frame_idx]
-        
+
         if self.im is None:
             self.ax.clear()
             self.im = self.ax.imshow(img_array, cmap='gray' if len(img_array.shape) == 2 else None)
@@ -1040,10 +1103,10 @@ class TVTab:
                 self.current_line_obj = None
         else:
             self.im.set_data(img_array)
-        
+
         time_sec = frame_to_time(frame_idx)
         self.ax.set_title(f"Frame {frame_idx + 1}/{self.total_frames} (t = {time_sec:.3f} s)")
-        
+
         self.canvas.draw_idle()
         self.canvas.flush_events()
 
@@ -1055,11 +1118,9 @@ class TVTab:
         self.current_frame = frame_idx
 
         if update_ui:
-            self.frame_entry.delete(0, tk.END)
-            self.frame_entry.insert(0, str(frame_idx + 1))
-            self.time_entry.delete(0, tk.END)
-            self.time_entry.insert(0, f'{time_sec:.3f}')
-            self.filename_label.config(text=filename)
+            self.frame_entry.setText(str(frame_idx + 1))
+            self.time_entry.setText(f'{time_sec:.3f}')
+            self.filename_label.setText(filename)
 
         return True
 
@@ -1068,22 +1129,22 @@ class TVTab:
         # TV01 frame (master)
         tv1_img = self._get_image_from_tv(1, frame_idx)
         tv1_time = frame_to_time(frame_idx)
-        
+
         # Find matching TV02 frame by time (returns None if out of range)
         tv2_frame = self._find_matching_frame(
             frame_idx, len(self.tv1_images), len(self.tv2_images))
-        
+
         # Get TV02 image only if frame is valid
         tv2_img = None
         tv2_time = tv1_time  # Use same time for display
         if tv2_frame is not None:
             tv2_img = self._get_image_from_tv(2, tv2_frame)
             tv2_time = frame_to_time(tv2_frame)
-        
+
         # Check if at least one has data
         if tv1_img is None and tv2_img is None:
             return False
-        
+
         # Display TV01 (right)
         if tv1_img is not None:
             if self.im1 is None:
@@ -1098,13 +1159,13 @@ class TVTab:
             # No data for TV01 at this time
             self.ax1.clear()
             self.ax1.set_facecolor('black')
-            self.ax1.text(0.5, 0.5, 'No Data', ha='center', va='center', 
+            self.ax1.text(0.5, 0.5, 'No Data', ha='center', va='center',
                          fontsize=16, color='white', transform=self.ax1.transAxes)
             self.ax1.set_xticks([])
             self.ax1.set_yticks([])
             self.ax1.set_title(f"TV01 (t = {tv1_time:.3f} s) - No Data")
             self.im1 = None
-        
+
         # Display TV02 (left)
         if tv2_img is not None and tv2_frame is not None:
             if self.im2 is None:
@@ -1119,13 +1180,13 @@ class TVTab:
             # No data for TV02 at this time
             self.ax2.clear()
             self.ax2.set_facecolor('black')
-            self.ax2.text(0.5, 0.5, 'No Data', ha='center', va='center', 
+            self.ax2.text(0.5, 0.5, 'No Data', ha='center', va='center',
                          fontsize=16, color='white', transform=self.ax2.transAxes)
             self.ax2.set_xticks([])
             self.ax2.set_yticks([])
             self.ax2.set_title(f"TV02 (t = {tv1_time:.3f} s) - No Data")
             self.im2 = None
-        
+
         self.canvas.draw_idle()
         self.canvas.flush_events()
 
@@ -1139,194 +1200,193 @@ class TVTab:
         # Always update filename display
         tv1_name = self.tv1_images[frame_idx] if frame_idx < len(self.tv1_images) else "N/A"
         tv2_name = self.tv2_images[tv2_frame] if tv2_frame is not None and tv2_frame < len(self.tv2_images) else "N/A"
-        self.filename_label.config(text=f"TV01: {tv1_name} | TV02: {tv2_name}")
-        
+        self.filename_label.setText(f"TV01: {tv1_name} | TV02: {tv2_name}")
+
         if update_ui:
-            self.frame_entry.delete(0, tk.END)
-            self.frame_entry.insert(0, str(frame_idx + 1))
-            self.time_entry.delete(0, tk.END)
-            self.time_entry.insert(0, f'{tv1_time:.3f}')
-        
+            self.frame_entry.setText(str(frame_idx + 1))
+            self.time_entry.setText(f'{tv1_time:.3f}')
+
         return True
-    
+
     # =========================================================================
     # Frame navigation
     # =========================================================================
-    
+
     def _on_slider_change(self, value):
         """Handle slider value change with debounce"""
-        # Cancel any pending slider update
-        if hasattr(self, '_slider_job') and self._slider_job is not None:
-            self.frame.after_cancel(self._slider_job)
-        
-        # Schedule update after short delay (debounce)
-        self._slider_job = self.frame.after(10, self._do_slider_update)
-    
+        self._slider_value = value
+        self._slider_timer.start(10)
+
     def _do_slider_update(self):
         """Actually perform the slider update"""
-        self._slider_job = None
-        frame_idx = self.frame_var.get()
+        frame_idx = self._slider_value
         self._display_frame(frame_idx, update_ui=True)
-    
-    def _on_frame_entry(self, event):
+
+    def _on_frame_entry(self):
         """Handle frame entry input"""
         self._goto_frame()
-    
+
     def _on_mouse_wheel(self, event):
         """Handle mouse wheel event for frame navigation"""
         if self.total_frames == 0:
             return
-        
-        current = self.frame_var.get()
-        
+
+        current = self.frame_slider.value()
+
         if event.button == 'up':
             new_frame = max(0, current - 1)
         elif event.button == 'down':
             new_frame = min(self.total_frames - 1, current + 1)
         else:
             return
-        
+
         if new_frame != current:
             self.current_frame = new_frame
-            self.frame_var.set(new_frame)
+            self.frame_slider.setValue(new_frame)
             self._display_frame(new_frame)
-    
+
     def _goto_frame(self):
         """Go to specified frame number"""
         try:
-            frame_num = int(self.frame_entry.get())
+            frame_num = int(self.frame_entry.text())
             frame_idx = frame_num - 1
-            
+
             if 0 <= frame_idx < self.total_frames:
                 self.current_frame = frame_idx
-                self.frame_var.set(frame_idx)
+                self.frame_slider.setValue(frame_idx)
                 self._display_frame(frame_idx)
                 self._start_prefetch(frame_idx)
             else:
-                messagebox.showwarning("Warning", 
+                QMessageBox.warning(self.frame, "Warning",
                     f"Frame number must be between 1 and {self.total_frames}")
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid frame number")
-    
-    def _on_time_entry(self, event):
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid frame number")
+
+    def _on_time_entry(self):
         """Handle time entry input"""
         self._goto_time()
-    
+
     def _goto_time(self):
         """Go to frame at specified time"""
         if self.total_frames == 0:
             return
-        
+
         try:
-            time_sec = float(self.time_entry.get())
+            time_sec = float(self.time_entry.text())
             frame_idx = time_to_frame(time_sec, self.total_frames)
-            
+
             self.current_frame = frame_idx
-            self.frame_var.set(frame_idx)
+            self.frame_slider.setValue(frame_idx)
             self._display_frame(frame_idx)
             self._start_prefetch(frame_idx)
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid time in seconds")
-    
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid time in seconds")
+
     def _step_frame(self, delta):
         """Step forward/backward by delta frames"""
         if self.total_frames == 0:
             return
-        current = self.frame_var.get()
+        current = self.frame_slider.value()
         new_frame = current + delta
         new_frame = max(0, min(new_frame, self.total_frames - 1))
-        
+
         self.current_frame = new_frame
-        self.frame_var.set(new_frame)
+        self.frame_slider.setValue(new_frame)
         self._display_frame(new_frame)
-    
+
     def _goto_first(self):
         """Go to first frame"""
         if self.total_frames == 0:
             return
         self.current_frame = 0
-        self.frame_var.set(0)
+        self.frame_slider.setValue(0)
         self._display_frame(0)
         self._start_prefetch(0)
-    
+
     def _goto_last(self):
         """Go to last frame"""
         if self.total_frames == 0:
             return
         last_idx = self.total_frames - 1
         self.current_frame = last_idx
-        self.frame_var.set(last_idx)
+        self.frame_slider.setValue(last_idx)
         self._display_frame(last_idx)
         self._start_prefetch(last_idx, direction=-1)
-    
+
     # =========================================================================
     # Playback controls
     # =========================================================================
-    
+
     def _toggle_play(self):
         """Toggle play/pause"""
         if self.total_frames == 0:
             return
-        
+
         if self.is_playing:
             self._pause_play()
         else:
             self._start_play()
-    
+
     def _start_play(self):
         """Start playback"""
         self.is_playing = True
-        self.play_btn.config(text='Pause')
+        self.play_btn.setIcon(get_icon(QStyle.SP_MediaPause))
         self._last_frame_time = time.time()
         self._fps_history = []
-        
+
         self._start_prefetch(self.current_frame, direction=1)
-        
-        self._play_next_frame()
-    
+
+        # Calculate initial delay
+        speed_str = self.speed_combo.currentText()
+        if speed_str == 'Max':
+            target_delay = 1
+        else:
+            speed_mult = float(speed_str.replace('x', ''))
+            base_delay = 300
+            target_delay = max(1, int(base_delay / speed_mult))
+
+        self._play_timer.start(target_delay)
+
     def _pause_play(self):
         """Pause playback"""
         self.is_playing = False
-        self.play_btn.config(text='Play')
-        if self.play_job:
-            self.frame.after_cancel(self.play_job)
-            self.play_job = None
-        
-        self.actual_fps_label.config(text='Actual: -- FPS')
-        
+        self.play_btn.setIcon(get_icon(QStyle.SP_MediaPlay))
+        self._play_timer.stop()
+
+        self.actual_fps_label.setText('Actual: -- FPS')
+
         if self.total_frames > 0:
-            self.frame_entry.delete(0, tk.END)
-            self.frame_entry.insert(0, str(self.current_frame + 1))
+            self.frame_entry.setText(str(self.current_frame + 1))
             if self.current_frame < len(self.image_files):
-                self.filename_label.config(text=self.image_files[self.current_frame])
-    
+                self.filename_label.setText(self.image_files[self.current_frame])
+
     def _stop_play(self):
         """Stop playback and reset to first frame"""
         self._pause_play()
         if self.total_frames > 0:
             self.current_frame = 0
-            self.frame_var.set(0)
+            self.frame_slider.setValue(0)
             self._display_frame(0)
-    
+
     def _play_next_frame(self):
         """Play next frame with speed multiplier"""
         if not self.is_playing:
             return
-        
-        current = self.frame_var.get()
+
+        current = self.frame_slider.value()
         next_frame = current + 1
-        
+
         if next_frame >= self.total_frames:
-            if self.loop_var.get():
+            if self.loop_checkbox.isChecked():
                 next_frame = 0
             else:
                 self._pause_play()
                 return
-        
+
         now = time.time()
         actual_frame_time = now - self._last_frame_time
         self._last_frame_time = now
-        
+
         if actual_frame_time > 0:
             instant_fps = 1.0 / actual_frame_time
             if not hasattr(self, '_fps_history'):
@@ -1335,52 +1395,54 @@ class TVTab:
             if len(self._fps_history) > 10:
                 self._fps_history.pop(0)
             avg_fps = sum(self._fps_history) / len(self._fps_history)
-            self.actual_fps_label.config(text=f'Actual: {avg_fps:.1f} FPS')
-        
+            self.actual_fps_label.setText(f'Actual: {avg_fps:.1f} FPS')
+
         self.current_frame = next_frame
-        self.frame_var.set(next_frame)
+        self.frame_slider.setValue(next_frame)
         self._display_frame(next_frame, update_ui=False)
-        
-        speed_str = self.speed_var.get()
+
+        # Update timer interval for speed changes during playback
+        speed_str = self.speed_combo.currentText()
         if speed_str == 'Max':
             target_delay = 1
         else:
             speed_mult = float(speed_str.replace('x', ''))
-            base_delay = 100
+            base_delay = 300
             target_delay = max(1, int(base_delay / speed_mult))
-        
-        self.play_job = self.frame.after(target_delay, self._play_next_frame)
-    
+
+        # Update the timer interval if changed
+        if self._play_timer.interval() != target_delay:
+            self._play_timer.setInterval(target_delay)
+
     # =========================================================================
     # Cleanup and settings
     # =========================================================================
-    
+
     def cleanup(self):
         """Cleanup resources when tab is closed"""
         self._stop_play()
         self._stop_prefetch()
-        
+
         if self.zip_file:
             try:
                 self.zip_file.close()
             except Exception:
                 pass
             self.zip_file = None
-        
+
         self._cleanup_compare_mode()
         self.cache.clear()
-    
+
     def save_settings(self):
         """Save current tab settings"""
         settings = {
-            "shot": self.shot_entry.get()
+            "shot": self.shot_entry.text()
         }
         set_tab_settings("tv", settings)
-    
+
     def load_settings(self):
         """Load and apply saved settings"""
         settings = get_tab_settings("tv")
-        
+
         if settings.get("shot"):
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, settings["shot"])
+            self.shot_entry.setText(settings["shot"])

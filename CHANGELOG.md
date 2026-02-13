@@ -5,6 +5,101 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-02-13
+
+### Changed - GUI Framework Migration (tkinter → PySide6)
+- **Complete GUI rewrite**: Migrated all 22 GUI files from tkinter/ttk to PySide6 (Qt 6)
+- **Sidebar Navigation**: Replaced flat 11-tab `ttk.Notebook` with categorized `QTreeWidget` sidebar
+  - 4 groups: Profiles, Time Traces, Spectral Analysis, Imaging
+  - `QStackedWidget` for lazy-loaded tab content (preserved fast startup)
+- **Widget Migration**:
+  - `ttk.Frame` → `QWidget` with `QVBoxLayout`/`QHBoxLayout`/`QGridLayout`
+  - `ttk.LabelFrame` → `QGroupBox`
+  - `ttk.Entry` / `tk.StringVar` → `QLineEdit` (direct `.text()` access)
+  - `ttk.Combobox` → `QComboBox`
+  - `ttk.Checkbutton` / `tk.BooleanVar` → `QCheckBox` (`.isChecked()`)
+  - `ttk.Radiobutton` / `tk.StringVar` → `QRadioButton` + `QButtonGroup`
+  - `tk.Listbox` + `ttk.Scrollbar` → `QListWidget` (built-in scrollbars)
+  - `ttk.Scale` → `QSlider`
+  - `tk.Toplevel` → `QDialog`
+  - `messagebox` → `QMessageBox`
+  - `filedialog` → `QFileDialog`
+- **Matplotlib Backend**: `FigureCanvasTkAgg` → `FigureCanvasQTAgg`, `NavigationToolbar2Tk` → `NavigationToolbar2QT`
+- **Layout System**: `pack()`/`grid()` → `QVBoxLayout`/`QHBoxLayout`/`QGridLayout`/`QSplitter`
+- **Timer Pattern**: `frame.after()` → `QTimer.singleShot()`
+- **Entry Point**: `tk.Tk()` + `root.mainloop()` → `QApplication` + `app.exec()`
+
+### Added
+- **Dark/Light Theme Toggle**: Runtime theme switching via sidebar button
+  - `ThemeManager` class in new `ui/theme.py` module (~650 lines)
+  - Applies to all widgets, matplotlib canvases, toolbar, sidebar, and scrollbars
+  - Theme preference saved to `settings.json` and restored on startup
+- **Shot Number Persistence**: All Profile and TimeTrace tabs save/restore shot number to `settings.json`
+  - Implemented in `BaseTab._restore_shot_from_settings()` and `BaseTab.save_settings()`
+  - Works in both main window and standalone mode
+- **Data Preview & Save**: Spreadsheet-style preview dialog before saving data
+  - Replaced separate "Save as .txt" / "Save as .npz" buttons with unified "Preview & Save" button
+  - Tabular data preview with copy and save functionality
+- **Per-Channel Visibility Toggle**: Profile tabs (TiVT, NeTe, MSE) now have "Select Channels" button
+  - Select/deselect individual channels to dim (gray) on the profile plot
+  - Channel list built from selected listbox entries (not from cache)
+  - ECE uses channel-number-based keys for correct cross-shot behavior
+- **Custom Combobox Arrow Icons**: SVG arrows for dark/light themes (`ui/icons/`)
+
+### Changed - Standalone Mode
+- **Unified Launcher**: Removed per-tab CLI commands (`prism tivt`, `prism spec`, etc.) and `standalone_launcher.py`
+  - `prism` launches full PRISM with sidebar
+  - `prism -s` (or `--select`) opens a tab selector with buttons for each viewer
+  - Button click launches that single tab using the same `PRISMApp` class (consistent theme, toolbar, settings)
+
+### Changed - Startup Message
+- Removed "Enabled diagnostics" list from console output; now shows only the banner box
+- Added update date next to version in banner (e.g., `PRISM v2.0.0 (2026-02-13)`)
+- `UPDATE_DATE` constant added to `config/app_config.py`
+
+### Changed - UI Polish
+- **Shot Up/Down Buttons**: Unified to compact vertical stack layout across all tabs
+- **EFIT Labels**: Unicode subscript notation for ψ_N, ρ_pol, ρ_tor
+- **Sidebar**: Adjusted title font size (PRISM 25px, version 12px), improved spacing
+- **Control Panels**: Unified panel names, box widths, and section numbering across all tabs
+- **TV Tab**: Improved toolbar and dropdown styling
+- **TV Startup Tab**: Improved Add button and panel layout
+- **Playback Controls**: Redesigned layout for TV and IRVB tabs
+- **Combobox Styling**: Fixed text clipping near dropdown arrow, unified height (`min-height: 20px`) across all dropdowns
+- **RadioButton Styling**: Square indicator (`border-radius: 3px`) with blue fill on checked; added disabled state styling
+- **MSE q/j RadioButtons**: Stretch-based layout for even spacing with Plot button
+- **Widget Widths**: Adjusted shot entry, analysis combo, and diagnostic combo widths for better fit; removed unnecessary `setMinimumWidth` constraints from shot entry fields
+- **Scrollable Control Panels**: Profile and time trace control areas now scroll when window is small
+- **Matplotlib Integration**: Dark-themed axes, grid, and tick labels; save-to-white for exported figures
+- **What's New Dialog**: Tab labels changed from "v2.x"/"v1.x" to "v2"/"v1"
+
+### Fixed
+- **PYTHONPATH in Launcher**: `run_prism.sh` now exports PySide6 `site-packages` path so all users can access PySide6 without local installation
+- **X11 Forwarding Compatibility**: Environment variables set before QApplication init (`main.py` and `run_prism.sh`)
+  - `QT_XCB_GL_INTEGRATION=none`, `QT_XCB_NO_XI2=1`, `QT_X11_NO_MITSHM=1`
+  - `LIBGL_ALWAYS_SOFTWARE=1`, `QT_QUICK_BACKEND=software`
+  - `unset WAYLAND_DISPLAY` (NoMachine warning), `NO_AT_BRIDGE=1`
+- **ne/Te Profile ECE Listbox**: Fixed ECE-only mode not populating listbox (`'ECE only'` → `'ECE'` match)
+- **ECE Channel Disable Bug**: Changed channel keys from index-based (`ECE_0`) to channel-number-based (`ECE_ch62`) to prevent cross-shot mismatch when disabling channels with different BT
+- **Select Channels Scope**: Channel list now based on selected listbox entries, not entire data cache (applied to CES, Thomson, MSE, ECE)
+- **Dependency Versions**: Pinned `PySide6>=6.2.4`, `matplotlib>=3.5.0` in requirements.txt
+
+### Removed
+- `#!/usr/bin/python3.8` shebang from all 34 Python files
+- Unused tkinter-era widget size constants (`ENTRY_WIDTH_*`, `BUTTON_WIDTH_*`, `PAD_*`, etc.)
+- `AxisControlToolbar` class from `custom_toolbar.py` (unused since v1.1.9 toolbar redesign)
+- Duplicate `get_mode_color()` function in `nmode_spectrum_tab.py`
+- `DARK_STYLE` backward-compatibility shim from `ui_constants.py`
+- `examples/sidebar_demo.py` prototype file
+- `standalone_launcher.py` — standalone mode now handled by `PRISMApp(mode='select')` in `main_window.py`
+
+### Technical
+- Version bumped from 1.1.11 to 2.0.0 (major version for framework change)
+- New `ui/theme.py` module with `ThemeManager`, dark/light QSS, QPalette, matplotlib rcParams
+- SVG icon files: `arrow-down-dark.svg`, `arrow-down-light.svg`, `check-white.svg`
+- `SidebarNav` class in `ui/main_window.py` for categorized navigation
+- `BaseTab._settings_key` mapping for per-tab settings persistence
+
 ## [1.1.11] - 2026-02-05
 
 ### Added
@@ -385,7 +480,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Technical Details
 - Python 3.8+ compatible
 - MDS+ database connectivity
-- Tkinter-based GUI with matplotlib integration
+- Tkinter-based GUI with matplotlib integration (migrated to PySide6 in v2.0.0)
 - Pillow for image processing (TV tab)
 
 ---

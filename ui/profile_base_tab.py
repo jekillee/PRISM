@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 Base class for profile tabs (TiVT, NeTe, MSE)
 Extracts common functionality from concrete profile tabs
@@ -7,15 +5,20 @@ Extracts common functionality from concrete profile tabs
 
 from abc import abstractmethod
 from typing import Dict, List, Tuple, Any, Optional
-import tkinter as tk
-from tkinter import ttk, messagebox
 import numpy as np
 from scipy.interpolate import interp1d
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QLayout,
+    QGroupBox, QCheckBox, QPushButton, QMessageBox, QLabel,
+    QDialog, QScrollArea, QDialogButtonBox, QFrame,
+)
+from PySide6.QtCore import Qt
 
 from ui.base_tab import BaseTab
-from ui.ui_constants import CONTROL_PANEL_WIDTH, PAD_X, PAD_Y
+from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style
 
 
 class ProfileBaseTab(BaseTab):
@@ -33,22 +36,51 @@ class ProfileBaseTab(BaseTab):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.secondary_data_cache: Dict[str, Any] = {}
+        self._disabled_channels: set = set()  # Channel indices to plot in gray
 
     def create_widgets(self) -> None:
         """Create common profile tab layout"""
-        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
+        self.figure = Figure(self.app_config.FIGURE_SIZE)
 
         self.ax1, self.ax2 = self.plot_manager.setup_profile_plot(
             self.figure, self.param1['label'], self.param2['label'])
+        apply_dark_figure_style(self.figure)
 
         # Create canvas
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
+        self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(side=tk.LEFT, fill='both', expand=True)
 
-        control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
-        control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
-        control_frame.pack_propagate(False)
+        # Left side: canvas + toolbar in a vertical layout
+        canvas_widget = QWidget()
+        canvas_layout = QVBoxLayout(canvas_widget)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
+        canvas_layout.addWidget(self.canvas)
+
+        # Right side: scrollable control panel
+        scroll_area = QScrollArea()
+        scroll_area.setFixedWidth(CONTROL_PANEL_WIDTH)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
+        control_frame = QWidget()
+        control_layout = QVBoxLayout(control_frame)
+        control_layout.setContentsMargins(9, 9, 9, 9)
+        control_layout.setSizeConstraint(QLayout.SetNoConstraint)
+
+        scroll_area.setWidget(control_frame)
+        scroll_area.viewport().setAutoFillBackground(False)
+        control_frame.setAutoFillBackground(False)
+
+        # Splitter for left/right layout
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(canvas_widget)
+        splitter.addWidget(scroll_area)
+
+        # Set the main layout of self.frame
+        main_layout = QVBoxLayout(self.frame)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(splitter)
 
         # Create control panels
         self._create_shot_input(control_frame)
@@ -57,26 +89,121 @@ class ProfileBaseTab(BaseTab):
         self._create_efit_controls(control_frame)
         self._create_save_controls(control_frame, section_num=5)
 
-    def _create_plot_controls(self, parent: ttk.Frame) -> None:
+    def _create_plot_controls(self, parent: QWidget) -> None:
         """Create plot control buttons (common for all profile tabs)"""
-        frame = ttk.LabelFrame(parent, text="3. Plot", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        group = QGroupBox("3. Plot")
+        group_layout = QVBoxLayout(group)
 
-        row_frame = ttk.Frame(frame)
-        row_frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        row_frame.grid_columnconfigure(1, weight=1)
+        # Row 1: Plot button only
+        plot_button = QPushButton("Plot")
+        plot_button.clicked.connect(self.plot_data)
+        group_layout.addWidget(plot_button)
 
-        self.show_channel_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            row_frame, text='Show Nodes', variable=self.show_channel_var
-        ).grid(row=0, column=0, sticky='w')
+        # Separator line
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        group_layout.addWidget(separator)
 
-        ttk.Button(
-            row_frame, text='Plot R profiles', command=self.plot_data
-        ).grid(row=0, column=1, sticky='ew', padx=(10, 0))
+        # Row 2: Show Nodes | Select Channels
+        row2 = QHBoxLayout()
+
+        self.show_channel_checkbox = QCheckBox("Show Nodes")
+        self.show_channel_checkbox.setChecked(False)
+        row2.addWidget(self.show_channel_checkbox)
+
+        channels_btn = QPushButton("Select Channels")
+        channels_btn.setToolTip("Select which channels to enable or dim")
+        channels_btn.clicked.connect(self._show_channel_selector)
+        row2.addWidget(channels_btn)
+
+        group_layout.addLayout(row2)
+
+        parent.layout().addWidget(group)
+
+    def _get_channel_info(self) -> List[Tuple[str, str]]:
+        """Return list of (key, label) for diagnostic channels.
+
+        Override in subclasses for diagnostic-specific channel info.
+        key: unique string identifier (e.g., "CES_0", "TS_5", "ECE_10")
+        label: display label (e.g., "CES Ch1 (R=1.850m)")
+        """
+        return []
+
+    def _show_channel_selector(self) -> None:
+        """Show dialog with checkboxes for each diagnostic channel"""
+        channel_info = self._get_channel_info()
+        if not channel_info:
+            QMessageBox.information(self.frame, "Channels",
+                "No channel data available.\nLoad and plot data first.")
+            return
+
+        dialog = QDialog(self.frame)
+        dialog.setWindowTitle("Select Channels")
+        dialog.setMinimumWidth(300)
+        dlg_layout = QVBoxLayout(dialog)
+
+        hint = QLabel("Uncheck channels to dim them (gray) on the plot:")
+        hint.setWordWrap(True)
+        dlg_layout.addWidget(hint)
+
+        # Scrollable area for checkboxes
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setMaximumHeight(400)
+        cb_widget = QWidget()
+        cb_layout = QVBoxLayout(cb_widget)
+
+        checkboxes = []
+        for idx, label in channel_info:
+            cb = QCheckBox(label)
+            cb.setChecked(idx not in self._disabled_channels)
+            cb_layout.addWidget(cb)
+            checkboxes.append((idx, cb))
+
+        cb_layout.addStretch()
+        scroll.setWidget(cb_widget)
+        dlg_layout.addWidget(scroll)
+
+        # Select All / Deselect All buttons
+        sel_layout = QHBoxLayout()
+        select_all_btn = QPushButton("Select All")
+        select_all_btn.clicked.connect(
+            lambda: [cb.setChecked(True) for _, cb in checkboxes])
+        sel_layout.addWidget(select_all_btn)
+        deselect_all_btn = QPushButton("Deselect All")
+        deselect_all_btn.clicked.connect(
+            lambda: [cb.setChecked(False) for _, cb in checkboxes])
+        sel_layout.addWidget(deselect_all_btn)
+        dlg_layout.addLayout(sel_layout)
+
+        # OK / Cancel
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(dialog.accept)
+        btn_box.rejected.connect(dialog.reject)
+        dlg_layout.addWidget(btn_box)
+
+        if dialog.exec() == QDialog.Accepted:
+            self._disabled_channels.clear()
+            for idx, cb in checkboxes:
+                if not cb.isChecked():
+                    self._disabled_channels.add(idx)
+
+    def _get_channel_mask(self, channel_keys: List[str]) -> np.ndarray:
+        """Return boolean mask: True = enabled, False = disabled (gray).
+
+        Args:
+            channel_keys: List of channel key strings (e.g., ["CES_0", "CES_1", ...])
+        """
+        return np.array([k not in self._disabled_channels for k in channel_keys])
+
+    def _get_plot_colors(self, entries: List[str]) -> List:
+        """Get plot colors for entries."""
+        return self.plot_manager.color_manager.get_colors_for_entries(entries)
 
     @abstractmethod
-    def _create_shot_input(self, parent: ttk.Frame) -> None:
+    def _create_shot_input(self, parent: QWidget) -> None:
         """Create diagnostic-specific shot input controls
 
         Must be implemented by subclasses to provide diagnostic-specific
@@ -116,12 +243,13 @@ class ProfileBaseTab(BaseTab):
         self.ax1.set_ylabel(self.param1['label'])
         self.ax2.set_ylabel(self.param2['label'])
 
-        selected_entries = list(self.selected_listbox.get(0, tk.END))
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
         if not selected_entries:
             return
 
         y1_max, y2_max, y2_min = 0.0, 0.0, 0.0
-        colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
+        colors = self._get_plot_colors(selected_entries)
 
         for i, entry in enumerate(selected_entries):
             try:
@@ -196,7 +324,7 @@ class ProfileBaseTab(BaseTab):
     def plot_efit_profiles(self) -> None:
         """Plot profiles with EFIT mapping"""
         if not self.efit_data or self.computed_efit_tree is None:
-            messagebox.showwarning("Warning", "Please compute EFIT first.")
+            QMessageBox.warning(self.frame, "Warning", "Please compute EFIT first.")
             return
 
         efit_tree = self.computed_efit_tree
@@ -204,7 +332,8 @@ class ProfileBaseTab(BaseTab):
         self.ax1.clear()
         self.ax2.clear()
 
-        selected_entries = list(self.selected_listbox.get(0, tk.END))
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
         if not selected_entries:
             return
 
@@ -218,7 +347,7 @@ class ProfileBaseTab(BaseTab):
             x_label = rf"$\rho_{{tor}}$ ({efit_tree})"
 
         y1_max, y2_max, y2_min = 0.0, 0.0, 0.0
-        colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
+        colors = self._get_plot_colors(selected_entries)
 
         for i, entry in enumerate(selected_entries):
             try:

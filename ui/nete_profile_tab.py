@@ -1,15 +1,17 @@
-#!/usr/bin/python3.8
-
 """
 ne, Te Profile tab with Thomson/ECE selection
 """
 
-import tkinter as tk
-from tkinter import ttk, messagebox
 import numpy as np
 from scipy.interpolate import interp1d
+
+from PySide6.QtWidgets import (
+    QMessageBox, QLineEdit, QComboBox, QPushButton,
+    QWidget, QHBoxLayout, QVBoxLayout, QGroupBox, QGridLayout, QLabel, QStyle
+)
+
 from ui.profile_base_tab import ProfileBaseTab
-from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT, ENTRY_WIDTH_SHOT
+from ui.ui_constants import get_icon
 
 
 class NeTeProfileTab(ProfileBaseTab):
@@ -28,45 +30,64 @@ class NeTeProfileTab(ProfileBaseTab):
 
     def _create_shot_input(self, parent):
         """Create data loading section with diagnostic selection"""
-        frame = ttk.LabelFrame(parent, text="1. Load ne, Te Data", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-
-        frame.grid_columnconfigure(1, weight=1)
+        group = QGroupBox("1. Load ne, Te Data")
+        grid = QGridLayout(group)
+        grid.setColumnStretch(1, 1)
 
         # Row 0: Shot label, entry, up/down buttons, diagnostic dropdown, Fetch
-        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='w').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
+        grid.addWidget(QLabel('Shot'), 0, 0)
 
-        self.shot_entry = ttk.Entry(frame)
-        self.shot_entry.grid(row=0, column=1, padx=(PAD_X, 0), pady=PAD_Y, sticky='ew')
-        self.shot_entry.bind('<Return>', lambda e: self.load_shot_data())
+        self.shot_entry = QLineEdit()
+        grid.addWidget(self.shot_entry, 0, 1)
+        self.shot_entry.returnPressed.connect(self.load_shot_data)
 
-        btn_updown = ttk.Frame(frame)
-        btn_updown.grid(row=0, column=2, padx=(2, PAD_X), pady=PAD_Y, sticky='w')
-        ttk.Button(btn_updown, text='\u25B2', width=2,
-                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT)
-        ttk.Button(btn_updown, text='\u25BC', width=2,
-                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
+        btn_updown = QWidget()
+        btn_layout = QVBoxLayout(btn_updown)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(0)
+        mini_btn_style = "padding: 0px; border-radius: 2px;"
+        up_btn = QPushButton()
+        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
+        up_btn.setFixedSize(24, 15)
+        up_btn.setStyleSheet(mini_btn_style)
+        up_btn.clicked.connect(lambda: self._adjust_shot(1))
+        btn_layout.addWidget(up_btn)
+        down_btn = QPushButton()
+        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
+        down_btn.setFixedSize(24, 15)
+        down_btn.setStyleSheet(mini_btn_style)
+        down_btn.clicked.connect(lambda: self._adjust_shot(-1))
+        btn_layout.addWidget(down_btn)
+        grid.addWidget(btn_updown, 0, 2)
 
         diag_options = ['TS+ECE', 'TS', 'ECE (100Hz)', 'ECE (1kHz)']
-        self.selected_diagnostic = tk.StringVar(value='TS+ECE')
+        self.diag_combo = QComboBox()
+        self.diag_combo.addItems(diag_options)
+        self.diag_combo.setCurrentText('TS+ECE')
+        self.diag_combo.setFixedWidth(110)
+        grid.addWidget(self.diag_combo, 0, 3)
 
-        diag_dropdown = ttk.Combobox(frame, textvariable=self.selected_diagnostic,
-                                    values=diag_options, state="readonly", width=10)
-        diag_dropdown.grid(row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky='w')
+        self.fetch_button = QPushButton('Fetch')
+        self.fetch_button.setFixedWidth(70)
+        self.fetch_button.clicked.connect(self.load_shot_data)
+        grid.addWidget(self.fetch_button, 0, 4)
 
-        self.fetch_button = ttk.Button(frame, text='Fetch', command=self.load_shot_data, width=8)
-        self.fetch_button.grid(row=0, column=4, padx=PAD_X, pady=PAD_Y, sticky='e')
+        parent.layout().addWidget(group)
 
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
         try:
-            current = int(self.shot_entry.get())
+            current = int(self.shot_entry.text())
             new_shot = max(1, current + delta)
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, str(new_shot))
+            self.shot_entry.setText(str(new_shot))
         except ValueError:
             pass
+
+    def _ece_channel_keys(self, ece_data):
+        """Return channel-number-based keys for ECE data (e.g. ['ECE_ch62', 'ECE_ch07', ...])"""
+        channels = ece_data.measurements['Te'].get('channels',
+                   list(range(1, len(ece_data.radius) + 1)))
+        return [f"ECE_ch{channels[j]}" for j in range(len(ece_data.radius))]
 
     def _get_ece_loader(self):
         """On-demand initialization of ECE loader"""
@@ -79,10 +100,10 @@ class NeTeProfileTab(ProfileBaseTab):
     def load_shot_data(self):
         """Load shot data based on diagnostic selection"""
         try:
-            shot_number = int(self.shot_entry.get())
-            selection = self.selected_diagnostic.get()
+            shot_number = int(self.shot_entry.text())
+            selection = self.diag_combo.currentText()
 
-            self.available_listbox.delete(0, tk.END)
+            self.available_listbox.clear()
 
             # Parse selection to determine mode and ECE sampling
             if selection.startswith('ECE'):
@@ -116,7 +137,7 @@ class NeTeProfileTab(ProfileBaseTab):
 
                 for tp in data.time:
                     item_str = f'{shot_number:06d}_{tp*1e3:06.0f} ({label})'
-                    self.available_listbox.insert(tk.END, item_str)
+                    self.available_listbox.addItem(item_str)
 
                 print(f"[Thomson] Data loaded: {len(data.radius)} channels, {len(data.time)} timepoints")
 
@@ -128,10 +149,10 @@ class NeTeProfileTab(ProfileBaseTab):
                 self.ece_data_cache[cache_key] = ece_data
 
                 # Add ECE timepoints to listbox only for "ECE only" mode
-                if selection.startswith('ECE only'):
+                if selection.startswith('ECE'):
                     for tp in ece_data.time:
                         item_str = f'{shot_number:06d}_{tp*1e3:06.0f} (ECE)'
-                        self.available_listbox.insert(tk.END, item_str)
+                        self.available_listbox.addItem(item_str)
 
                 n_valid = np.sum(ece_data.measurements['Te']['valid_mask'])
                 n_overlap = np.sum(ece_data.measurements['Te']['overlap_mask'])
@@ -139,9 +160,9 @@ class NeTeProfileTab(ProfileBaseTab):
                 print(f"[ECE]   Valid: {n_valid}, Overlap: {n_overlap}")
 
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid shot number")
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load data: {str(e)}")
+            QMessageBox.critical(self.frame, "Error", f"Failed to load data: {str(e)}")
 
     def _parse_entry(self, entry):
         """Parse entry to get shot, time, and source"""
@@ -170,6 +191,56 @@ class NeTeProfileTab(ProfileBaseTab):
                 return key
         return None
 
+    def _get_channel_info(self):
+        """Return channel info based on selected listbox entries."""
+        info = []
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
+
+        has_ts = False
+        ece_shots = set()
+        for entry in selected_entries:
+            _, _, source = self._parse_entry(entry)
+            if source in ('TS', 'TS+ECE'):
+                has_ts = True
+                if source == 'TS+ECE':
+                    shot_number, _, _ = self._parse_entry(entry)
+                    ece_shots.add(shot_number)
+            elif source == 'ECE':
+                shot_number, _, _ = self._parse_entry(entry)
+                ece_shots.add(shot_number)
+
+        # Thomson channels (all shots share the same channel structure)
+        if has_ts:
+            for key, data in self.data.items():
+                if hasattr(data, 'radius') and len(data.radius) > 0:
+                    for i in range(len(data.radius)):
+                        if i < 14:
+                            lbl = f"TS_CORE{i+1}"
+                        else:
+                            lbl = f"TS_EDGE{i-14+1}"
+                        info.append((f"TS_{i}", lbl))
+                    break
+
+        # ECE channels from all selected shots (union, no duplicates)
+        seen_ece_keys = set()
+        for shot in ece_shots:
+            cache_key = self._get_ece_cache_key(shot)
+            if cache_key is None:
+                continue
+            ece_data = self.ece_data_cache[cache_key]
+            valid_mask = ece_data.measurements['Te']['valid_mask']
+            ece_channels = ece_data.measurements['Te'].get('channels',
+                           list(range(1, len(ece_data.radius) + 1)))
+            ch_keys = self._ece_channel_keys(ece_data)
+            for i in range(len(ece_data.radius)):
+                if valid_mask[i] and ch_keys[i] not in seen_ece_keys:
+                    seen_ece_keys.add(ch_keys[i])
+                    lbl = f"ECE{ece_channels[i]:02d}"
+                    info.append((ch_keys[i], lbl))
+
+        return info
+
     def plot_data(self):
         """Plot R profiles"""
         self.ax1.clear()
@@ -180,12 +251,13 @@ class NeTeProfileTab(ProfileBaseTab):
         self.ax1.set_ylabel(self.param1['label'])
         self.ax2.set_ylabel(self.param2['label'])
 
-        selected_entries = list(self.selected_listbox.get(0, tk.END))
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
         if not selected_entries:
             return
 
         te_max, ne_max = 0, 0
-        colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
+        colors = self._get_plot_colors(selected_entries)
 
         has_thomson = False
 
@@ -221,20 +293,33 @@ class NeTeProfileTab(ProfileBaseTab):
 
                     label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (TS)'
 
-                    self.ax1.errorbar(R_data, Te_profile,
-                                     yerr=[Te_err_lower_profile, Te_err_upper_profile],
-                                     fmt='o', capsize=5, label=label,
-                                     color=color, markersize=5, zorder=10)
+                    # Split enabled/disabled Thomson channels
+                    ts_keys = [f"TS_{j}" for j in range(len(R_data))]
+                    ts_mask = self._get_channel_mask(ts_keys)
 
-                    self.ax2.errorbar(R_data, ne_profile,
-                                     yerr=[ne_err_lower_profile, ne_err_upper_profile],
-                                     fmt='o', capsize=5, label=label,
-                                     color=color, markersize=5, zorder=10)
+                    if ts_mask.any():
+                        self.ax1.errorbar(R_data[ts_mask], Te_profile[ts_mask],
+                                         yerr=[Te_err_lower_profile[ts_mask], Te_err_upper_profile[ts_mask]],
+                                         fmt='o', capsize=5, label=label,
+                                         color=color, markersize=5, zorder=10)
+                        self.ax2.errorbar(R_data[ts_mask], ne_profile[ts_mask],
+                                         yerr=[ne_err_lower_profile[ts_mask], ne_err_upper_profile[ts_mask]],
+                                         fmt='o', capsize=5, label=label,
+                                         color=color, markersize=5, zorder=10)
+                    if (~ts_mask).any():
+                        self.ax1.errorbar(R_data[~ts_mask], Te_profile[~ts_mask],
+                                         yerr=[Te_err_lower_profile[~ts_mask], Te_err_upper_profile[~ts_mask]],
+                                         fmt='o', capsize=5, label='',
+                                         color=(0.6, 0.6, 0.6, 0.35), markersize=5, zorder=5)
+                        self.ax2.errorbar(R_data[~ts_mask], ne_profile[~ts_mask],
+                                         yerr=[ne_err_lower_profile[~ts_mask], ne_err_upper_profile[~ts_mask]],
+                                         fmt='o', capsize=5, label='',
+                                         color=(0.6, 0.6, 0.6, 0.35), markersize=5, zorder=5)
 
                     # Add Thomson channel labels (TS_CORE1-14 for core, TS_EDGE1-17 for edge)
                     n_channels = len(R_data)
                     for ch_idx in range(n_channels):
-                        if self.show_channel_var.get():
+                        if self.show_channel_checkbox.isChecked():
                             if ch_idx < 14:
                                 lbl = f'TS_CORE{ch_idx + 1}'
                             else:
@@ -268,18 +353,30 @@ class NeTeProfileTab(ProfileBaseTab):
 
                             ece_label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (ECE)'
 
-                            # Plot ECE valid channels only (2nd harmonic) - empty square
-                            self.ax1.plot(ece_R_data[valid_mask], ece_Te_profile[valid_mask],
-                                         's', color=color, markersize=5,
-                                         markerfacecolor='none', markeredgewidth=1.5,
-                                         label=ece_label, zorder=5)
+                            # Split enabled/disabled ECE channels
+                            ece_keys = self._ece_channel_keys(ece_data)
+                            ece_ch_mask = self._get_channel_mask(ece_keys)
+                            # Combine with hardware valid mask
+                            enabled = valid_mask & ece_ch_mask
+                            disabled = valid_mask & (~ece_ch_mask)
+
+                            if enabled.any():
+                                self.ax1.plot(ece_R_data[enabled], ece_Te_profile[enabled],
+                                             's', color=color, markersize=5,
+                                             markerfacecolor='none', markeredgewidth=1.5,
+                                             label=ece_label, zorder=5)
+                            if disabled.any():
+                                self.ax1.plot(ece_R_data[disabled], ece_Te_profile[disabled],
+                                             's', color=(0.6, 0.6, 0.6, 0.35), markersize=5,
+                                             markerfacecolor='none', markeredgewidth=1.5,
+                                             label='', zorder=3)
 
                             # Add ECE channel labels (ECE01~76)
                             ece_channels = ece_data.measurements['Te'].get('channels',
                                            list(range(1, len(ece_R_data) + 1)))
                             valid_R = ece_R_data[valid_mask]
                             valid_Te = ece_Te_profile[valid_mask]
-                            valid_ch = [ece_channels[i] for i in range(len(valid_mask)) if valid_mask[i]]
+                            valid_ch = [ece_channels[j] for j in range(len(valid_mask)) if valid_mask[j]]
                             self._add_channel_labels(self.ax1, valid_R, valid_Te, 'ECE', valid_ch)
 
                 elif source == 'ECE':
@@ -309,18 +406,29 @@ class NeTeProfileTab(ProfileBaseTab):
 
                     label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (ECE)'
 
-                    # Plot valid channels only (2nd harmonic) - empty square
-                    self.ax1.plot(R_data[valid_mask], Te_profile[valid_mask],
-                                 's', color=color, markersize=5,
-                                 markerfacecolor='none', markeredgewidth=1.5,
-                                 label=label, zorder=5)
+                    # Split enabled/disabled ECE channels
+                    ece_keys = self._ece_channel_keys(ece_data)
+                    ece_ch_mask = self._get_channel_mask(ece_keys)
+                    enabled = valid_mask & ece_ch_mask
+                    disabled = valid_mask & (~ece_ch_mask)
+
+                    if enabled.any():
+                        self.ax1.plot(R_data[enabled], Te_profile[enabled],
+                                     's', color=color, markersize=5,
+                                     markerfacecolor='none', markeredgewidth=1.5,
+                                     label=label, zorder=5)
+                    if disabled.any():
+                        self.ax1.plot(R_data[disabled], Te_profile[disabled],
+                                     's', color=(0.6, 0.6, 0.6, 0.35), markersize=5,
+                                     markerfacecolor='none', markeredgewidth=1.5,
+                                     label='', zorder=3)
 
                     # Add ECE channel labels
                     ece_channels = ece_data.measurements['Te'].get('channels',
                                    list(range(1, len(R_data) + 1)))
                     valid_R = R_data[valid_mask]
                     valid_Te = Te_profile[valid_mask]
-                    valid_ch = [ece_channels[i] for i in range(len(valid_mask)) if valid_mask[i]]
+                    valid_ch = [ece_channels[j] for j in range(len(valid_mask)) if valid_mask[j]]
                     self._add_channel_labels(self.ax1, valid_R, valid_Te, 'ECE', valid_ch)
 
             except Exception as e:
@@ -346,7 +454,7 @@ class NeTeProfileTab(ProfileBaseTab):
     def plot_efit_profiles(self):
         """Plot profiles with EFIT mapping"""
         if not self.efit_data or self.computed_efit_tree is None:
-            messagebox.showwarning("Warning", "Please compute EFIT first.")
+            QMessageBox.warning(self.frame, "Warning", "Please compute EFIT first.")
             return
 
         efit_tree = self.computed_efit_tree
@@ -354,11 +462,12 @@ class NeTeProfileTab(ProfileBaseTab):
         self.ax1.clear()
         self.ax2.clear()
 
-        selected_entries = list(self.selected_listbox.get(0, tk.END))
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
         if not selected_entries:
             return
 
-        x_axis = self.selected_x_axis.get()
+        x_axis = self._get_selected_x_axis()
 
         if x_axis == "psi_N":
             x_label = rf"$\psi_N$ ({efit_tree})"
@@ -368,7 +477,7 @@ class NeTeProfileTab(ProfileBaseTab):
             x_label = rf"$\rho_{{tor}}$ ({efit_tree})"
 
         te_max, ne_max = 0, 0
-        colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
+        colors = self._get_plot_colors(selected_entries)
 
         has_thomson = False
 
@@ -414,20 +523,33 @@ class NeTeProfileTab(ProfileBaseTab):
 
                     label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (TS)'
 
-                    self.ax1.errorbar(x_data, Te_profile,
-                                     yerr=[Te_err_lower_profile, Te_err_upper_profile],
-                                     fmt='o', capsize=5, label=label,
-                                     color=color, markersize=5, zorder=10)
+                    # Split enabled/disabled Thomson channels
+                    ts_keys = [f"TS_{j}" for j in range(len(x_data))]
+                    ts_mask = self._get_channel_mask(ts_keys)
 
-                    self.ax2.errorbar(x_data, ne_profile,
-                                     yerr=[ne_err_lower_profile, ne_err_upper_profile],
-                                     fmt='o', capsize=5, label=label,
-                                     color=color, markersize=5, zorder=10)
+                    if ts_mask.any():
+                        self.ax1.errorbar(x_data[ts_mask], Te_profile[ts_mask],
+                                         yerr=[Te_err_lower_profile[ts_mask], Te_err_upper_profile[ts_mask]],
+                                         fmt='o', capsize=5, label=label,
+                                         color=color, markersize=5, zorder=10)
+                        self.ax2.errorbar(x_data[ts_mask], ne_profile[ts_mask],
+                                         yerr=[ne_err_lower_profile[ts_mask], ne_err_upper_profile[ts_mask]],
+                                         fmt='o', capsize=5, label=label,
+                                         color=color, markersize=5, zorder=10)
+                    if (~ts_mask).any():
+                        self.ax1.errorbar(x_data[~ts_mask], Te_profile[~ts_mask],
+                                         yerr=[Te_err_lower_profile[~ts_mask], Te_err_upper_profile[~ts_mask]],
+                                         fmt='o', capsize=5, label='',
+                                         color=(0.6, 0.6, 0.6, 0.35), markersize=5, zorder=5)
+                        self.ax2.errorbar(x_data[~ts_mask], ne_profile[~ts_mask],
+                                         yerr=[ne_err_lower_profile[~ts_mask], ne_err_upper_profile[~ts_mask]],
+                                         fmt='o', capsize=5, label='',
+                                         color=(0.6, 0.6, 0.6, 0.35), markersize=5, zorder=5)
 
                     # Add Thomson channel labels
                     n_channels = len(x_data)
                     for ch_idx in range(n_channels):
-                        if self.show_channel_var.get():
+                        if self.show_channel_checkbox.isChecked():
                             if ch_idx < 14:
                                 lbl = f'TS_CORE{ch_idx + 1}'
                             else:
@@ -460,18 +582,29 @@ class NeTeProfileTab(ProfileBaseTab):
 
                             ece_label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (ECE)'
 
-                            # Plot ECE valid channels only (2nd harmonic) - empty square
-                            self.ax1.plot(ece_x_data[valid_mask], ece_Te_profile[valid_mask],
-                                         's', color=color, markersize=5,
-                                         markerfacecolor='none', markeredgewidth=1.5,
-                                         label=ece_label, zorder=5)
+                            # Split enabled/disabled ECE channels
+                            ece_keys = self._ece_channel_keys(ece_data)
+                            ece_ch_mask = self._get_channel_mask(ece_keys)
+                            enabled = valid_mask & ece_ch_mask
+                            disabled = valid_mask & (~ece_ch_mask)
+
+                            if enabled.any():
+                                self.ax1.plot(ece_x_data[enabled], ece_Te_profile[enabled],
+                                             's', color=color, markersize=5,
+                                             markerfacecolor='none', markeredgewidth=1.5,
+                                             label=ece_label, zorder=5)
+                            if disabled.any():
+                                self.ax1.plot(ece_x_data[disabled], ece_Te_profile[disabled],
+                                             's', color=(0.6, 0.6, 0.6, 0.35), markersize=5,
+                                             markerfacecolor='none', markeredgewidth=1.5,
+                                             label='', zorder=3)
 
                             # Add ECE channel labels
                             ece_channels = ece_data.measurements['Te'].get('channels',
                                            list(range(1, len(ece_data.radius) + 1)))
                             valid_x = ece_x_data[valid_mask]
                             valid_Te = ece_Te_profile[valid_mask]
-                            valid_ch = [ece_channels[i] for i in range(len(valid_mask)) if valid_mask[i]]
+                            valid_ch = [ece_channels[j] for j in range(len(valid_mask)) if valid_mask[j]]
                             self._add_channel_labels(self.ax1, valid_x, valid_Te, 'ECE', valid_ch)
 
                 elif source == 'ECE':
@@ -493,18 +626,29 @@ class NeTeProfileTab(ProfileBaseTab):
 
                         label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (ECE)'
 
-                        # Plot valid channels only (2nd harmonic) - empty square
-                        self.ax1.plot(x_data[valid_mask], Te_profile[valid_mask],
-                                     's', color=color, markersize=5,
-                                     markerfacecolor='none', markeredgewidth=1.5,
-                                     label=label, zorder=5)
+                        # Split enabled/disabled ECE channels
+                        ece_keys = self._ece_channel_keys(ece_data)
+                        ece_ch_mask = self._get_channel_mask(ece_keys)
+                        enabled = valid_mask & ece_ch_mask
+                        disabled = valid_mask & (~ece_ch_mask)
+
+                        if enabled.any():
+                            self.ax1.plot(x_data[enabled], Te_profile[enabled],
+                                         's', color=color, markersize=5,
+                                         markerfacecolor='none', markeredgewidth=1.5,
+                                         label=label, zorder=5)
+                        if disabled.any():
+                            self.ax1.plot(x_data[disabled], Te_profile[disabled],
+                                         's', color=(0.6, 0.6, 0.6, 0.35), markersize=5,
+                                         markerfacecolor='none', markeredgewidth=1.5,
+                                         label='', zorder=3)
 
                         # Add ECE channel labels
                         ece_channels = ece_data.measurements['Te'].get('channels',
                                        list(range(1, len(ece_data.radius) + 1)))
                         valid_x = x_data[valid_mask]
                         valid_Te = Te_profile[valid_mask]
-                        valid_ch = [ece_channels[i] for i in range(len(valid_mask)) if valid_mask[i]]
+                        valid_ch = [ece_channels[j] for j in range(len(valid_mask)) if valid_mask[j]]
                         self._add_channel_labels(self.ax1, valid_x, valid_Te, 'ECE', valid_ch)
 
             except Exception as e:

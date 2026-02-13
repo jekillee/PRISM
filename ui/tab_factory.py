@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 Factory for creating diagnostic tabs
 Each diagnostic has its own tab class
@@ -65,16 +63,16 @@ class TabFactory:
     # Custom tab display names
     TAB_NAMES = {
         'Thomson': {
-            'profile': 'ne, Te Profile',
-            'timetrace': 'ne, Te Time Trace'
+            'profile': 'ne, Te',
+            'timetrace': 'ne, Te'
         },
         'CES': {
-            'profile': 'Ti, vT Profile',
-            'timetrace': 'Ti, vT Time Trace'
+            'profile': 'Ti, vT',
+            'timetrace': 'Ti, vT'
         },
         'MSE': {
-            'profile': 'MSE Profile',
-            'timetrace': 'MSE Time Trace'
+            'profile': 'MSE',
+            'timetrace': 'MSE'
         },
         'IRVB': {
             'viewer': 'IRVB'}
@@ -87,7 +85,7 @@ class TabFactory:
             return 'Spectrogram'
         
         if tab_type == 'nmode':
-            return 'n-Mode Spectrum'
+            return 'n-mode'
         
         if tab_type == 'tv':
             return 'TV'
@@ -104,10 +102,7 @@ class TabFactory:
                 return name
         
         # Default naming
-        if tab_type == 'profile':
-            return f"{diagnostic_name} Profile"
-        else:
-            return f"{diagnostic_name} Time Trace"
+        return diagnostic_name
     
     @staticmethod
     def should_create_tab(diagnostic_name, tab_type):
@@ -239,5 +234,6 @@ class TabFactory:
             )
         
         tab.create_widgets()
-        
+        tab._restore_shot_from_settings()
+
         return tab

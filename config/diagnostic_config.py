@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 Diagnostic system configuration
 Each diagnostic defines its metadata for automatic tab generation

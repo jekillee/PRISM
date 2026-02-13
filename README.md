@@ -17,6 +17,9 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 - **TV Image Viewer**: Sequential image viewer for visible camera data with line drawing
 - **TV Startup Comparison**: Compare plasma startup sequences across multiple shots
 - **IRVB Viewer**: 2D radiation profile with EFIT overlay and regional Prad analysis
+- **Dark/Light Theme**: Runtime theme switching with persistence
+- **Data Preview & Save**: Spreadsheet-style preview before exporting data
+- **Per-Channel Visibility**: Show/hide individual channels in profile plots
 
 ## Supported Diagnostics
 
@@ -83,13 +86,14 @@ If you are interested in adapting PRISM for other fusion devices, please contact
 
 ```
 PRISM/
-├── main.py                      # Main entry point
-├── standalone_launcher.py       # Standalone mode launcher
+├── main.py                      # Main entry point (full & standalone)
 ├── run_prism.sh                 # Shell launcher script
 ├── config/
 │   ├── app_config.py            # Global configuration
 │   ├── diagnostic_config.py     # Diagnostic metadata
-│   └── user_settings.py         # User settings persistence
+│   ├── user_settings.py         # User settings persistence
+│   ├── thomson_positions.json   # Thomson channel R positions by shot range
+│   └── mirnov_config.json       # Mirnov coil configurations by year
 ├── core/
 │   ├── data_structures.py       # Data classes
 │   └── file_parser.py           # File parser
@@ -106,8 +110,9 @@ PRISM/
 │   ├── irvb_loader.py           # IRVB loader
 │   └── efit_loader.py           # EFIT loader
 ├── ui/
-│   ├── ui_constants.py          # UI constants
-│   ├── main_window.py           # Main window
+│   ├── theme.py                 # Theme manager (dark/light QSS, palette, mpl)
+│   ├── ui_constants.py          # UI constants and helpers
+│   ├── main_window.py           # Main window with sidebar navigation
 │   ├── base_tab.py              # Base tab class
 │   ├── profile_base_tab.py      # Profile tab base class
 │   ├── timetrace_base_tab.py    # Time trace tab base class
@@ -124,6 +129,7 @@ PRISM/
 │   ├── tv_startup_tab.py        # TV Startup Comparison tab
 │   ├── tv_utils.py              # TV utility functions
 │   ├── irvb_tab.py              # IRVB viewer tab
+│   ├── icons/                   # SVG icons for themed widgets
 │   └── widgets/
 │       └── custom_toolbar.py    # Custom matplotlib toolbar
 ├── plotting/
@@ -132,6 +138,15 @@ PRISM/
 ├── README.md                    # This file
 └── CHANGELOG.md                 # Version history
 ```
+
+## Requirements
+
+- Python 3.8+
+- PySide6 (Qt 6) - GUI framework
+- matplotlib - Plotting
+- numpy, scipy - Numerical computation
+- Pillow - Image processing (TV tab)
+- MDSplus - KSTAR data access (KFE internal)
 
 ## Note for External Users
 

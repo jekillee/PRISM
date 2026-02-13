@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 ECE (Electron Cyclotron Emission) data loader
 """

@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 CES data loader implementation with analysis type support
 """

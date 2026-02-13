@@ -1,15 +1,17 @@
-#!/usr/bin/python3.8
-
 """
 Ti/vT Profile tab with CES and XICS integration
 """
 
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
 import numpy as np
 from scipy.interpolate import interp1d
+
+from PySide6.QtWidgets import (
+    QMessageBox, QLineEdit, QComboBox, QPushButton,
+    QWidget, QHBoxLayout, QVBoxLayout, QGroupBox, QGridLayout, QLabel, QFileDialog, QStyle
+)
+
 from ui.profile_base_tab import ProfileBaseTab
-from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT, ENTRY_WIDTH_SHOT
+from ui.ui_constants import get_icon
 
 
 class TiVTProfileTab(ProfileBaseTab):
@@ -27,49 +29,69 @@ class TiVTProfileTab(ProfileBaseTab):
 
     def _create_shot_input(self, parent):
         """Create data loading section with analysis type selection"""
-        frame = ttk.LabelFrame(parent, text="1. Load Ti/vT Data", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-
-        frame.grid_columnconfigure(1, weight=1)
+        group = QGroupBox("1. Load Ti, vT Data")
+        grid = QGridLayout(group)
+        grid.setColumnStretch(1, 1)
 
         # Row 0: Shot label, entry, up/down buttons, dropdown, Fetch, File
-        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='w').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
+        grid.addWidget(QLabel('Shot'), 0, 0)
 
-        self.shot_entry = ttk.Entry(frame)
-        self.shot_entry.grid(row=0, column=1, padx=(PAD_X, 0), pady=PAD_Y, sticky='ew')
-        self.shot_entry.bind('<Return>', lambda e: self.load_shot_data())
+        self.shot_entry = QLineEdit()
+        self.shot_entry.setMinimumWidth(65)
+        grid.addWidget(self.shot_entry, 0, 1)
+        self.shot_entry.returnPressed.connect(self.load_shot_data)
 
-        btn_updown = ttk.Frame(frame)
-        btn_updown.grid(row=0, column=2, padx=(2, PAD_X), pady=PAD_Y, sticky='w')
-        ttk.Button(btn_updown, text='\u25B2', width=2,
-                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT)
-        ttk.Button(btn_updown, text='\u25BC', width=2,
-                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
+        btn_updown = QWidget()
+        btn_layout = QVBoxLayout(btn_updown)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(0)
+        mini_btn_style = "padding: 0px; border-radius: 2px;"
+        up_btn = QPushButton()
+        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
+        up_btn.setFixedSize(24, 15)
+        up_btn.setStyleSheet(mini_btn_style)
+        up_btn.clicked.connect(lambda: self._adjust_shot(1))
+        btn_layout.addWidget(up_btn)
+        down_btn = QPushButton()
+        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
+        down_btn.setFixedSize(24, 15)
+        down_btn.setStyleSheet(mini_btn_style)
+        down_btn.clicked.connect(lambda: self._adjust_shot(-1))
+        btn_layout.addWidget(down_btn)
+        grid.addWidget(btn_updown, 0, 2)
 
         analysis_types = list(self.diag_config['analysis_types'].keys())
-        self.selected_analysis_type = tk.StringVar(value='mod')
+        self.analysis_type_combo = QComboBox()
+        self.analysis_type_combo.addItems(analysis_types)
+        self.analysis_type_combo.setCurrentText('mod')
+        self.analysis_type_combo.setFixedWidth(70)
+        grid.addWidget(self.analysis_type_combo, 0, 3)
 
-        analysis_dropdown = ttk.Combobox(frame, textvariable=self.selected_analysis_type,
-                                        values=analysis_types, state="readonly", width=5)
-        analysis_dropdown.grid(row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky='w')
+        btn_frame = QWidget()
+        btn_frame_layout = QHBoxLayout(btn_frame)
+        btn_frame_layout.setContentsMargins(0, 0, 0, 0)
 
-        btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=0, column=4, padx=PAD_X, pady=PAD_Y, sticky='e')
+        self.fetch_button = QPushButton('Fetch')
+        self.fetch_button.setFixedWidth(70)
+        self.fetch_button.clicked.connect(self.load_shot_data)
+        btn_frame_layout.addWidget(self.fetch_button)
 
-        self.fetch_button = ttk.Button(btn_frame, text='Fetch', command=self.load_shot_data, width=8)
-        self.fetch_button.pack(side=tk.LEFT)
+        file_button = QPushButton()
+        file_button.setIcon(get_icon(QStyle.SP_DirOpenIcon))
+        file_button.setFixedWidth(28)
+        file_button.clicked.connect(self.load_file_data)
+        btn_frame_layout.addWidget(file_button)
 
-        ttk.Button(btn_frame, text='...', command=self.load_file_data, width=3).pack(
-            side=tk.LEFT, padx=(2, 0))
+        grid.addWidget(btn_frame, 0, 4)
+
+        parent.layout().addWidget(group)
 
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
         try:
-            current = int(self.shot_entry.get())
+            current = int(self.shot_entry.text())
             new_shot = max(1, current + delta)
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, str(new_shot))
+            self.shot_entry.setText(str(new_shot))
         except ValueError:
             pass
 
@@ -88,12 +110,12 @@ class TiVTProfileTab(ProfileBaseTab):
     def load_shot_data(self):
         """Load CES and XICS shot data from MDS+"""
         try:
-            shot_number = int(self.shot_entry.get())
+            shot_number = int(self.shot_entry.text())
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid shot number")
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
             return
 
-        analysis_type = self.selected_analysis_type.get()
+        analysis_type = self.analysis_type_combo.currentText()
         ces_loaded = False
         xics_loaded = False
 
@@ -121,29 +143,30 @@ class TiVTProfileTab(ProfileBaseTab):
 
         # Check if any data loaded
         if not ces_loaded and not xics_loaded:
-            messagebox.showerror("Error", f"No CES ({analysis_type}) or XICS data available for shot #{shot_number}")
+            QMessageBox.critical(self.frame, "Error", f"No CES ({analysis_type}) or XICS data available for shot #{shot_number}")
             return
 
         # Update listbox
-        self.available_listbox.delete(0, tk.END)
+        self.available_listbox.clear()
 
         if ces_loaded:
             # Show CES timepoints
             for tp in data.time:
                 item_str = f'{shot_number:06d}_{tp*1e3:06.0f} ({analysis_type})'
-                self.available_listbox.insert(tk.END, item_str)
+                self.available_listbox.addItem(item_str)
         elif xics_loaded:
             # Show XICS timepoints (fallback when no CES)
             for tp in xics_data.time:
                 item_str = f'{shot_number:06d}_{tp*1e3:06.0f} (XICS)'
-                self.available_listbox.insert(tk.END, item_str)
+                self.available_listbox.addItem(item_str)
 
     def load_file_data(self):
         """Load CES data from result file"""
-        file_path = filedialog.askopenfilename(
-            title="Select CES Result File",
-            initialdir=self.app_config.CES_RESULT_PATH,
-            filetypes=[("Text files", "*.txt"), ("All Files", "*.*")]
+        file_path, _ = QFileDialog.getOpenFileName(
+            self.frame,
+            "Select CES Result File",
+            self.app_config.CES_RESULT_PATH,
+            "Text files (*.txt);;All Files (*.*)"
         )
 
         if not file_path:
@@ -155,11 +178,11 @@ class TiVTProfileTab(ProfileBaseTab):
             file_key = f'file_{shot_number}_{data.source}'
             self.data[file_key] = data
 
-            self.available_listbox.delete(0, tk.END)
+            self.available_listbox.clear()
 
             for tp in data.time:
                 item_str = f'{shot_number:06d}_{tp*1e3:06.0f} ({data.source})'
-                self.available_listbox.insert(tk.END, item_str)
+                self.available_listbox.addItem(item_str)
 
             print(f"[CES] Result file loaded: {data.source}")
 
@@ -173,9 +196,9 @@ class TiVTProfileTab(ProfileBaseTab):
                 print(f"[XICS] Data loaded: {len(xics_data.time)} timepoints")
 
         except ValueError as e:
-            messagebox.showerror("Invalid File Format", str(e))
+            QMessageBox.critical(self.frame, "Invalid File Format", str(e))
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load file: {str(e)}")
+            QMessageBox.critical(self.frame, "Error", f"Failed to load file: {str(e)}")
 
     def _parse_entry(self, entry):
         """Parse entry to get shot, time, and source"""
@@ -239,6 +262,28 @@ class TiVTProfileTab(ProfileBaseTab):
             # File data: half-filled circle
             return {'marker': 'o', 'markerfacecolor': None, 'markeredgewidth': 1, 'fillstyle': 'right'}
 
+    def _get_channel_info(self):
+        """Return CES channel info based on selected listbox entries."""
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
+
+        # Check if any selected entry uses CES data (not XICS-only)
+        has_ces = False
+        for entry in selected_entries:
+            _, _, source = self._parse_entry(entry)
+            if source != 'XICS':
+                has_ces = True
+                break
+
+        if not has_ces:
+            return []
+
+        for key, data in self.data.items():
+            if hasattr(data, 'radius') and len(data.radius) > 0:
+                return [(f"CES_{i}", f"CES Ch{i+1}")
+                        for i in range(len(data.radius))]
+        return []
+
     def plot_data(self):
         """Plot R profiles with CES and XICS data"""
         self.ax1.clear()
@@ -249,12 +294,13 @@ class TiVTProfileTab(ProfileBaseTab):
         self.ax1.set_ylabel(self.param1['label'])
         self.ax2.set_ylabel(self.param2['label'])
 
-        selected_entries = list(self.selected_listbox.get(0, tk.END))
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
         if not selected_entries:
             return
 
         ti_max, vt_max, vt_min = 0, 0, 0
-        colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
+        colors = self._get_plot_colors(selected_entries)
 
         for i, entry in enumerate(selected_entries):
             try:
@@ -335,8 +381,17 @@ class TiVTProfileTab(ProfileBaseTab):
                     plot_kwargs['markerfacecolor'] = 'none'
                     plot_kwargs['markeredgewidth'] = style['markeredgewidth']
 
-                self.ax1.errorbar(R_data, Ti_profile, Ti_err_profile, **plot_kwargs)
-                self.ax2.errorbar(R_data, vT_profile, vT_err_profile, **plot_kwargs)
+                # Split enabled/disabled channels
+                ch_keys = [f"CES_{j}" for j in range(len(R_data))]
+                mask = self._get_channel_mask(ch_keys)
+
+                if mask.any():
+                    self.ax1.errorbar(R_data[mask], Ti_profile[mask], Ti_err_profile[mask], **plot_kwargs)
+                    self.ax2.errorbar(R_data[mask], vT_profile[mask], vT_err_profile[mask], **plot_kwargs)
+                if (~mask).any():
+                    dim_kwargs = {**plot_kwargs, 'color': (0.6, 0.6, 0.6, 0.35), 'label': ''}
+                    self.ax1.errorbar(R_data[~mask], Ti_profile[~mask], Ti_err_profile[~mask], **dim_kwargs)
+                    self.ax2.errorbar(R_data[~mask], vT_profile[~mask], vT_err_profile[~mask], **dim_kwargs)
 
                 # Add channel labels if enabled (CES_TI or CESNN_TI)
                 n_channels = len(R_data)
@@ -395,7 +450,7 @@ class TiVTProfileTab(ProfileBaseTab):
     def plot_efit_profiles(self):
         """Plot profiles with EFIT mapping"""
         if not self.efit_data or self.computed_efit_tree is None:
-            messagebox.showwarning("Warning", "Please compute EFIT first.")
+            QMessageBox.warning(self.frame, "Warning", "Please compute EFIT first.")
             return
 
         efit_tree = self.computed_efit_tree
@@ -403,11 +458,12 @@ class TiVTProfileTab(ProfileBaseTab):
         self.ax1.clear()
         self.ax2.clear()
 
-        selected_entries = list(self.selected_listbox.get(0, tk.END))
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
         if not selected_entries:
             return
 
-        x_axis = self.selected_x_axis.get()
+        x_axis = self._get_selected_x_axis()
 
         if x_axis == "psi_N":
             x_label = rf"$\psi_N$ ({efit_tree})"
@@ -417,7 +473,7 @@ class TiVTProfileTab(ProfileBaseTab):
             x_label = rf"$\rho_{{tor}}$ ({efit_tree})"
 
         ti_max, vt_max = 0, 0
-        colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
+        colors = self._get_plot_colors(selected_entries)
 
         for i, entry in enumerate(selected_entries):
             try:
@@ -501,8 +557,17 @@ class TiVTProfileTab(ProfileBaseTab):
                     plot_kwargs['markerfacecolor'] = 'none'
                     plot_kwargs['markeredgewidth'] = style['markeredgewidth']
 
-                self.ax1.errorbar(x_data, Ti_profile, Ti_err_profile, **plot_kwargs)
-                self.ax2.errorbar(x_data, vT_profile, vT_err_profile, **plot_kwargs)
+                # Split enabled/disabled channels
+                ch_keys = [f"CES_{j}" for j in range(len(x_data))]
+                mask = self._get_channel_mask(ch_keys)
+
+                if mask.any():
+                    self.ax1.errorbar(x_data[mask], Ti_profile[mask], Ti_err_profile[mask], **plot_kwargs)
+                    self.ax2.errorbar(x_data[mask], vT_profile[mask], vT_err_profile[mask], **plot_kwargs)
+                if (~mask).any():
+                    dim_kwargs = {**plot_kwargs, 'color': (0.6, 0.6, 0.6, 0.35), 'label': ''}
+                    self.ax1.errorbar(x_data[~mask], Ti_profile[~mask], Ti_err_profile[~mask], **dim_kwargs)
+                    self.ax2.errorbar(x_data[~mask], vT_profile[~mask], vT_err_profile[~mask], **dim_kwargs)
 
                 # Add channel labels if enabled
                 n_channels = len(x_data)

@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 Thomson Scattering data loader implementation
 """

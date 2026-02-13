@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 TV (Visible Camera) shared utilities
 Common constants and functions used by TV and TV Startup tabs

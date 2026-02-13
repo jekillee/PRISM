@@ -3,16 +3,9 @@
 # PRISM Launcher Script
 # Plasma Research Integrated System for Multi-diagnostics
 #
-# After symbolic link installation, use 'prism' command:
-#   prism              # Full PRISM
-#   prism tivt         # Ti, vT Profile + TimeTrace (CES + XICS)
-#   prism nete         # ne, Te Profile + TimeTrace
-#   prism mse          # MSE Profile + TimeTrace
-#   prism spec         # Spectrogram
-#   prism nmode        # n-Mode Spectrum
-#   prism tv           # TV Viewer
-#   prism irvb         # IRVB Viewer
-#   prism startup      # TV Startup Comparison
+# Usage:
+#   prism              # Full PRISM (all tabs with sidebar)
+#   prism -s           # Tab selector (choose one viewer to launch)
 #   prism --help       # Show help
 #
 # Author: Jekil Lee (jklee@kfe.re.kr)
@@ -36,38 +29,38 @@ if [ ! -f "$PRISM_HOME/main.py" ]; then
     exit 1
 fi
 
-# Set PYTHONPATH to include PRISM directory
-export PYTHONPATH="$PRISM_HOME:$PYTHONPATH"
+# Set PYTHONPATH to include PRISM directory and PySide6 site-packages
+PYSIDE6_SITE="/home/users/jklee/.local/lib/python3.8/site-packages"
+export PYTHONPATH="$PRISM_HOME:$PYSIDE6_SITE:$PYTHONPATH"
+
+# Suppress WAYLAND_DISPLAY warning on Gnome (NoMachine)
+unset WAYLAND_DISPLAY
+
+# Fix X11 errors when using remote X servers (Xming, VcXsrv, etc.)
+# - Disable MIT-SHM shared memory (XCB error 170)
+# - Force software OpenGL rendering
+# - Disable accessibility bus warnings
+export QT_X11_NO_MITSHM=1
+export QT_XCB_GL_INTEGRATION=none
+export LIBGL_ALWAYS_SOFTWARE=1
+export QT_QUICK_BACKEND=software
+export NO_AT_BRIDGE=1
 
 # Show help
 show_help() {
     echo ""
     echo "PRISM - Plasma Research Integrated System for Multi-diagnostics"
     echo ""
-    echo "Usage: prism [mode]"
+    echo "Usage: prism [option]"
     echo ""
-    echo "Modes:"
-    echo "  (none)    Launch full PRISM with all tabs"
-    echo "  tivt      Ti, vT Profile + TimeTrace viewer (CES + XICS)"
-    echo "  nete      ne, Te Profile + TimeTrace viewer (Thomson/ECE)"
-    echo "  mse       MSE Profile + TimeTrace viewer"
-    echo "  spec      Spectrogram analyzer"
-    echo "  nmode     n-Mode Spectrum analyzer"
-    echo "  tv        TV image sequence viewer"
-    echo "  irvb      IRVB 2D radiation profile viewer"
-    echo "  startup   TV Startup Comparison viewer"
-    echo "  --help    Show this help message"
+    echo "Options:"
+    echo "  (none)        Launch full PRISM with all tabs"
+    echo "  -s, --select  Open tab selector to launch a single viewer"
+    echo "  -h, --help    Show this help message"
     echo ""
     echo "Examples:"
-    echo "  prism              # Launch full PRISM"
-    echo "  prism tivt         # Launch Ti, vT standalone"
-    echo "  prism nete         # Launch ne, Te standalone"
-    echo "  prism mse          # Launch MSE standalone"
-    echo "  prism spec         # Launch Spectrogram standalone"
-    echo "  prism nmode        # Launch n-Mode Spectrum standalone"
-    echo "  prism tv           # Launch TV Viewer standalone"
-    echo "  prism irvb         # Launch IRVB Viewer standalone"
-    echo "  prism startup      # Launch TV Startup Comparison standalone"
+    echo "  prism          # Launch full PRISM"
+    echo "  prism -s       # Choose a single viewer to launch"
     echo ""
     echo "Author: Jekil Lee (jklee@kfe.re.kr)"
     echo ""
@@ -79,12 +72,16 @@ case "$1" in
         show_help
         exit 0
         ;;
-    tivt|nete|mse|spec|nmode|tv|irvb|startup|"")
+    -s|--select)
         cd "$PRISM_HOME"
-        $PYTHON_PATH main.py "$1"
+        $PYTHON_PATH main.py --select
+        ;;
+    "")
+        cd "$PRISM_HOME"
+        $PYTHON_PATH main.py
         ;;
     *)
-        echo "Error: Unknown mode '$1'"
+        echo "Error: Unknown option '$1'"
         echo "Use 'prism --help' for available options."
         exit 1
         ;;

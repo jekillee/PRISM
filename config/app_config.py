@@ -1,11 +1,10 @@
-#!/usr/bin/python3.8
-
 """
 PRISM - Plasma Research Integrated System for Multi-diagnostics
 Global application configuration
 """
 
-VERSION = "1.1.11"
+VERSION = "2.0.0"
+UPDATE_DATE = "2026-02-13"
 APP_NAME = "PRISM"
 APP_FULL_NAME = "Plasma Research Integrated System for Multi-diagnostics"
 
@@ -29,7 +28,7 @@ class AppConfig:
             "efitrt2 (RT with MSE)": "efitrt2",
             "efit01 (MAG)": "efit01",
             "efit02 (MSE)": "efit02",
-            "efit04 (MAG+)": "efit04"
+            "efit04 (MAG+drift)": "efit04"
         }
         self.DEFAULT_EFIT_TREE = "efitrt1"
 
@@ -38,7 +37,7 @@ class AppConfig:
         self.CES_RESULT_PATH = '/home/users/jklee/CESresults/'
 
         # Plot configuration
-        self.FIGURE_SIZE = (10, 5)
+        self.FIGURE_SIZE = (10, 6)
         self.R_LIMITS = (1.8, 2.3)
         self.R_EDGE = 2.2
 

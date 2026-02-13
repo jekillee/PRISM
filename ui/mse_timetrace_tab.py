@@ -1,15 +1,18 @@
-#!/usr/bin/python3.8
-
 """
 MSE Time Trace tab with j/q selection
 """
 
-import tkinter as tk
-from tkinter import ttk, messagebox
 import numpy as np
 from scipy.interpolate import interp1d
+
+from PySide6.QtWidgets import (
+    QMessageBox, QLineEdit, QComboBox, QPushButton, QWidget,
+    QHBoxLayout, QVBoxLayout, QGroupBox, QGridLayout, QLabel,
+    QFileDialog, QStyle, QRadioButton,
+)
+
 from ui.timetrace_base_tab import TimeTraceBaseTab
-from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT
+from ui.ui_constants import get_icon
 
 
 class MSETimeTraceTab(TimeTraceBaseTab):
@@ -22,56 +25,85 @@ class MSETimeTraceTab(TimeTraceBaseTab):
 
     def _create_shot_input(self, parent):
         """Create data loading section"""
-        frame = ttk.LabelFrame(parent, text="1. Load MSE Data", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        group = QGroupBox("1. Load MSE Data")
+        grid = QGridLayout(group)
 
-        frame.grid_columnconfigure(1, weight=1)
+        grid.setColumnStretch(1, 1)
 
         # Row 0: Shot label, entry with up/down, Fetch
-        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='w').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
+        grid.addWidget(QLabel('Shot'), 0, 0)
 
-        shot_frame = ttk.Frame(frame)
-        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        shot_frame = QWidget()
+        shot_frame_layout = QHBoxLayout(shot_frame)
+        shot_frame_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.shot_entry = ttk.Entry(shot_frame)
-        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
-        self.shot_entry.bind('<Return>', lambda e: self.load_shot_data())
+        self.shot_entry = QLineEdit()
+        shot_frame_layout.addWidget(self.shot_entry, 1)
+        self.shot_entry.returnPressed.connect(self.load_shot_data)
 
-        ttk.Button(shot_frame, text='\u25B2', width=2,
-                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
-        ttk.Button(shot_frame, text='\u25BC', width=2,
-                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
+        btn_updown = QWidget()
+        btn_updown_layout = QVBoxLayout(btn_updown)
+        btn_updown_layout.setContentsMargins(0, 0, 0, 0)
+        btn_updown_layout.setSpacing(0)
+        mini_btn_style = "padding: 0px; border-radius: 2px;"
+        up_btn = QPushButton()
+        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
+        up_btn.setFixedSize(24, 15)
+        up_btn.setStyleSheet(mini_btn_style)
+        up_btn.clicked.connect(lambda: self._adjust_shot(1))
+        btn_updown_layout.addWidget(up_btn)
+        down_btn = QPushButton()
+        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
+        down_btn.setFixedSize(24, 15)
+        down_btn.setStyleSheet(mini_btn_style)
+        down_btn.clicked.connect(lambda: self._adjust_shot(-1))
+        btn_updown_layout.addWidget(down_btn)
+        shot_frame_layout.addWidget(btn_updown)
 
-        self.fetch_button = ttk.Button(frame, text='Fetch', command=self.load_shot_data, width=8)
-        self.fetch_button.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='e')
+        grid.addWidget(shot_frame, 0, 1)
+
+        self.fetch_button = QPushButton('Fetch')
+        self.fetch_button.setFixedWidth(70)
+        self.fetch_button.clicked.connect(self.load_shot_data)
+        grid.addWidget(self.fetch_button, 0, 2)
+
+        parent.layout().addWidget(group)
 
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
         try:
-            current = int(self.shot_entry.get())
+            current = int(self.shot_entry.text())
             new_shot = max(1, current + delta)
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, str(new_shot))
+            self.shot_entry.clear()
+            self.shot_entry.setText(str(new_shot))
         except ValueError:
             pass
 
+    def _get_selected_param(self):
+        """Get selected parameter from radio buttons"""
+        return 'q' if self.param_q_radio.isChecked() else 'j'
+
     def _create_plot_controls(self, parent):
         """Create plot control buttons"""
-        frame = ttk.LabelFrame(parent, text="3. Plot", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        group = QGroupBox("3. Plot")
+        group_layout = QVBoxLayout(group)
 
-        row_frame = ttk.Frame(frame)
-        row_frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        row_frame.grid_columnconfigure(1, weight=1)
+        row1 = QHBoxLayout()
 
-        self.selected_param = tk.StringVar(value='q')
-        param_dropdown = ttk.Combobox(row_frame, textvariable=self.selected_param,
-                                      values=['q', 'j'], state='readonly', width=3)
-        param_dropdown.grid(row=0, column=0, sticky='w')
+        self.param_q_radio = QRadioButton(' q')
+        self.param_q_radio.setChecked(True)
+        row1.addWidget(self.param_q_radio)
 
-        ttk.Button(row_frame, text='Plot time traces', command=self.plot_data).grid(
-            row=0, column=1, sticky='ew', padx=(10, 0))
+        self.param_j_radio = QRadioButton(' j')
+        row1.addWidget(self.param_j_radio)
+
+        plot_button = QPushButton('Plot')
+        plot_button.clicked.connect(self.plot_data)
+        row1.addWidget(plot_button, 2)
+
+        group_layout.addLayout(row1)
+
+        parent.layout().addWidget(group)
 
     def _get_r_edge_at_time(self, data, time_point):
         """Get R_edge at specific time by interpolation"""
@@ -83,14 +115,14 @@ class MSETimeTraceTab(TimeTraceBaseTab):
     def load_shot_data(self):
         """Load MSE shot data from MDS+"""
         try:
-            shot_number = int(self.shot_entry.get())
+            shot_number = int(self.shot_entry.text())
 
             data = self.data_loader.load_data(shot_number)
 
             cache_key = f'{shot_number}_MSE'
             self.data[cache_key] = data
 
-            self.available_listbox.delete(0, tk.END)
+            self.available_listbox.clear()
 
             # Get good channels for TGAMMA
             tgamma_meas = data.measurements['tgamma']
@@ -103,15 +135,15 @@ class MSETimeTraceTab(TimeTraceBaseTab):
                 R_val = R_raw[ch_idx]
                 ch_num = raw_channels[ch_idx] if ch_idx < len(raw_channels) else ch_idx + 1
                 item_str = f'{shot_number:06d}_{R_val*1e3:.0f} (MSE{ch_num:02d})'
-                self.available_listbox.insert(tk.END, item_str)
+                self.available_listbox.addItem(item_str)
 
             print(f"[MSE] Data loaded: {np.sum(good_mask)} good channels")
             print(f"[MSE]   NB source: {data.nb_source}")
 
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid shot number")
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load data: {str(e)}")
+            QMessageBox.critical(self.frame, "Error", f"Failed to load data: {str(e)}")
 
     def _parse_entry(self, entry):
         """Parse time trace entry: XXXXXX_YYYY (MSE##)"""
@@ -133,13 +165,14 @@ class MSETimeTraceTab(TimeTraceBaseTab):
         self.ax1.set_ylabel(r'$\gamma$ [rad]')
         self.ax2.set_xlabel('Time [s]')
 
-        param = self.selected_param.get()
+        param = self._get_selected_param()
         if param == 'q':
             self.ax2.set_ylabel('q')
         else:
             self.ax2.set_ylabel('j [MA/m$^2$]')
 
-        selected_entries = list(self.selected_listbox.get(0, tk.END))
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
         if not selected_entries:
             return
 

@@ -1,19 +1,21 @@
-#!/usr/bin/python3.8
-
 """
 MSE Profile tab with j/q selection
 """
 
-import tkinter as tk
-from tkinter import ttk, messagebox
 import numpy as np
 from scipy.interpolate import interp1d
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from ui.profile_base_tab import ProfileBaseTab
-from ui.ui_constants import (
-    CONTROL_PANEL_WIDTH, PAD_X, PAD_Y, ENTRY_WIDTH_AXIS, LABEL_WIDTH_SHORT
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+
+from PySide6.QtWidgets import (
+    QMessageBox, QLineEdit, QComboBox, QPushButton, QCheckBox,
+    QWidget, QHBoxLayout, QVBoxLayout, QGroupBox, QGridLayout, QLabel,
+    QSplitter, QStyle, QScrollArea, QRadioButton, QFrame,
 )
+from PySide6.QtCore import Qt
+
+from ui.profile_base_tab import ProfileBaseTab
+from ui.ui_constants import CONTROL_PANEL_WIDTH, get_icon
 
 
 class MSEProfileTab(ProfileBaseTab):
@@ -30,7 +32,8 @@ class MSEProfileTab(ProfileBaseTab):
 
     def create_widgets(self):
         """Create MSE profile tab widgets"""
-        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
+        self.figure = Figure(self.app_config.FIGURE_SIZE)
+        self.figure.subplots_adjust(left=0.08, right=0.97, top=0.93, bottom=0.10, wspace=0.20)
 
         # Setup 1x2 plot with shared x-axis: TGAMMA (left), j or q (right)
         self.ax1 = self.figure.add_subplot(121)
@@ -39,15 +42,43 @@ class MSEProfileTab(ProfileBaseTab):
         self.ax1.set_xlabel('R [m]')
         self.ax1.set_ylabel(r'$\gamma$ [rad]')
         self.ax2.set_xlabel('R [m]')
+        self.ax2.set_ylabel('q')
 
         # Create canvas
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
+        self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(side=tk.LEFT, fill='both', expand=True)
 
-        control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
-        control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
-        control_frame.pack_propagate(False)
+        # Left side: canvas + toolbar in a vertical layout
+        canvas_widget = QWidget()
+        canvas_layout = QVBoxLayout(canvas_widget)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
+        canvas_layout.addWidget(self.canvas)
+
+        # Right side: scrollable control panel
+        scroll_area = QScrollArea()
+        scroll_area.setFixedWidth(CONTROL_PANEL_WIDTH)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
+        control_frame = QWidget()
+        control_layout = QVBoxLayout(control_frame)
+        control_layout.setContentsMargins(9, 9, 9, 9)
+        control_layout.setSizeConstraint(QVBoxLayout.SetNoConstraint)
+
+        scroll_area.setWidget(control_frame)
+        scroll_area.viewport().setAutoFillBackground(False)
+        control_frame.setAutoFillBackground(False)
+
+        # Splitter for left/right layout
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(canvas_widget)
+        splitter.addWidget(scroll_area)
+
+        # Set the main layout of self.frame
+        main_layout = QVBoxLayout(self.frame)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(splitter)
 
         self._create_shot_input(control_frame)
         self._create_selection_listboxes(control_frame)
@@ -57,85 +88,129 @@ class MSEProfileTab(ProfileBaseTab):
 
     def _create_shot_input(self, parent):
         """Create data loading section"""
-        frame = ttk.LabelFrame(parent, text="1. Load MSE Data", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-
-        frame.grid_columnconfigure(1, weight=1)
+        group = QGroupBox("1. Load MSE Data")
+        grid = QGridLayout(group)
+        grid.setColumnStretch(1, 1)
 
         # Row 0: Shot label, entry with up/down, Fetch
-        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='w').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
+        grid.addWidget(QLabel('Shot'), 0, 0)
 
-        shot_frame = ttk.Frame(frame)
-        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        shot_frame = QWidget()
+        shot_layout = QHBoxLayout(shot_frame)
+        shot_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.shot_entry = ttk.Entry(shot_frame)
-        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
-        self.shot_entry.bind('<Return>', lambda e: self.load_shot_data())
+        self.shot_entry = QLineEdit()
+        shot_layout.addWidget(self.shot_entry, 1)
+        self.shot_entry.returnPressed.connect(self.load_shot_data)
 
-        ttk.Button(shot_frame, text='\u25B2', width=2,
-                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
-        ttk.Button(shot_frame, text='\u25BC', width=2,
-                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
+        btn_updown = QWidget()
+        btn_updown_layout = QVBoxLayout(btn_updown)
+        btn_updown_layout.setContentsMargins(0, 0, 0, 0)
+        btn_updown_layout.setSpacing(0)
+        mini_btn_style = "padding: 0px; border-radius: 2px;"
+        up_btn = QPushButton()
+        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
+        up_btn.setFixedSize(24, 15)
+        up_btn.setStyleSheet(mini_btn_style)
+        up_btn.clicked.connect(lambda: self._adjust_shot(1))
+        btn_updown_layout.addWidget(up_btn)
+        down_btn = QPushButton()
+        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
+        down_btn.setFixedSize(24, 15)
+        down_btn.setStyleSheet(mini_btn_style)
+        down_btn.clicked.connect(lambda: self._adjust_shot(-1))
+        btn_updown_layout.addWidget(down_btn)
+        shot_layout.addWidget(btn_updown)
 
-        self.fetch_button = ttk.Button(frame, text='Fetch', command=self.load_shot_data, width=8)
-        self.fetch_button.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='e')
+        grid.addWidget(shot_frame, 0, 1)
+
+        self.fetch_button = QPushButton('Fetch')
+        self.fetch_button.setFixedWidth(70)
+        self.fetch_button.clicked.connect(self.load_shot_data)
+        grid.addWidget(self.fetch_button, 0, 2)
+
+        parent.layout().addWidget(group)
 
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
         try:
-            current = int(self.shot_entry.get())
+            current = int(self.shot_entry.text())
             new_shot = max(1, current + delta)
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, str(new_shot))
+            self.shot_entry.setText(str(new_shot))
         except ValueError:
             pass
 
+    def _get_selected_param(self):
+        """Get selected parameter from radio buttons"""
+        return 'q' if self.param_q_radio.isChecked() else 'j'
+
     def _create_plot_controls(self, parent):
         """Create plot control buttons"""
-        frame = ttk.LabelFrame(parent, text="3. Plot", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        group = QGroupBox("3. Plot")
+        group_layout = QVBoxLayout(group)
 
-        row_frame = ttk.Frame(frame)
-        row_frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        row_frame.grid_columnconfigure(2, weight=1)
+        # Row 1: q/j radio buttons + Plot button
+        row1 = QHBoxLayout()
 
-        self.show_channel_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(row_frame, text='Show Nodes', variable=self.show_channel_var).grid(
-            row=0, column=0, sticky='w')
+        self.param_q_radio = QRadioButton(' q')
+        self.param_q_radio.setChecked(True)
+        row1.addWidget(self.param_q_radio)
 
-        self.selected_param = tk.StringVar(value='q')
-        param_dropdown = ttk.Combobox(row_frame, textvariable=self.selected_param,
-                                      values=['q', 'j'], state='readonly', width=3)
-        param_dropdown.grid(row=0, column=1, sticky='w', padx=(10, 0))
+        self.param_j_radio = QRadioButton(' j')
+        row1.addWidget(self.param_j_radio)
 
-        ttk.Button(row_frame, text='Plot R profiles', command=self.plot_data).grid(
-            row=0, column=2, sticky='ew', padx=(10, 0))
+        plot_button = QPushButton("Plot")
+        plot_button.clicked.connect(self.plot_data)
+        row1.addWidget(plot_button, 2)
+
+        group_layout.addLayout(row1)
+
+        # Separator line
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        group_layout.addWidget(separator)
+
+        # Row 2: Show Nodes + Select Channels
+        row2 = QHBoxLayout()
+
+        self.show_channel_checkbox = QCheckBox("Show Nodes")
+        self.show_channel_checkbox.setChecked(False)
+        row2.addWidget(self.show_channel_checkbox)
+
+        channels_btn = QPushButton("Select Channels")
+        channels_btn.setToolTip("Select which channels to enable or dim")
+        channels_btn.clicked.connect(self._show_channel_selector)
+        row2.addWidget(channels_btn)
+
+        group_layout.addLayout(row2)
+
+        parent.layout().addWidget(group)
 
     def load_shot_data(self):
         """Load MSE shot data from MDS+"""
         try:
-            shot_number = int(self.shot_entry.get())
+            shot_number = int(self.shot_entry.text())
 
             data = self.data_loader.load_data(shot_number)
 
             cache_key = f'{shot_number}_MSE'
             self.data[cache_key] = data
 
-            self.available_listbox.delete(0, tk.END)
+            self.available_listbox.clear()
 
             # Use profile time for time selection
             for tp in data.time_prof:
                 item_str = f'{shot_number:06d}_{tp*1e3:06.0f} (MSE)'
-                self.available_listbox.insert(tk.END, item_str)
+                self.available_listbox.addItem(item_str)
 
             print(f"[MSE] Data loaded: {len(data.time_prof)} timepoints")
             print(f"[MSE]   NB source: {data.nb_source}")
 
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid shot number")
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load data: {str(e)}")
+            QMessageBox.critical(self.frame, "Error", f"Failed to load data: {str(e)}")
 
     def _parse_entry(self, entry):
         """Parse entry to get shot and time"""
@@ -159,6 +234,29 @@ class MSEProfileTab(ProfileBaseTab):
                                fill_value='extrapolate')
         return float(interp_func(time_point))
 
+    def _get_channel_info(self):
+        """Return TGAMMA channel info based on selected listbox entries."""
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
+        if not selected_entries:
+            return []
+
+        # Find loaded MSE data matching any selected entry
+        for entry in selected_entries:
+            shot_number, _, _ = self._parse_entry(entry)
+            cache_key = f'{shot_number}_MSE'
+            if cache_key in self.data:
+                data = self.data[cache_key]
+                if hasattr(data, 'measurements') and 'tgamma' in data.measurements:
+                    tgamma = data.measurements['tgamma']
+                    good_mask = tgamma['good_mask']
+                    info = []
+                    for i in range(len(good_mask)):
+                        if good_mask[i]:
+                            info.append((f"TGAMMA_{i}", f"TGAMMA{i+1:02d}"))
+                    return info
+        return []
+
     def plot_data(self):
         """Plot R profiles"""
         self.ax1.clear()
@@ -169,19 +267,20 @@ class MSEProfileTab(ProfileBaseTab):
         self.ax2.set_xlabel('R [m]')
 
         # Set y-label based on selected parameter
-        param = self.selected_param.get()
+        param = self._get_selected_param()
         if param == 'q':
             self.ax2.set_ylabel('q')
         else:
             self.ax2.set_ylabel('j [MA/m$^2$]')
 
-        selected_entries = list(self.selected_listbox.get(0, tk.END))
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
         if not selected_entries:
             return
 
         gamma_min, gamma_max = np.inf, -np.inf
         param_min, param_max = np.inf, -np.inf
-        colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
+        colors = self._get_plot_colors(selected_entries)
 
         for i, entry in enumerate(selected_entries):
             try:
@@ -217,12 +316,24 @@ class MSEProfileTab(ProfileBaseTab):
 
                 label = f'#{shot_number} {int(time_point*1e3):06d}ms (MSE)'
 
-                self.ax1.errorbar(R_raw, tgamma, xerr=drr*0.5, yerr=sgamma*0.5,
-                                 fmt='o-', capsize=3, markersize=5, color=color,
-                                 linewidth=0.8, label=label)
+                # Channel mask for user-disabled channels
+                good_indices = [j for j in range(len(good_mask)) if good_mask[j]]
+                ch_keys = [f"TGAMMA_{j}" for j in good_indices]
+                ch_mask = self._get_channel_mask(ch_keys)
+
+                if ch_mask.any():
+                    self.ax1.errorbar(R_raw[ch_mask], tgamma[ch_mask],
+                                     xerr=drr[ch_mask]*0.5, yerr=sgamma[ch_mask]*0.5,
+                                     fmt='o-', capsize=3, markersize=5, color=color,
+                                     linewidth=0.8, label=label)
+                if (~ch_mask).any():
+                    self.ax1.errorbar(R_raw[~ch_mask], tgamma[~ch_mask],
+                                     xerr=drr[~ch_mask]*0.5, yerr=sgamma[~ch_mask]*0.5,
+                                     fmt='o', capsize=3, markersize=5,
+                                     color=(0.6, 0.6, 0.6, 0.35), linewidth=0.8, label='')
 
                 # Add channel labels for TGAMMA (node: TGAMMA01~25)
-                raw_channels = [i+1 for i in range(len(good_mask)) if good_mask[i]]
+                raw_channels = [j+1 for j in range(len(good_mask)) if good_mask[j]]
                 self._add_channel_labels(self.ax1, R_raw, tgamma, 'TGAMMA', raw_channels)
 
                 gamma_min = min(gamma_min, np.nanpercentile(tgamma, 2))
@@ -261,9 +372,14 @@ class MSEProfileTab(ProfileBaseTab):
                                              fill_value='extrapolate', bounds_error=False)
                 param_at_tgamma = param_interp_func(R_raw)
 
-                # Plot markers at TGAMMA positions
-                self.ax2.plot(R_raw, param_at_tgamma, 'o', color=color,
-                             markersize=5, markeredgecolor='white', markeredgewidth=0.5)
+                # Plot markers at TGAMMA positions (apply channel mask)
+                if ch_mask.any():
+                    self.ax2.plot(R_raw[ch_mask], param_at_tgamma[ch_mask], 'o', color=color,
+                                 markersize=5, markeredgecolor='white', markeredgewidth=0.5)
+                if (~ch_mask).any():
+                    self.ax2.plot(R_raw[~ch_mask], param_at_tgamma[~ch_mask], 'o',
+                                 color=(0.6, 0.6, 0.6, 0.35),
+                                 markersize=5, markeredgecolor='white', markeredgewidth=0.5)
 
                 # Add channel labels at TGAMMA positions (node: TGAMMA01~25)
                 self._add_channel_labels(self.ax2, R_raw, param_at_tgamma, 'TGAMMA', raw_channels)
@@ -295,7 +411,7 @@ class MSEProfileTab(ProfileBaseTab):
     def plot_efit_profiles(self):
         """Plot profiles with EFIT mapping"""
         if not self.efit_data or self.computed_efit_tree is None:
-            messagebox.showwarning("Warning", "Please compute EFIT first.")
+            QMessageBox.warning(self.frame, "Warning", "Please compute EFIT first.")
             return
 
         efit_tree = self.computed_efit_tree
@@ -303,11 +419,12 @@ class MSEProfileTab(ProfileBaseTab):
         self.ax1.clear()
         self.ax2.clear()
 
-        selected_entries = list(self.selected_listbox.get(0, tk.END))
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
         if not selected_entries:
             return
 
-        x_axis = self.selected_x_axis.get()
+        x_axis = self._get_selected_x_axis()
 
         if x_axis == "psi_N":
             x_label = rf"$\psi_N$ ({efit_tree})"
@@ -316,10 +433,10 @@ class MSEProfileTab(ProfileBaseTab):
         else:
             x_label = rf"$\rho_{{tor}}$ ({efit_tree})"
 
-        param = self.selected_param.get()
+        param = self._get_selected_param()
 
         gamma_max, gamma_min, param_max, param_min = 0, 0, 0, 0
-        colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
+        colors = self._get_plot_colors(selected_entries)
 
         for i, entry in enumerate(selected_entries):
             try:
@@ -360,9 +477,19 @@ class MSEProfileTab(ProfileBaseTab):
                 x_raw = interp_func(R_raw)
                 label = f'#{shot_number} {int(time_point*1e3):06d}ms (MSE)'
 
-                self.ax1.errorbar(x_raw, tgamma, yerr=sgamma*0.5,
-                                 fmt='o-', capsize=3, markersize=5, color=color,
-                                 linewidth=0.8, label=label)
+                # Channel mask for user-disabled channels
+                good_indices = [j for j in range(len(good_mask)) if good_mask[j]]
+                ch_keys = [f"TGAMMA_{j}" for j in good_indices]
+                ch_mask = self._get_channel_mask(ch_keys)
+
+                if ch_mask.any():
+                    self.ax1.errorbar(x_raw[ch_mask], tgamma[ch_mask], yerr=sgamma[ch_mask]*0.5,
+                                     fmt='o-', capsize=3, markersize=5, color=color,
+                                     linewidth=0.8, label=label)
+                if (~ch_mask).any():
+                    self.ax1.errorbar(x_raw[~ch_mask], tgamma[~ch_mask], yerr=sgamma[~ch_mask]*0.5,
+                                     fmt='o', capsize=3, markersize=5,
+                                     color=(0.6, 0.6, 0.6, 0.35), linewidth=0.8, label='')
 
                 # Add channel labels for TGAMMA
                 raw_channels = [j+1 for j in range(len(good_mask)) if good_mask[j]]
@@ -401,9 +528,14 @@ class MSEProfileTab(ProfileBaseTab):
                                              fill_value='extrapolate', bounds_error=False)
                 param_at_tgamma = param_interp_func(x_raw)
 
-                # Plot markers at TGAMMA positions
-                self.ax2.plot(x_raw, param_at_tgamma, 'o', color=color,
-                             markersize=5, markeredgecolor='white', markeredgewidth=0.5)
+                # Plot markers at TGAMMA positions (apply channel mask)
+                if ch_mask.any():
+                    self.ax2.plot(x_raw[ch_mask], param_at_tgamma[ch_mask], 'o', color=color,
+                                 markersize=5, markeredgecolor='white', markeredgewidth=0.5)
+                if (~ch_mask).any():
+                    self.ax2.plot(x_raw[~ch_mask], param_at_tgamma[~ch_mask], 'o',
+                                 color=(0.6, 0.6, 0.6, 0.35),
+                                 markersize=5, markeredgecolor='white', markeredgewidth=0.5)
 
                 # Add channel labels at TGAMMA positions
                 self._add_channel_labels(self.ax2, x_raw, param_at_tgamma, 'TGAMMA', raw_channels)

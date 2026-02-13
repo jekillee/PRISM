@@ -3,19 +3,19 @@
 #
 # Install: pip install -r requirements.txt
 
+# GUI framework (v2.0: migrated from tkinter to PySide6)
+PySide6>=6.2.4
+
 # Core scientific libraries
 numpy>=1.20.0
 scipy>=1.7.0
-matplotlib>=3.4.0
+matplotlib>=3.5.0
 
 # Image processing (for TV tab)
 Pillow>=8.0.0
 
 # MDS+ connection (may require separate installation)
 # MDSplus>=7.0.0
-
-# GUI (usually comes with Python)
-# tkinter is part of standard library
 
 # Optional: for development
 # pytest>=7.0.0

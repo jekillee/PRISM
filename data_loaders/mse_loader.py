@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 MSE (Motional Stark Effect) data loader
 """

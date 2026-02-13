@@ -1,9 +1,8 @@
-#!/usr/bin/python3.8
-
 """
 Plot management and styling
 """
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
@@ -59,30 +58,32 @@ class PlotManager:
         self.color_manager = ColorManager()
     
     def setup_profile_plot(self, figure, y1_label, y2_label):
-        """Setup profile plot axes"""
+        """Setup profile plot axes (side-by-side)"""
+        figure.subplots_adjust(left=0.08, right=0.97, top=0.93, bottom=0.10, wspace=0.20)
         ax1 = figure.add_subplot(121)
         ax1.set_xlabel('x')
         ax1.set_ylabel(y1_label)
-        
+
         ax2 = figure.add_subplot(122, sharex=ax1)
         ax2.set_xlabel('x')
         ax2.set_ylabel(y2_label)
-        
+
         return ax1, ax2
-    
+
     def setup_timetrace_plot(self, figure, y1_label, y2_label):
-        """Setup time trace plot axes"""
+        """Setup time trace plot axes (stacked)"""
+        figure.subplots_adjust(left=0.10, right=0.97, top=0.95, bottom=0.10, hspace=0.15)
         ax1 = figure.add_subplot(211)
         ax1.set_ylabel(y1_label)
-        
+
         ax2 = figure.add_subplot(212, sharex=ax1)
         ax2.set_xlabel('Time [s]')
         ax2.set_ylabel(y2_label)
-        
+
         # Add zero line for velocity-like parameters
         if 'v' in y2_label.lower():
             ax2.axhline(y=0, c='silver', ls='--')
-        
+
         return ax1, ax2
     
     def apply_common_styling(self, ax1, ax2, plot_type='profile', skip_legend=False):
@@ -95,4 +96,4 @@ class PlotManager:
         for ax in [ax1, ax2]:
             if not skip_legend:
                 apply_legend_with_limit(ax, max_items, frameon=False, fontsize=8)
-            ax.grid(ls='--', lw=0.3, c='lightgray')
+            ax.grid(ls='--', lw=0.3, c=mpl.rcParams.get('grid.color', '#444444'))

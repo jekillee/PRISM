@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 TCI (Two-Color Interferometer) data loader for line-averaged density
 """

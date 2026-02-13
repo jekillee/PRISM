@@ -1,14 +1,17 @@
-#!/usr/bin/python3.8
-
 """
 Ti/vT Time Trace tab with CES and XICS integration
 """
 
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
 import numpy as np
+
+from PySide6.QtWidgets import (
+    QMessageBox, QLineEdit, QComboBox, QPushButton, QWidget,
+    QHBoxLayout, QVBoxLayout, QGroupBox, QGridLayout, QLabel,
+    QFileDialog, QStyle
+)
+
 from ui.timetrace_base_tab import TimeTraceBaseTab
-from ui.ui_constants import PAD_X, PAD_Y, LABEL_WIDTH_SHORT, ENTRY_WIDTH_SHOT
+from ui.ui_constants import get_icon
 
 
 class TiVTTimeTraceTab(TimeTraceBaseTab):
@@ -26,49 +29,71 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
 
     def _create_shot_input(self, parent):
         """Create data loading section with analysis type selection"""
-        frame = ttk.LabelFrame(parent, text="1. Load Ti/vT Data", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        group = QGroupBox("1. Load Ti, vT Data")
+        grid = QGridLayout(group)
 
-        frame.grid_columnconfigure(1, weight=1)
+        grid.setColumnStretch(1, 1)
 
         # Row 0: Shot label, entry, up/down buttons, dropdown, Fetch, File
-        ttk.Label(frame, text='Shot', width=LABEL_WIDTH_SHORT, anchor='w').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
+        grid.addWidget(QLabel('Shot'), 0, 0)
 
-        self.shot_entry = ttk.Entry(frame)
-        self.shot_entry.grid(row=0, column=1, padx=(PAD_X, 0), pady=PAD_Y, sticky='ew')
-        self.shot_entry.bind('<Return>', lambda e: self.load_shot_data())
+        self.shot_entry = QLineEdit()
+        self.shot_entry.setMinimumWidth(65)
+        grid.addWidget(self.shot_entry, 0, 1)
+        self.shot_entry.returnPressed.connect(self.load_shot_data)
 
-        btn_updown = ttk.Frame(frame)
-        btn_updown.grid(row=0, column=2, padx=(2, PAD_X), pady=PAD_Y, sticky='w')
-        ttk.Button(btn_updown, text='\u25B2', width=2,
-                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT)
-        ttk.Button(btn_updown, text='\u25BC', width=2,
-                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
+        btn_updown = QWidget()
+        btn_updown_layout = QVBoxLayout(btn_updown)
+        btn_updown_layout.setContentsMargins(0, 0, 0, 0)
+        btn_updown_layout.setSpacing(0)
+        mini_btn_style = "padding: 0px; border-radius: 2px;"
+        up_btn = QPushButton()
+        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
+        up_btn.setFixedSize(24, 15)
+        up_btn.setStyleSheet(mini_btn_style)
+        up_btn.clicked.connect(lambda: self._adjust_shot(1))
+        btn_updown_layout.addWidget(up_btn)
+        down_btn = QPushButton()
+        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
+        down_btn.setFixedSize(24, 15)
+        down_btn.setStyleSheet(mini_btn_style)
+        down_btn.clicked.connect(lambda: self._adjust_shot(-1))
+        btn_updown_layout.addWidget(down_btn)
+        grid.addWidget(btn_updown, 0, 2)
 
         analysis_types = list(self.diag_config['analysis_types'].keys())
-        self.selected_analysis_type = tk.StringVar(value='mod')
+        self.analysis_combo = QComboBox()
+        self.analysis_combo.addItems(analysis_types)
+        self.analysis_combo.setCurrentText('mod')
+        self.analysis_combo.setFixedWidth(70)
+        grid.addWidget(self.analysis_combo, 0, 3)
 
-        analysis_dropdown = ttk.Combobox(frame, textvariable=self.selected_analysis_type,
-                                        values=analysis_types, state="readonly", width=5)
-        analysis_dropdown.grid(row=0, column=3, padx=PAD_X, pady=PAD_Y, sticky='w')
+        btn_frame = QWidget()
+        btn_frame_layout = QHBoxLayout(btn_frame)
+        btn_frame_layout.setContentsMargins(0, 0, 0, 0)
 
-        btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=0, column=4, padx=PAD_X, pady=PAD_Y, sticky='e')
+        self.fetch_button = QPushButton('Fetch')
+        self.fetch_button.setFixedWidth(70)
+        self.fetch_button.clicked.connect(self.load_shot_data)
+        btn_frame_layout.addWidget(self.fetch_button)
 
-        self.fetch_button = ttk.Button(btn_frame, text='Fetch', command=self.load_shot_data, width=8)
-        self.fetch_button.pack(side=tk.LEFT)
+        file_button = QPushButton()
+        file_button.setIcon(get_icon(QStyle.SP_DirOpenIcon))
+        file_button.setFixedWidth(28)
+        file_button.clicked.connect(self.load_file_data)
+        btn_frame_layout.addWidget(file_button)
 
-        ttk.Button(btn_frame, text='...', command=self.load_file_data, width=3).pack(
-            side=tk.LEFT, padx=(2, 0))
+        grid.addWidget(btn_frame, 0, 4)
+
+        parent.layout().addWidget(group)
 
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
         try:
-            current = int(self.shot_entry.get())
+            current = int(self.shot_entry.text())
             new_shot = max(1, current + delta)
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, str(new_shot))
+            self.shot_entry.clear()
+            self.shot_entry.setText(str(new_shot))
         except ValueError:
             pass
 
@@ -83,12 +108,12 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
     def load_shot_data(self):
         """Load CES and XICS shot data from MDS+, sorted by R"""
         try:
-            shot_number = int(self.shot_entry.get())
+            shot_number = int(self.shot_entry.text())
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid shot number")
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
             return
 
-        analysis_type = self.selected_analysis_type.get()
+        analysis_type = self.analysis_combo.currentText()
         ces_loaded = False
         xics_loaded = False
         data = None
@@ -118,7 +143,7 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
 
         # Check if any data loaded
         if not ces_loaded and not xics_loaded:
-            messagebox.showerror("Error", f"No CES ({analysis_type}) or XICS data available for shot #{shot_number}")
+            QMessageBox.critical(self.frame, "Error", f"No CES ({analysis_type}) or XICS data available for shot #{shot_number}")
             return
 
         # Build list of all channels with R positions
@@ -144,17 +169,18 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
         all_channels.sort(key=lambda x: x['R'])
 
         # Update listbox
-        self.available_listbox.delete(0, tk.END)
+        self.available_listbox.clear()
         for ch in all_channels:
-            self.available_listbox.insert(tk.END, ch['label'])
+            self.available_listbox.addItem(ch['label'])
 
     def load_file_data(self):
         """Load CES data from result file, sorted by R"""
-        file_path = filedialog.askopenfilename(
-            title="Select CES Result File",
-            initialdir=self.app_config.CES_RESULT_PATH,
-            filetypes=[("Text files", "*.txt"), ("All Files", "*.*")]
-        )
+        file_path = QFileDialog.getOpenFileName(
+            self.frame,
+            "Select CES Result File",
+            self.app_config.CES_RESULT_PATH,
+            "Text files (*.txt);;All Files (*)"
+        )[0]
 
         if not file_path:
             return
@@ -198,14 +224,14 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
             all_channels.sort(key=lambda x: x['R'])
 
             # Update listbox
-            self.available_listbox.delete(0, tk.END)
+            self.available_listbox.clear()
             for ch in all_channels:
-                self.available_listbox.insert(tk.END, ch['label'])
+                self.available_listbox.addItem(ch['label'])
 
         except ValueError as e:
-            messagebox.showerror("Invalid File Format", str(e))
+            QMessageBox.critical(self.frame, "Invalid File Format", str(e))
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load file: {str(e)}")
+            QMessageBox.critical(self.frame, "Error", f"Failed to load file: {str(e)}")
 
     def _parse_entry(self, entry):
         """Parse time trace entry: XXXXXX_YYYY (DIAG##)
@@ -257,7 +283,8 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
         self.ax2.set_xlabel('Time [s]')
         self.ax2.set_ylabel(self.param2['label'])
 
-        selected_entries = list(self.selected_listbox.get(0, tk.END))
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
         if not selected_entries:
             return
 

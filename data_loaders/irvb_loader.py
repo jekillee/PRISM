@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 IRVB (Infra-Red Video Bolometer) data loader
 Loads reconstructed radiation data from HTTP server

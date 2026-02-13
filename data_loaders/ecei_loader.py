@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 ECEI (Electron Cyclotron Emission Imaging) data loader
 Supports GT, GR, HT devices with ABCD matrix position calculation

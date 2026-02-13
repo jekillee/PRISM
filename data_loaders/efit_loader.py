@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 EFIT equilibrium data loader
 Supports both 1D profile mapping and 2D poloidal cross-section data

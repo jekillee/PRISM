@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 BES (Beam Emission Spectroscopy) data loader
 """

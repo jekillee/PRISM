@@ -1,13 +1,9 @@
-#!/usr/bin/python3.8
-
 """
 TV Startup Comparison tab for comparing startup sequences across multiple shots
 Supports both TV01 and TV02 camera selection
 Based on standalone TV01 startup montage viewer
 """
 
-import tkinter as tk
-from tkinter import ttk, messagebox
 import zipfile
 import os
 import io
@@ -15,12 +11,17 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
-from ui.ui_constants import (
-    CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
-    ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLabel, QLineEdit, QPushButton, QComboBox, QGroupBox,
+    QRadioButton, QButtonGroup, QListWidget, QSplitter,
+    QMessageBox, QApplication, QStyle, QScrollArea,
 )
+from PySide6.QtCore import Qt
+
+from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_icon
 from ui.tv_utils import (
     TV_FPS, get_tv_startup_zip_path, find_available_tvs, frame_to_time_ms
 )
@@ -43,7 +44,7 @@ class TVStartupTab:
         self.app_config = app_config
         self.diag_config = diagnostic_config
 
-        self.frame = ttk.Frame(parent)
+        self.frame = QWidget()
         self.toolbar = None
 
         # Shot list storage (shot numbers only, images generated on Plot)
@@ -61,173 +62,215 @@ class TVStartupTab:
 
     def create_widgets(self):
         """Create TV Startup tab widgets"""
-        # Right: Control panel (pack first so it doesn't resize)
-        control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
-        control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
-        control_frame.pack_propagate(False)
+        main_layout = QHBoxLayout(self.frame)
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._create_shot_controls(control_frame)
-        self._create_display_controls(control_frame)
-        self._create_plot_controls(control_frame)
+        splitter = QSplitter(Qt.Horizontal)
+        main_layout.addWidget(splitter)
 
-        # Left: Image display area (no scroll)
-        self._create_display()
+        # Left: Image display area
+        self._create_display(splitter)
+
+        # Right: Scrollable control panel
+        scroll_area = QScrollArea()
+        scroll_area.setFixedWidth(CONTROL_PANEL_WIDTH)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
+        control_widget = QWidget()
+        control_layout = QVBoxLayout(control_widget)
+        control_layout.setContentsMargins(9, 9, 9, 9)
+        control_layout.setSizeConstraint(QVBoxLayout.SetNoConstraint)
+
+        self._create_shot_controls(control_layout)
+        self._create_display_controls(control_layout)
+        self._create_plot_controls(control_layout)
+        control_layout.addStretch()
+
+        scroll_area.setWidget(control_widget)
+        scroll_area.viewport().setAutoFillBackground(False)
+        control_widget.setAutoFillBackground(False)
+        splitter.addWidget(scroll_area)
 
         # Load saved settings
         self.load_settings()
 
-    def _create_shot_controls(self, parent):
+    def _create_shot_controls(self, parent_layout):
         """Create shot input section"""
-        frame = ttk.LabelFrame(parent, text="1. Shot Selection", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-
-        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
-        frame.grid_columnconfigure(1, weight=1)
+        group = QGroupBox("1. Shot Selection")
+        grid = QGridLayout(group)
 
         # Shot entry with up/down buttons and Fetch button
-        ttk.Label(frame, text='Shot', anchor='w').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
+        grid.addWidget(QLabel('Shot'), 0, 0)
 
-        shot_frame = ttk.Frame(frame)
-        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        shot_layout = QHBoxLayout()
+        self.shot_entry = QLineEdit()
+        self.shot_entry.setMinimumWidth(80)
+        self.shot_entry.returnPressed.connect(self._fetch_available_tvs)
+        self.shot_entry.textChanged.connect(self._on_shot_changed)
+        shot_layout.addWidget(self.shot_entry, 1)
 
-        self.shot_entry = ttk.Entry(shot_frame, width=10)
-        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
-        self.shot_entry.bind('<Return>', lambda e: self._fetch_available_tvs())
-        self.shot_entry.bind('<KeyRelease>', self._on_shot_changed)
+        btn_updown = QWidget()
+        btn_updown_layout = QVBoxLayout(btn_updown)
+        btn_updown_layout.setContentsMargins(0, 0, 0, 0)
+        btn_updown_layout.setSpacing(0)
+        mini_btn_style = "padding: 0px; border-radius: 2px;"
+        up_btn = QPushButton()
+        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
+        up_btn.setFixedSize(24, 15)
+        up_btn.setStyleSheet(mini_btn_style)
+        up_btn.clicked.connect(lambda: self._adjust_shot(1))
+        btn_updown_layout.addWidget(up_btn)
+        down_btn = QPushButton()
+        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
+        down_btn.setFixedSize(24, 15)
+        down_btn.setStyleSheet(mini_btn_style)
+        down_btn.clicked.connect(lambda: self._adjust_shot(-1))
+        btn_updown_layout.addWidget(down_btn)
+        shot_layout.addWidget(btn_updown)
 
-        ttk.Button(shot_frame, text='\u25B2', width=2,
-                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
-        ttk.Button(shot_frame, text='\u25BC', width=2,
-                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
-        ttk.Button(shot_frame, text='Fetch', width=6,
-                   command=self._fetch_available_tvs).pack(side=tk.LEFT, padx=(5, 0))
+        fetch_btn = QPushButton('Fetch')
+        fetch_btn.setFixedWidth(70)
+        fetch_btn.clicked.connect(self._fetch_available_tvs)
+        shot_layout.addWidget(fetch_btn)
+
+        grid.addLayout(shot_layout, 0, 1)
 
         # TV Selection (TV01 / TV02) with Add button
-        ttk.Label(frame, text='TV', anchor='w').grid(
-            row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
+        grid.addWidget(QLabel('TV'), 1, 0)
 
-        tv_frame = ttk.Frame(frame)
-        tv_frame.grid(row=1, column=1, padx=PAD_X, pady=PAD_Y, sticky='w')
+        tv_layout = QHBoxLayout()
 
-        self.tv_var = tk.StringVar(value='TV01')
-        self.tv01_radio = ttk.Radiobutton(tv_frame, text='TV01', variable=self.tv_var,
-                                           value='TV01', state='disabled')
-        self.tv01_radio.pack(side=tk.LEFT)
-        self.tv02_radio = ttk.Radiobutton(tv_frame, text='TV02', variable=self.tv_var,
-                                           value='TV02', state='disabled')
-        self.tv02_radio.pack(side=tk.LEFT, padx=(10, 0))
+        self.tv_button_group = QButtonGroup()
+        self.tv01_radio = QRadioButton('TV01')
+        self.tv01_radio.setChecked(True)
+        self.tv01_radio.setEnabled(False)
+        self.tv_button_group.addButton(self.tv01_radio)
+        tv_layout.addWidget(self.tv01_radio)
 
-        self.add_btn = ttk.Button(tv_frame, text='Add', command=self._add_shot,
-                                   width=5, state='disabled')
-        self.add_btn.pack(side=tk.LEFT, padx=(15, 0))
+        self.tv02_radio = QRadioButton('TV02')
+        self.tv02_radio.setEnabled(False)
+        self.tv_button_group.addButton(self.tv02_radio)
+        tv_layout.addWidget(self.tv02_radio)
+
+        self.add_btn = QPushButton('Add')
+        self.add_btn.setFixedWidth(70)
+        self.add_btn.setEnabled(False)
+        self.add_btn.clicked.connect(self._add_shot)
+        tv_layout.addWidget(self.add_btn)
+
+        grid.addLayout(tv_layout, 1, 1)
 
         # Status label
-        self.status_label = tk.Label(frame, text="Ready", fg='gray',
-                                      font=('TkDefaultFont', 9, 'bold'))
-        self.status_label.grid(row=3, column=0, columnspan=2, padx=PAD_X, pady=2, sticky='w')
+        self.status_label = QLabel("Ready")
+        self.status_label.setStyleSheet("color: gray; font-weight: bold; font-size: 9pt;")
+        grid.addWidget(self.status_label, 3, 0, 1, 2)
 
-    def _create_display_controls(self, parent):
-        """Create display options section"""
-        frame = ttk.LabelFrame(parent, text="2. Added Shots", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        parent_layout.addWidget(group)
 
-        # Shots list
-        list_frame = ttk.Frame(frame)
-        list_frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+    def _create_display_controls(self, parent_layout):
+        """Create display options section with shot list and action buttons"""
+        group = QGroupBox("2. Added Shots")
+        h_layout = QHBoxLayout(group)
 
-        # Listbox with scrollbar
-        listbox_frame = ttk.Frame(list_frame)
-        listbox_frame.pack(fill='x', pady=(2, 0))
+        # Left: Shots list (QListWidget) showing shot + TV type
+        self.shots_listbox = QListWidget()
+        self.shots_listbox.setMaximumHeight(150)
+        h_layout.addWidget(self.shots_listbox, 1)
 
-        self.shots_listbox = tk.Listbox(listbox_frame, height=6, width=25)
-        self.shots_listbox.pack(side=tk.LEFT, fill='x', expand=True)
+        # Right: action buttons stacked vertically
+        btn_widget = QWidget()
+        btn_layout = QVBoxLayout(btn_widget)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Bind keyboard delete keys
-        self.shots_listbox.bind('<Delete>', lambda e: self._remove_selected())
-        self.shots_listbox.bind('<BackSpace>', lambda e: self._remove_selected())
+        remove_btn = QPushButton('Remove')
+        remove_btn.clicked.connect(self._remove_selected)
+        btn_layout.addWidget(remove_btn)
 
-        scrollbar = ttk.Scrollbar(listbox_frame, orient='vertical',
-                                   command=self.shots_listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill='y')
-        self.shots_listbox.config(yscrollcommand=scrollbar.set)
+        clear_btn = QPushButton('Clear All')
+        clear_btn.clicked.connect(self._clear_all)
+        btn_layout.addWidget(clear_btn)
 
-        # Button frame for Remove Selected and Clear All
-        btn_frame = ttk.Frame(list_frame)
-        btn_frame.pack(fill='x', pady=(5, 0))
+        btn_layout.addStretch()
 
-        ttk.Button(btn_frame, text='Remove Selected',
-                   command=self._remove_selected, width=14).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(btn_frame, text='Clear All',
-                   command=self._clear_all, width=10).pack(side=tk.LEFT)
+        hint_label = QLabel("Del key\nto remove")
+        hint_label.setStyleSheet("color: gray; font-size: 8pt;")
+        hint_label.setAlignment(Qt.AlignCenter)
+        btn_layout.addWidget(hint_label)
 
-        # Hint for keyboard delete
-        hint_label = ttk.Label(list_frame, text="(Delete/Backspace to remove)",
-                               font=('TkDefaultFont', 8), foreground='gray')
-        hint_label.pack(anchor='w', pady=(2, 0))
+        h_layout.addWidget(btn_widget, 1)
 
-    def _create_plot_controls(self, parent):
+        parent_layout.addWidget(group)
+
+    def _create_plot_controls(self, parent_layout):
         """Create plot section"""
-        frame = ttk.LabelFrame(parent, text="3. Plot", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-
-        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
-        frame.grid_columnconfigure(1, weight=1)
+        group = QGroupBox("3. Plot")
+        grid = QGridLayout(group)
 
         # Frame range (start/end)
-        ttk.Label(frame, text='Frame Range', anchor='w').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
+        grid.addWidget(QLabel('Frame Range'), 0, 0)
 
-        range_frame = ttk.Frame(frame)
-        range_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='w')
+        range_layout = QHBoxLayout()
 
-        self.frame_start_var = tk.StringVar(value='1')
-        ttk.Entry(range_frame, textvariable=self.frame_start_var, width=6).pack(side=tk.LEFT)
+        self.frame_start_entry = QLineEdit('1')
+        self.frame_start_entry.setFixedWidth(50)
+        range_layout.addWidget(self.frame_start_entry)
 
-        ttk.Label(range_frame, text='~').pack(side=tk.LEFT, padx=5)
+        range_layout.addWidget(QLabel('~'))
 
-        self.frame_end_var = tk.StringVar(value='24')
-        ttk.Entry(range_frame, textvariable=self.frame_end_var, width=6).pack(side=tk.LEFT)
+        self.frame_end_entry = QLineEdit('24')
+        self.frame_end_entry.setFixedWidth(50)
+        range_layout.addWidget(self.frame_end_entry)
+        range_layout.addStretch()
+
+        grid.addLayout(range_layout, 0, 1)
 
         # Plot button
-        ttk.Button(frame, text='Plot', command=self._plot,
-                   width=15).grid(row=1, column=0, columnspan=2, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        plot_btn = QPushButton('Plot')
+        plot_btn.clicked.connect(self._plot)
+        grid.addWidget(plot_btn, 1, 0, 1, 2)
 
-    def _create_display(self):
+        parent_layout.addWidget(group)
+
+    def _create_display(self, splitter):
         """Create matplotlib display area (no scroll)"""
-        # Container frame
-        container = ttk.Frame(self.frame)
-        container.pack(side=tk.LEFT, fill='both', expand=True)
+        # Container widget
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
 
         # Matplotlib figure
-        self.figure = Figure(figsize=(10, 6), tight_layout=True)
+        self.figure = Figure(figsize=self.app_config.FIGURE_SIZE, tight_layout=True)
         self.ax = self.figure.add_subplot(111)
         self.ax.set_axis_off()
         self.ax.text(0.5, 0.5, 'Add shots and click Plot to compare startup sequences',
                      ha='center', va='center', fontsize=12,
                      transform=self.ax.transAxes, color='gray')
+        apply_dark_figure_style(self.figure)
 
         # Matplotlib widget
-        self.canvas = FigureCanvasTkAgg(self.figure, master=container)
-        self.canvas.get_tk_widget().pack(fill='both', expand=True)
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        container_layout.addWidget(self.canvas)
         self.canvas.draw()
+
+        splitter.addWidget(container)
 
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
         try:
-            current = int(self.shot_entry.get())
+            current = int(self.shot_entry.text())
             new_shot = max(1, current + delta)
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, str(new_shot))
+            self.shot_entry.setText(str(new_shot))
             # Disable Add and TV buttons when shot changes
             self._disable_add_controls()
         except ValueError:
             pass
 
-    def _on_shot_changed(self, event=None):
+    def _on_shot_changed(self, text=None):
         """Handle shot entry value change - disable Add if shot differs from last fetched"""
         try:
-            current_shot = int(self.shot_entry.get().strip())
+            current_shot = int(self.shot_entry.text().strip())
         except ValueError:
             current_shot = None
 
@@ -237,16 +280,16 @@ class TVStartupTab:
 
     def _disable_add_controls(self):
         """Disable Add button and TV radio buttons"""
-        self.add_btn.config(state='disabled')
-        self.tv01_radio.config(state='disabled')
-        self.tv02_radio.config(state='disabled')
+        self.add_btn.setEnabled(False)
+        self.tv01_radio.setEnabled(False)
+        self.tv02_radio.setEnabled(False)
 
     def _fetch_available_tvs(self):
         """Fetch available TV startup files for current shot"""
         try:
-            shot = int(self.shot_entry.get().strip())
+            shot = int(self.shot_entry.text().strip())
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid shot number")
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
             return
 
         # Store the fetched shot number
@@ -255,55 +298,63 @@ class TVStartupTab:
         # Use tv_utils to find available TVs
         self.available_tvs = find_available_tvs(shot, startup=True)
 
+        # Get current TV selection
+        selected_tv = 'TV01' if self.tv01_radio.isChecked() else 'TV02'
+
         # Update radio buttons based on availability and lock status
         if self.current_tv is not None:
             # TV type is locked - only enable if matches locked type and available
             if 'TV01' in self.available_tvs and self.current_tv == 'TV01':
-                self.tv01_radio.config(state='normal')
-                self.tv_var.set('TV01')
+                self.tv01_radio.setEnabled(True)
+                self.tv01_radio.setChecked(True)
             else:
-                self.tv01_radio.config(state='disabled')
+                self.tv01_radio.setEnabled(False)
 
             if 'TV02' in self.available_tvs and self.current_tv == 'TV02':
-                self.tv02_radio.config(state='normal')
-                self.tv_var.set('TV02')
+                self.tv02_radio.setEnabled(True)
+                self.tv02_radio.setChecked(True)
             else:
-                self.tv02_radio.config(state='disabled')
+                self.tv02_radio.setEnabled(False)
         else:
             # No lock - enable based on availability
             if 'TV01' in self.available_tvs:
-                self.tv01_radio.config(state='normal')
+                self.tv01_radio.setEnabled(True)
             else:
-                self.tv01_radio.config(state='disabled')
+                self.tv01_radio.setEnabled(False)
 
             if 'TV02' in self.available_tvs:
-                self.tv02_radio.config(state='normal')
+                self.tv02_radio.setEnabled(True)
             else:
-                self.tv02_radio.config(state='disabled')
+                self.tv02_radio.setEnabled(False)
 
             # Auto-select first available
             if self.available_tvs:
-                self.tv_var.set(self.available_tvs[0])
+                if self.available_tvs[0] == 'TV01':
+                    self.tv01_radio.setChecked(True)
+                else:
+                    self.tv02_radio.setChecked(True)
+
+        # Re-read selected TV after updating radio states
+        selected_tv = 'TV01' if self.tv01_radio.isChecked() else 'TV02'
 
         # Enable/disable Add button
         if self.available_tvs:
             # Check if selected TV is available (considering lock)
-            selected_tv = self.tv_var.get()
             if self.current_tv is not None:
                 if selected_tv == self.current_tv and selected_tv in self.available_tvs:
-                    self.add_btn.config(state='normal')
+                    self.add_btn.setEnabled(True)
                 else:
-                    self.add_btn.config(state='disabled')
+                    self.add_btn.setEnabled(False)
             else:
                 if selected_tv in self.available_tvs:
-                    self.add_btn.config(state='normal')
+                    self.add_btn.setEnabled(True)
                 else:
-                    self.add_btn.config(state='disabled')
+                    self.add_btn.setEnabled(False)
 
             self._set_status(f"Found: {', '.join(self.available_tvs)} for #{shot}", 'green')
             print(f"[TV Startup] Found {self.available_tvs} for shot #{shot}")
         else:
-            self.add_btn.config(state='disabled')
+            self.add_btn.setEnabled(False)
             self._set_status(f"No TV startup data for #{shot}", 'red')
             print(f"[TV Startup] No TV startup data for shot #{shot}")
 
@@ -398,22 +449,22 @@ class TVStartupTab:
     def _add_shot(self):
         """Add shot to list"""
         try:
-            shot = int(self.shot_entry.get().strip())
+            shot = int(self.shot_entry.text().strip())
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid shot number")
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
             return
 
-        tv_name = self.tv_var.get()
+        tv_name = 'TV01' if self.tv01_radio.isChecked() else 'TV02'
 
         # Check if TV type is locked
         if self.current_tv is not None and self.current_tv != tv_name:
-            messagebox.showwarning("Warning",
+            QMessageBox.warning(self.frame, "Warning",
                 f"Only {self.current_tv} shots can be added.\nClear all to change TV type.")
             return
 
         # Check if shot already added
         if shot in self.shot_list:
-            messagebox.showwarning("Warning", f"Shot #{shot} is already added")
+            QMessageBox.warning(self.frame, "Warning", f"Shot #{shot} is already added")
             return
 
         # Lock TV type on first shot
@@ -421,13 +472,13 @@ class TVStartupTab:
             self.current_tv = tv_name
             # Disable the other radio button
             if tv_name == 'TV01':
-                self.tv02_radio.config(state='disabled')
+                self.tv02_radio.setEnabled(False)
             else:
-                self.tv01_radio.config(state='disabled')
+                self.tv01_radio.setEnabled(False)
 
         # Add to list
         self.shot_list.append(shot)
-        self.shots_listbox.insert(tk.END, f"#{shot}")
+        self.shots_listbox.addItem(f"#{shot} ({tv_name})")
 
         # Disable Add and TV buttons after adding
         self._disable_add_controls()
@@ -437,25 +488,24 @@ class TVStartupTab:
 
     def _remove_selected(self):
         """Remove selected shot from list"""
-        selection = self.shots_listbox.curselection()
-        if not selection:
+        current_row = self.shots_listbox.currentRow()
+        if current_row < 0:
             return
 
-        index = selection[0]
-        shot = self.shot_list[index]
+        shot = self.shot_list[current_row]
 
         # Remove from storage
-        del self.shot_list[index]
-        self.shots_listbox.delete(index)
+        del self.shot_list[current_row]
+        self.shots_listbox.takeItem(current_row)
 
         # Unlock TV type if list is empty
         if len(self.shot_list) == 0:
             self.current_tv = None
             # Re-enable based on last fetched availability
             if 'TV01' in self.available_tvs:
-                self.tv01_radio.config(state='normal')
+                self.tv01_radio.setEnabled(True)
             if 'TV02' in self.available_tvs:
-                self.tv02_radio.config(state='normal')
+                self.tv02_radio.setEnabled(True)
             self._set_status("Ready", 'gray')
         else:
             self._set_status(f"Removed #{shot}. Total: {len(self.shot_list)} shots", 'green')
@@ -467,13 +517,13 @@ class TVStartupTab:
         self.shot_list = []
         self.current_tv = None
         self.last_canvas = None
-        self.shots_listbox.delete(0, tk.END)
+        self.shots_listbox.clear()
 
         # Re-enable radio buttons based on last fetched availability
         if 'TV01' in self.available_tvs:
-            self.tv01_radio.config(state='normal')
+            self.tv01_radio.setEnabled(True)
         if 'TV02' in self.available_tvs:
-            self.tv02_radio.config(state='normal')
+            self.tv02_radio.setEnabled(True)
 
         # Reset display
         self.ax.clear()
@@ -490,13 +540,13 @@ class TVStartupTab:
     def _plot(self):
         """Generate and display the comparison plot"""
         if not self.shot_list:
-            messagebox.showwarning("Warning", "Please add at least one shot")
+            QMessageBox.warning(self.frame, "Warning", "Please add at least one shot")
             return
 
         # Validate frame range
         try:
-            frame_start = int(self.frame_start_var.get().strip())
-            frame_end = int(self.frame_end_var.get().strip())
+            frame_start = int(self.frame_start_entry.text().strip())
+            frame_end = int(self.frame_end_entry.text().strip())
             if frame_start < 1:
                 frame_start = 1
             if frame_end < frame_start:
@@ -504,17 +554,17 @@ class TVStartupTab:
             # Limit to max 50 frames
             if frame_end - frame_start + 1 > 50:
                 frame_end = frame_start + 49
-                self.frame_end_var.set(str(frame_end))
-                messagebox.showinfo("Info", "Frame range limited to 50 frames maximum")
+                self.frame_end_entry.setText(str(frame_end))
+                QMessageBox.information(self.frame, "Info", "Frame range limited to 50 frames maximum")
         except ValueError as e:
-            messagebox.showerror("Error", f"Invalid frame range: {e}")
+            QMessageBox.critical(self.frame, "Error", f"Invalid frame range: {e}")
             return
 
         ncol = frame_end - frame_start + 1
         tv_name = self.current_tv
 
         self._set_status("Loading images...", 'blue')
-        self.frame.update_idletasks()
+        QApplication.processEvents()
 
         images = []
         try:
@@ -548,15 +598,16 @@ class TVStartupTab:
 
         except FileNotFoundError as e:
             self._set_status("File not found", 'red')
-            messagebox.showerror("Error", str(e))
+            QMessageBox.critical(self.frame, "Error", str(e))
         except Exception as e:
             self._set_status("Error", 'red')
-            messagebox.showerror("Error", f"Failed to plot:\n{str(e)}")
+            QMessageBox.critical(self.frame, "Error", f"Failed to plot:\n{str(e)}")
 
     def _set_status(self, text, color='gray'):
         """Update status label with color"""
-        self.status_label.config(text=text, fg=color)
-        self.status_label.update()
+        self.status_label.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 9pt;")
+        self.status_label.setText(text)
+        QApplication.processEvents()
 
     def cleanup(self):
         """Cleanup resources when tab is closed"""
@@ -566,10 +617,10 @@ class TVStartupTab:
     def save_settings(self):
         """Save current tab settings"""
         settings = {
-            "shot": self.shot_entry.get(),
-            "frame_start": self.frame_start_var.get(),
-            "frame_end": self.frame_end_var.get(),
-            "tv": self.tv_var.get()
+            "shot": self.shot_entry.text(),
+            "frame_start": self.frame_start_entry.text(),
+            "frame_end": self.frame_end_entry.text(),
+            "tv": 'TV01' if self.tv01_radio.isChecked() else 'TV02'
         }
         set_tab_settings("tv_startup", settings)
 
@@ -578,14 +629,16 @@ class TVStartupTab:
         settings = get_tab_settings("tv_startup")
 
         if settings.get("shot"):
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, settings["shot"])
+            self.shot_entry.setText(settings["shot"])
 
         if settings.get("frame_start"):
-            self.frame_start_var.set(settings["frame_start"])
+            self.frame_start_entry.setText(settings["frame_start"])
 
         if settings.get("frame_end"):
-            self.frame_end_var.set(settings["frame_end"])
+            self.frame_end_entry.setText(settings["frame_end"])
 
         if settings.get("tv"):
-            self.tv_var.set(settings["tv"])
+            if settings["tv"] == 'TV02':
+                self.tv02_radio.setChecked(True)
+            else:
+                self.tv01_radio.setChecked(True)

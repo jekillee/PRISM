@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 File parser for CES diagnostic result files
 """

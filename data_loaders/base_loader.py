@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 Abstract base class for diagnostic data loaders
 """

@@ -1,18 +1,20 @@
-#!/usr/bin/python3.8
-
 """
 Base class for time trace tabs (TiVT, NeTe, MSE)
 Extracts common functionality from concrete time trace tabs
 """
 
 from abc import abstractmethod
-import tkinter as tk
-from tkinter import ttk, messagebox
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QSplitter, QScrollArea,
+    QGroupBox, QPushButton, QMessageBox,
+)
+from PySide6.QtCore import Qt
 
 from ui.base_tab import BaseTab
-from ui.ui_constants import CONTROL_PANEL_WIDTH, PAD_X, PAD_Y
+from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style
 from plotting.plot_manager import apply_legend_with_limit, TIMETRACE_LEGEND_LIMIT
 
 
@@ -27,19 +29,47 @@ class TimeTraceBaseTab(BaseTab):
 
     def create_widgets(self) -> None:
         """Create common time trace tab layout"""
-        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
+        self.figure = Figure(self.app_config.FIGURE_SIZE)
 
         self.ax1, self.ax2 = self.plot_manager.setup_timetrace_plot(
             self.figure, self.param1['label'], self.param2['label'])
+        apply_dark_figure_style(self.figure)
 
         # Create canvas
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
+        self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(side=tk.LEFT, fill='both', expand=True)
 
-        control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
-        control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
-        control_frame.pack_propagate(False)
+        # Left side: canvas + toolbar in a vertical layout
+        canvas_widget = QWidget()
+        canvas_layout = QVBoxLayout(canvas_widget)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
+        canvas_layout.addWidget(self.canvas)
+
+        # Right side: scrollable control panel
+        scroll_area = QScrollArea()
+        scroll_area.setFixedWidth(CONTROL_PANEL_WIDTH)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
+        control_frame = QWidget()
+        control_layout = QVBoxLayout(control_frame)
+        control_layout.setContentsMargins(9, 9, 9, 9)
+        control_layout.setSizeConstraint(QVBoxLayout.SetNoConstraint)
+
+        scroll_area.setWidget(control_frame)
+        scroll_area.viewport().setAutoFillBackground(False)
+        control_frame.setAutoFillBackground(False)
+
+        # Splitter for left/right layout
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(canvas_widget)
+        splitter.addWidget(scroll_area)
+
+        # Set the main layout of self.frame
+        main_layout = QVBoxLayout(self.frame)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(splitter)
 
         # Create control panels
         self._create_shot_input(control_frame)
@@ -47,20 +77,23 @@ class TimeTraceBaseTab(BaseTab):
         self._create_plot_controls(control_frame)
         self._create_save_controls(control_frame, section_num=4)
 
-    def _create_plot_controls(self, parent: ttk.Frame) -> None:
+    def _create_plot_controls(self, parent: QWidget) -> None:
         """Create plot control buttons (default implementation)
 
         Can be overridden by subclasses that need additional controls
         (e.g., MSE with q/j parameter selection).
         """
-        frame = ttk.LabelFrame(parent, text="3. Plot", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        group = QGroupBox("3. Plot")
+        group_layout = QVBoxLayout(group)
 
-        ttk.Button(frame, text='Plot time traces', command=self.plot_data).pack(
-            fill='x', padx=PAD_X, pady=PAD_Y)
+        plot_button = QPushButton("Plot")
+        plot_button.clicked.connect(self.plot_data)
+        group_layout.addWidget(plot_button)
+
+        parent.layout().addWidget(group)
 
     @abstractmethod
-    def _create_shot_input(self, parent: ttk.Frame) -> None:
+    def _create_shot_input(self, parent: QWidget) -> None:
         """Create diagnostic-specific shot input controls
 
         Must be implemented by subclasses to provide diagnostic-specific
@@ -111,7 +144,7 @@ class TimeTraceBaseTab(BaseTab):
 
     def plot_efit_profiles(self) -> None:
         """Not applicable for time trace tabs"""
-        messagebox.showinfo("Info", "EFIT mapping not available for time trace tabs")
+        QMessageBox.information(self.frame, "Info", "EFIT mapping not available for time trace tabs")
 
     def _finalize_plot(self) -> None:
         """Apply common styling and update canvas after plotting

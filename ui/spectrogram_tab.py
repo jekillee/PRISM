@@ -1,5 +1,3 @@
-#!/usr/bin/python3.8
-
 """
 Spectrogram tab for high-frequency signal analysis
 Supports ECE, Mirnov, and BES diagnostics
@@ -7,18 +5,22 @@ Supports ECE, Mirnov, and BES diagnostics
 
 import os
 import time as tclock
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, TclError
 import numpy as np
 from scipy.signal import spectrogram
 from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from MDSplus import Connection
 
-from ui.ui_constants import (
-    CONTROL_PANEL_WIDTH, PAD_X, PAD_Y,
-    ENTRY_WIDTH_SHOT, BUTTON_WIDTH_MEDIUM, LABEL_WIDTH_SHORT
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QGroupBox, QLabel, QLineEdit, QPushButton, QComboBox,
+    QSlider, QMessageBox, QFileDialog, QApplication,
+    QSplitter, QDialog, QTextEdit, QStyle, QScrollArea,
 )
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QColor, QTextCharFormat, QSyntaxHighlighter, QGuiApplication
+
+from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_icon
 from config.user_settings import get_tab_settings, set_tab_settings
 from data_loaders.ecei_loader import ECEILoader
 from data_loaders.ece_loader import ECELoader
@@ -71,56 +73,85 @@ class SpectrogramTab:
 
     # Label column width for consistent alignment
     LABEL_COLUMN_WIDTH = 90
-    
+
     def __init__(self, parent, app_config, diagnostic_config):
         self.parent = parent
         self.app_config = app_config
         self.diag_config = diagnostic_config
-        
-        self.frame = ttk.Frame(parent)
+
+        self.frame = QWidget()
         self.toolbar = None
-        
+
         # ECEI loader
         self.ecei_loader = ECEILoader(app_config.MDS_IP)
-        
+
         # ECE loader
         self.ece_loader = ECELoader(app_config, None)
-        
+
         # BES loader
         self.bes_loader = BESLoader(app_config, None)
-        
+
         # Data cache
         self.ece_info = {}      # {shot: {'channels': [], 'R': [], 'Z': [], 'I_TF': float}}
         self.bes_info = {}      # {shot: {'channels': [], 'R': [], 'Z': []}}
         self.ecei_info = {}     # {(shot, device): {'channels': [], 'R': [], 'Z': []}}
         self.signal_data = None
         self.spectrogram_data = None
-        
+
         # Current loaded shot
         self.current_shot = None
-        
+
         # Plot references
         self.im = None
         self.colorbar = None
-        
+
         # Widget references for enable/disable
         self.signal_widgets = []
-    
+
     def create_widgets(self):
         """Create spectrogram tab widgets"""
         # Single canvas for spectrogram
-        self.figure = Figure((10, 6), tight_layout=True)
+        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
         self.ax = self.figure.add_subplot(111)
+        self.ax.set_xlabel('Time [s]')
+        self.ax.set_ylabel('Frequency [kHz]')
+        apply_dark_figure_style(self.figure)
 
         # Create canvas
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
+        self.canvas = FigureCanvasQTAgg(self.figure)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(side=tk.LEFT, fill='both', expand=True)
 
-        # Control panel
-        control_frame = ttk.Frame(self.frame, width=CONTROL_PANEL_WIDTH)
-        control_frame.pack(side=tk.RIGHT, fill='y', expand=False)
-        control_frame.pack_propagate(False)
+        # Left side: canvas
+        canvas_widget = QWidget()
+        canvas_layout = QVBoxLayout(canvas_widget)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
+        canvas_layout.addWidget(self.canvas)
+
+        # Right side: scrollable control panel with fixed width
+        scroll_area = QScrollArea()
+        scroll_area.setFixedWidth(CONTROL_PANEL_WIDTH)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
+        control_frame = QWidget()
+        control_layout = QVBoxLayout(control_frame)
+        control_layout.setContentsMargins(9, 9, 9, 9)
+        control_layout.setSizeConstraint(QVBoxLayout.SetNoConstraint)
+
+        scroll_area.setWidget(control_frame)
+        scroll_area.viewport().setAutoFillBackground(False)
+        control_frame.setAutoFillBackground(False)
+
+        # Splitter for left/right layout
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(canvas_widget)
+        splitter.addWidget(scroll_area)
+
+        # Set the main layout of self.frame
+        main_layout = QVBoxLayout(self.frame)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(splitter)
 
         self._create_shot_input(control_frame)
         self._create_signal_selection(control_frame)
@@ -128,341 +159,343 @@ class SpectrogramTab:
         self._create_color_controls(control_frame)
         self._create_save_controls(control_frame)
 
+        # Add stretch at the bottom of control panel
+        control_layout.addStretch()
+
         # Initially disable signal selection
-        self._set_signal_selection_state('disabled')
+        self._set_signal_selection_state(False)
 
         # Load saved settings
         self.load_settings()
-    
+
     def _create_shot_input(self, parent):
         """Create shot input section with up/down buttons"""
-        frame = ttk.LabelFrame(parent, text="1. Load Shot", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        frame = QGroupBox("1. Load Shot", parent)
+        grid = QGridLayout(frame)
 
-        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
-        frame.grid_columnconfigure(1, weight=1)
+        grid.setColumnMinimumWidth(0, self.LABEL_COLUMN_WIDTH)
+        grid.setColumnStretch(1, 1)
 
-        ttk.Label(frame, text='Shot', anchor='w').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
-        
+        grid.addWidget(QLabel('Shot'), 0, 0)
+
         # Shot entry with up/down buttons in same row
-        shot_frame = ttk.Frame(frame)
-        shot_frame.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
-        shot_frame.grid_columnconfigure(0, weight=1)
-        
-        self.shot_entry = ttk.Entry(shot_frame, width=ENTRY_WIDTH_SHOT)
-        self.shot_entry.pack(side=tk.LEFT, fill='x', expand=True)
-        self.shot_entry.bind('<Return>', lambda e: self._load_shot_info())
-        
-        ttk.Button(shot_frame, text='\u25B2', width=2, 
-                   command=lambda: self._adjust_shot(1)).pack(side=tk.LEFT, padx=(2, 0))
-        ttk.Button(shot_frame, text='\u25BC', width=2, 
-                   command=lambda: self._adjust_shot(-1)).pack(side=tk.LEFT)
-        
-        self.fetch_button = ttk.Button(frame, text='Fetch', command=self._load_shot_info, 
-                                       width=BUTTON_WIDTH_MEDIUM)
-        self.fetch_button.grid(row=0, column=2, padx=PAD_X, pady=PAD_Y, sticky='e')
-    
+        shot_widget = QWidget()
+        shot_layout = QHBoxLayout(shot_widget)
+        shot_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.shot_entry = QLineEdit()
+        shot_layout.addWidget(self.shot_entry, 1)
+        self.shot_entry.returnPressed.connect(self._load_shot_info)
+
+        btn_updown = QWidget()
+        btn_updown_layout = QVBoxLayout(btn_updown)
+        btn_updown_layout.setContentsMargins(0, 0, 0, 0)
+        btn_updown_layout.setSpacing(0)
+        mini_btn_style = "padding: 0px; border-radius: 2px;"
+        up_btn = QPushButton()
+        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
+        up_btn.setFixedSize(24, 15)
+        up_btn.setStyleSheet(mini_btn_style)
+        up_btn.clicked.connect(lambda: self._adjust_shot(1))
+        btn_updown_layout.addWidget(up_btn)
+        down_btn = QPushButton()
+        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
+        down_btn.setFixedSize(24, 15)
+        down_btn.setStyleSheet(mini_btn_style)
+        down_btn.clicked.connect(lambda: self._adjust_shot(-1))
+        btn_updown_layout.addWidget(down_btn)
+        shot_layout.addWidget(btn_updown)
+
+        grid.addWidget(shot_widget, 0, 1)
+
+        self.fetch_button = QPushButton('Fetch')
+        self.fetch_button.clicked.connect(self._load_shot_info)
+        grid.addWidget(self.fetch_button, 0, 2)
+
+        parent.layout().addWidget(frame)
+
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
         try:
-            current = int(self.shot_entry.get())
+            current = int(self.shot_entry.text())
             new_shot = max(1, current + delta)
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, str(new_shot))
+            self.shot_entry.setText(str(new_shot))
         except ValueError:
             pass
-    
+
     def _create_signal_selection(self, parent):
         """Create signal selection section"""
-        frame = ttk.LabelFrame(parent, text="2. Select Signal", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        frame = QGroupBox("2. Select Signal", parent)
+        grid = QGridLayout(frame)
         self.signal_frame = frame
 
-        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
-        frame.grid_columnconfigure(1, weight=1)
-        
-        # Shot number display (row 0)
-        ttk.Label(frame, text='Loaded Shot', anchor='w').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
+        grid.setColumnMinimumWidth(0, self.LABEL_COLUMN_WIDTH)
+        grid.setColumnStretch(1, 1)
 
-        self.shot_display_label = ttk.Label(frame, text='Not loaded', anchor='w',
-                                            foreground='gray')
-        self.shot_display_label.grid(row=0, column=1, padx=PAD_X, pady=PAD_Y, sticky='w')
+        # Shot number display (row 0)
+        grid.addWidget(QLabel('Loaded Shot'), 0, 0)
+
+        self.shot_display_label = QLabel('Not loaded')
+        self.shot_display_label.setStyleSheet('color: gray;')
+        grid.addWidget(self.shot_display_label, 0, 1)
 
         # Diagnostic type dropdown (row 1)
-        ttk.Label(frame, text='Diagnostic', anchor='w').grid(
-            row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
-        
-        self.diag_options = ['Mirnov (Toroidal)', 'Mirnov (Poloidal)', 'ECE', 'BES', 'TCI', 
+        grid.addWidget(QLabel('Diagnostic'), 1, 0)
+
+        self.diag_options = ['Mirnov (Toroidal)', 'Mirnov (Poloidal)', 'ECE', 'BES', 'TCI',
                              'ECEI-GT', 'ECEI-GR', 'ECEI-HT']
-        self.selected_diag = tk.StringVar(value='Mirnov (Toroidal)')
-        
-        self.diag_dropdown = ttk.Combobox(frame, textvariable=self.selected_diag,
-                                          values=self.diag_options, state="disabled", width=18)
-        self.diag_dropdown.grid(row=1, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
-        self.diag_dropdown.bind('<<ComboboxSelected>>', self._on_diag_changed)
+        self.selected_diag_value = 'Mirnov (Toroidal)'
+
+        self.diag_dropdown = QComboBox()
+        self.diag_dropdown.addItems(self.diag_options)
+        self.diag_dropdown.setCurrentText(self.selected_diag_value)
+        self.diag_dropdown.setEnabled(False)
+        self.diag_dropdown.currentTextChanged.connect(self._on_diag_changed)
+        grid.addWidget(self.diag_dropdown, 1, 1)
         self.signal_widgets.append(self.diag_dropdown)
-        
+
         # Channel dropdown (row 2)
-        ttk.Label(frame, text='Channel', anchor='w').grid(
-            row=2, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
-        
-        self.selected_channel = tk.StringVar()
-        self.channel_dropdown = ttk.Combobox(frame, textvariable=self.selected_channel,
-                                              state="disabled", width=18)
-        self.channel_dropdown.grid(row=2, column=1, padx=PAD_X, pady=PAD_Y, sticky='ew')
+        grid.addWidget(QLabel('Channel'), 2, 0)
+
+        self.channel_dropdown = QComboBox()
+        self.channel_dropdown.setEnabled(False)
+        grid.addWidget(self.channel_dropdown, 2, 1)
         self.signal_widgets.append(self.channel_dropdown)
-    
+
+        parent.layout().addWidget(frame)
+
     def _create_spectrogram_params(self, parent):
         """Create spectrogram parameter section"""
-        frame = ttk.LabelFrame(parent, text="3. Spectrogram Parameters", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        frame = QGroupBox("3. Spectrogram Parameters", parent)
+        grid = QGridLayout(frame)
 
-        frame.grid_columnconfigure(0, minsize=self.LABEL_COLUMN_WIDTH)
-        frame.grid_columnconfigure(1, weight=1)
-        frame.grid_columnconfigure(3, weight=1)
-        
+        grid.setColumnMinimumWidth(0, self.LABEL_COLUMN_WIDTH)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
+
         # Time range
-        ttk.Label(frame, text='Time [s]', anchor='w').grid(
-            row=0, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
-        
-        time_frame = ttk.Frame(frame)
-        time_frame.grid(row=0, column=1, columnspan=3, padx=PAD_X, pady=PAD_Y, sticky='ew')
-        
-        self.time_min_entry = ttk.Entry(time_frame, width=8)
-        self.time_min_entry.pack(side=tk.LEFT, padx=(0, 2))
-        self.time_min_entry.insert(0, '0')
-        
-        ttk.Label(time_frame, text='-').pack(side=tk.LEFT)
-        
-        self.time_max_entry = ttk.Entry(time_frame, width=8)
-        self.time_max_entry.pack(side=tk.LEFT, padx=(2, 0))
-        self.time_max_entry.insert(0, '10')
-        
+        grid.addWidget(QLabel('Time [s]'), 0, 0)
+
+        time_widget = QWidget()
+        time_layout = QHBoxLayout(time_widget)
+        time_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.time_min_entry = QLineEdit()
+        self.time_min_entry.setFixedWidth(60)
+        self.time_min_entry.setText('0')
+        time_layout.addWidget(self.time_min_entry)
+
+        time_layout.addWidget(QLabel('-'))
+
+        self.time_max_entry = QLineEdit()
+        self.time_max_entry.setFixedWidth(60)
+        self.time_max_entry.setText('10')
+        time_layout.addWidget(self.time_max_entry)
+        time_layout.addStretch()
+
+        grid.addWidget(time_widget, 0, 1, 1, 3)
+
         # Frequency range
-        ttk.Label(frame, text='Freq [kHz]', anchor='w').grid(
-            row=1, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
-        
-        freq_frame = ttk.Frame(frame)
-        freq_frame.grid(row=1, column=1, columnspan=3, padx=PAD_X, pady=PAD_Y, sticky='ew')
-        
-        self.freq_min_entry = ttk.Entry(freq_frame, width=8)
-        self.freq_min_entry.pack(side=tk.LEFT, padx=(0, 2))
-        self.freq_min_entry.insert(0, '0')
-        
-        ttk.Label(freq_frame, text='-').pack(side=tk.LEFT)
-        
-        self.freq_max_entry = ttk.Entry(freq_frame, width=8)
-        self.freq_max_entry.pack(side=tk.LEFT, padx=(2, 0))
-        self.freq_max_entry.insert(0, '100')
-        
+        grid.addWidget(QLabel('Freq [kHz]'), 1, 0)
+
+        freq_widget = QWidget()
+        freq_layout = QHBoxLayout(freq_widget)
+        freq_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.freq_min_entry = QLineEdit()
+        self.freq_min_entry.setFixedWidth(60)
+        self.freq_min_entry.setText('0')
+        freq_layout.addWidget(self.freq_min_entry)
+
+        freq_layout.addWidget(QLabel('-'))
+
+        self.freq_max_entry = QLineEdit()
+        self.freq_max_entry.setFixedWidth(60)
+        self.freq_max_entry.setText('100')
+        freq_layout.addWidget(self.freq_max_entry)
+        freq_layout.addStretch()
+
+        grid.addWidget(freq_widget, 1, 1, 1, 3)
+
         # NFFT
-        ttk.Label(frame, text='NFFT', anchor='w').grid(
-            row=2, column=0, padx=PAD_X, pady=PAD_Y, sticky='w')
-        
-        self.selected_nfft = tk.StringVar(value=self.DEFAULT_NFFT)
-        nfft_dropdown = ttk.Combobox(frame, textvariable=self.selected_nfft,
-                                      values=self.NFFT_OPTIONS, state="readonly", width=10)
-        nfft_dropdown.grid(row=2, column=1, padx=PAD_X, pady=PAD_Y, sticky='w')
-        
+        grid.addWidget(QLabel('NFFT'), 2, 0)
+
+        self.nfft_dropdown = QComboBox()
+        self.nfft_dropdown.addItems(self.NFFT_OPTIONS)
+        self.nfft_dropdown.setCurrentText(self.DEFAULT_NFFT)
+        grid.addWidget(self.nfft_dropdown, 2, 1)
+
         # Plot button
-        ttk.Button(frame, text='Plot Spectrogram', command=self._plot_spectrogram).grid(
-            row=3, column=0, columnspan=4, padx=PAD_X, pady=10, sticky='ew')
+        plot_btn = QPushButton('Plot Spectrogram')
+        plot_btn.clicked.connect(self._plot_spectrogram)
+        grid.addWidget(plot_btn, 3, 0, 1, 4)
 
         # Status label
-        self.status_label = tk.Label(frame, text='Ready', fg='gray', anchor='w',
-                                      font=('TkDefaultFont', 9, 'bold'))
-        self.status_label.grid(row=4, column=0, columnspan=4, padx=PAD_X, pady=(0, 5), sticky='w')
-    
+        self.status_label = QLabel('Ready')
+        self.status_label.setStyleSheet('color: gray; font-weight: bold;')
+        grid.addWidget(self.status_label, 4, 0, 1, 4)
+
+        parent.layout().addWidget(frame)
+
     def _create_color_controls(self, parent):
         """Create color range control section"""
-        frame = ttk.LabelFrame(parent, text="4. Color Range", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
-        
+        frame = QGroupBox("4. Color Range", parent)
+        layout = QVBoxLayout(frame)
+
         # Dynamic range slider (1 to 11 decades)
-        ttk.Label(frame, text='Dynamic Range (decades):', anchor='w').pack(
-            padx=5, pady=(5, 0), anchor='w')
-        
-        slider_frame = ttk.Frame(frame)
-        slider_frame.pack(fill='x', padx=5, pady=5)
-        
-        self.dyn_range_var = tk.DoubleVar(value=6.0)
-        self.dyn_range_slider = ttk.Scale(slider_frame, from_=1, to=11,
-                                           variable=self.dyn_range_var, orient='horizontal',
-                                           command=self._on_dyn_range_changed)
-        self.dyn_range_slider.pack(side=tk.LEFT, fill='x', expand=True)
-        
-        self.dyn_range_label = ttk.Label(slider_frame, text='6.0', width=5)
-        self.dyn_range_label.pack(side=tk.RIGHT, padx=(5, 0))
-        
+        layout.addWidget(QLabel('Dynamic Range (decades):'))
+
+        slider_widget = QWidget()
+        slider_layout = QHBoxLayout(slider_widget)
+        slider_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._dyn_range_value = 6.0
+        self.dyn_range_slider = QSlider(Qt.Horizontal)
+        self.dyn_range_slider.setMinimum(10)   # represents 1.0
+        self.dyn_range_slider.setMaximum(110)  # represents 11.0
+        self.dyn_range_slider.setValue(60)      # represents 6.0
+        self.dyn_range_slider.valueChanged.connect(self._on_dyn_range_changed)
+        slider_layout.addWidget(self.dyn_range_slider, 1)
+
+        self.dyn_range_label = QLabel('6.0')
+        self.dyn_range_label.setFixedWidth(35)
+        slider_layout.addWidget(self.dyn_range_label)
+
+        layout.addWidget(slider_widget)
+
         # Labels for scale reference
-        ref_frame = ttk.Frame(frame)
-        ref_frame.pack(fill='x', padx=5, pady=(0, 5))
-        ttk.Label(ref_frame, text='1', font=('TkDefaultFont', 8)).pack(side=tk.LEFT)
-        ttk.Label(ref_frame, text='11', font=('TkDefaultFont', 8)).pack(side=tk.RIGHT)
-    
+        ref_widget = QWidget()
+        ref_layout = QHBoxLayout(ref_widget)
+        ref_layout.setContentsMargins(0, 0, 0, 0)
+        lbl_1 = QLabel('1')
+        lbl_1.setStyleSheet('font-size: 9px;')
+        ref_layout.addWidget(lbl_1)
+        ref_layout.addStretch()
+        lbl_11 = QLabel('11')
+        lbl_11.setStyleSheet('font-size: 9px;')
+        ref_layout.addWidget(lbl_11)
+        layout.addWidget(ref_widget)
+
+        parent.layout().addWidget(frame)
+
     def _create_save_controls(self, parent):
         """Create save data section"""
-        frame = ttk.LabelFrame(parent, text="5. Save Data", labelanchor="n")
-        frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        frame = QGroupBox("5. Save Data", parent)
+        layout = QVBoxLayout(frame)
 
-        btn_frame = ttk.Frame(frame)
-        btn_frame.pack(fill='x', padx=PAD_X, pady=PAD_Y)
+        btn_widget = QWidget()
+        btn_layout = QHBoxLayout(btn_widget)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.save_button = ttk.Button(btn_frame, text='Save as .npz',
-                                       command=self._save_data, state='disabled')
-        self.save_button.pack(side=tk.LEFT, expand=True, fill='x', padx=(0, 2))
+        self.save_button = QPushButton('Save as .npz')
+        self.save_button.clicked.connect(self._save_data)
+        self.save_button.setEnabled(False)
+        btn_layout.addWidget(self.save_button, 1)
 
-        ttk.Button(btn_frame, text='Example Script',
-                   command=self._show_example_script).pack(side=tk.LEFT, expand=True, fill='x', padx=(2, 0))
-    
+        example_btn = QPushButton('Example Script')
+        example_btn.clicked.connect(self._show_example_script)
+        btn_layout.addWidget(example_btn, 1)
+
+        layout.addWidget(btn_widget)
+
+        parent.layout().addWidget(frame)
+
     def _show_example_script(self):
         """Show example script for loading NPZ file with syntax highlighting"""
         script = SPECTROGRAM_EXAMPLE_SCRIPT
-        
-        popup = tk.Toplevel(self.frame)
-        popup.title("Example Script - Spectrogram NPZ")
-        popup.geometry("650x500")
-        
-        text_frame = tk.Frame(popup)
-        text_frame.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        scrollbar_y = tk.Scrollbar(text_frame, orient='vertical')
-        scrollbar_y.pack(side=tk.RIGHT, fill='y')
-        
-        scrollbar_x = tk.Scrollbar(text_frame, orient='horizontal')
-        scrollbar_x.pack(side=tk.BOTTOM, fill='x')
-        
-        text_widget = tk.Text(text_frame, wrap='none', font=('Courier', 10),
-                              yscrollcommand=scrollbar_y.set,
-                              xscrollcommand=scrollbar_x.set,
-                              bg='#19232d', fg='#ffffff',
-                              insertbackground='white')
-        text_widget.pack(side=tk.LEFT, fill='both', expand=True)
-        
-        scrollbar_y.config(command=text_widget.yview)
-        scrollbar_x.config(command=text_widget.xview)
-        
-        # Define syntax highlighting tags (Spyder dark theme)
-        text_widget.tag_configure('keyword', foreground='#c670e0')
-        text_widget.tag_configure('builtin', foreground='#fab16c')
-        text_widget.tag_configure('string', foreground='#b0e686')
-        text_widget.tag_configure('comment', foreground='#999999')
-        text_widget.tag_configure('number', foreground='#faed5c')
-        text_widget.tag_configure('definition', foreground='#57d6e4')
-        text_widget.tag_configure('instance', foreground='#ee6772')
-        
-        text_widget.insert('1.0', script)
-        
+
+        popup = QDialog(self.frame)
+        popup.setWindowTitle("Example Script - Spectrogram NPZ")
+        popup.resize(650, 500)
+
+        dialog_layout = QVBoxLayout(popup)
+
+        text_widget = QTextEdit()
+        text_widget.setReadOnly(True)
+        text_widget.setFont(QFont('Courier', 10))
+        text_widget.setStyleSheet(
+            'background-color: #19232d; color: #ffffff;'
+        )
+        text_widget.setPlainText(script)
+
         # Apply syntax highlighting
-        self._apply_syntax_highlighting(text_widget)
-        
-        text_widget.config(state='disabled')
-        
-        btn_frame = tk.Frame(popup)
-        btn_frame.pack(fill='x', padx=10, pady=(0, 10))
-        
+        self._highlighter = PythonHighlighter(text_widget.document())
+
+        dialog_layout.addWidget(text_widget)
+
+        btn_widget = QWidget()
+        btn_layout = QHBoxLayout(btn_widget)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+
         def copy_to_clipboard():
-            popup.clipboard_clear()
-            popup.clipboard_append(script)
-            messagebox.showinfo("Copied", "Script copied to clipboard")
-        
-        tk.Button(btn_frame, text="Copy to Clipboard", command=copy_to_clipboard).pack(side=tk.LEFT)
-        tk.Button(btn_frame, text="Close", command=popup.destroy).pack(side=tk.RIGHT)
-    
-    def _apply_syntax_highlighting(self, text_widget):
-        """Apply Python syntax highlighting to text widget"""
-        import re
-        
-        content = text_widget.get('1.0', 'end')
-        
-        # Keywords
-        keywords = r'\b(import|from|as|def|class|if|elif|else|for|while|try|except|with|return|yield|lambda|and|or|not|in|is|None|True|False|print)\b'
-        # Builtins
-        builtins = r'\b(np|plt|data|metadata|time|frequency|power|fig|ax|im)\b'
-        # Strings
-        strings = r'(\"\"\"[\s\S]*?\"\"\"|\'\'\'[\s\S]*?\'\'\'|\"[^\"]*\"|\'[^\']*\'|f\"[^\"]*\"|f\'[^\']*\')'
-        # Comments
-        comments = r'(#[^\n]*)'
-        # Numbers
-        numbers = r'\b(\d+\.?\d*)\b'
-        # Function calls
-        functions = r'\b(\w+)\s*\('
-        
-        patterns = [
-            (comments, 'comment'),
-            (strings, 'string'),
-            (keywords, 'keyword'),
-            (builtins, 'builtin'),
-            (numbers, 'number'),
-        ]
-        
-        for pattern, tag in patterns:
-            for match in re.finditer(pattern, content):
-                start_idx = f"1.0+{match.start()}c"
-                end_idx = f"1.0+{match.end()}c"
-                text_widget.tag_add(tag, start_idx, end_idx)
-    
+            clipboard = QGuiApplication.clipboard()
+            clipboard.setText(script)
+            QMessageBox.information(popup, "Copied", "Script copied to clipboard")
+
+        copy_btn = QPushButton("Copy to Clipboard")
+        copy_btn.clicked.connect(copy_to_clipboard)
+        btn_layout.addWidget(copy_btn)
+
+        btn_layout.addStretch()
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(popup.accept)
+        btn_layout.addWidget(close_btn)
+
+        dialog_layout.addWidget(btn_widget)
+        popup.exec()
+
     def _save_data(self):
         """Save spectrogram data to NPZ file (only selected time/freq range)"""
         if self.spectrogram_data is None or self.signal_data is None:
-            messagebox.showwarning("Warning", "No spectrogram data to save")
+            QMessageBox.warning(self.frame, "Warning", "No spectrogram data to save")
             return
-        
+
         # Get parameters for filename
         shot = self.signal_data['shot']
         channel = self.signal_data['channel'].split('(')[0].strip()  # Remove position info
-        t_min = float(self.time_min_entry.get())
-        t_max = float(self.time_max_entry.get())
-        f_min = float(self.freq_min_entry.get())  # kHz
-        f_max = float(self.freq_max_entry.get())  # kHz
-        
+        t_min = float(self.time_min_entry.text())
+        t_max = float(self.time_max_entry.text())
+        f_min = float(self.freq_min_entry.text())  # kHz
+        f_max = float(self.freq_max_entry.text())  # kHz
+
         # Default filename
         default_name = f"spectrogram_{shot}_{channel}_{t_min:.1f}-{t_max:.1f}s.npz"
-        
-        # Hide hidden files in file dialog (Linux Tk)
-        try:
-            self.frame.tk.call('tk_getOpenFile', '-foption')
-        except TclError:
-            pass
-        self.frame.tk.call('set', '::tk::dialog::file::showHiddenVar', '0')
 
         # File dialog
-        filepath = filedialog.asksaveasfilename(
-            initialdir=os.path.expanduser("~"),
-            defaultextension='.npz',
-            filetypes=[('NumPy NPZ', '*.npz')],
-            initialfile=default_name,
-            title='Save Spectrogram Data'
+        filepath, _ = QFileDialog.getSaveFileName(
+            self.frame,
+            'Save Spectrogram Data',
+            os.path.join(os.path.expanduser("~"), default_name),
+            'NumPy NPZ (*.npz)'
         )
-        
+
         if not filepath:
             return
-        
+
         try:
             # Get full data
             f_full = self.spectrogram_data['f']  # Hz
             t_full = self.spectrogram_data['t']  # s
             Sxx_log_full = self.spectrogram_data['Sxx_log']  # (freq, time)
-            
+
             # Apply frequency mask (convert kHz to Hz for comparison)
             f_mask = (f_full >= f_min * 1e3) & (f_full <= f_max * 1e3)
-            
+
             # Slice data to selected frequency range
             f_sliced = f_full[f_mask] / 1e3  # Convert to kHz
             Sxx_log_sliced = Sxx_log_full[f_mask, :]  # (freq_sliced, time)
-            
+
             # Prepare metadata
             metadata = {
                 'shot': shot,
                 'channel': self.signal_data['channel'],
-                'diagnostic': self.selected_diag.get(),
+                'diagnostic': self.diag_dropdown.currentText(),
                 'time_range': [t_min, t_max],
                 'freq_range': [f_min, f_max],
-                'nfft': int(self.selected_nfft.get()),
+                'nfft': int(self.nfft_dropdown.currentText()),
             }
-            
+
             # Save to NPZ
             np.savez(filepath,
                      metadata=np.array(metadata),
@@ -470,42 +503,40 @@ class SpectrogramTab:
                      frequency=f_sliced,  # Already in kHz, sliced
                      power=Sxx_log_sliced.T  # Transpose: (time, freq)
             )
-            
+
             print(f"[Spectrogram] Data saved to: {filepath}")
             print(f"[Spectrogram]   Time: {len(t_full)} points, Freq: {len(f_sliced)} points")
-            messagebox.showinfo("Saved", f"Data saved to:\n{filepath}")
-            
+            QMessageBox.information(self.frame, "Saved", f"Data saved to:\n{filepath}")
+
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save data: {str(e)}")
-    
-    def _set_signal_selection_state(self, state):
+            QMessageBox.critical(self.frame, "Error", f"Failed to save data: {str(e)}")
+
+    def _set_signal_selection_state(self, enabled):
         """Enable or disable signal selection widgets"""
-        # state: 'normal' or 'disabled'
-        combo_state = 'readonly' if state == 'normal' else 'disabled'
-        
         for widget in self.signal_widgets:
-            widget.config(state=combo_state)
-    
+            widget.setEnabled(enabled)
+
     def _load_shot_info(self):
         """Load shot info and populate channel list"""
         try:
-            shot_number = int(self.shot_entry.get())
+            shot_number = int(self.shot_entry.text())
         except ValueError:
-            messagebox.showerror("Error", "Please enter a valid shot number")
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
             return
-        
+
         self.current_shot = shot_number
-        
+
         # Update shot display label
-        self.shot_display_label.config(text=f'#{shot_number}', foreground='black')
-        
+        self.shot_display_label.setText(f'#{shot_number}')
+        self.shot_display_label.setStyleSheet('color: white;')
+
         # Enable signal selection widgets
-        self._set_signal_selection_state('normal')
-        
+        self._set_signal_selection_state(True)
+
         # Load channels for current diagnostic
-        diag_type = self.selected_diag.get()
+        diag_type = self.diag_dropdown.currentText()
         self._update_channel_list(diag_type, shot_number)
-    
+
     def _update_channel_list(self, diag_type, shot_number):
         """Update channel list based on diagnostic type"""
         if diag_type == 'ECE':
@@ -519,102 +550,106 @@ class SpectrogramTab:
             self._load_ecei_channels(shot_number, device)
         else:
             self._load_mirnov_channels(diag_type)
-    
+
     def _load_ece_channels(self, shot_number):
         """Load ECE channel info for given shot using ECELoader"""
         if shot_number in self.ece_info:
             info = self.ece_info[shot_number]
             self._update_channel_dropdown_ece(info)
             return
-        
+
         try:
             print(f"[Spectrogram] Loading ECE channel info for #{shot_number}...")
-            
+
             # Use ECELoader to get channel positions
             positions = self.ece_loader.get_channel_positions(shot_number)
-            
+
             # Cache the info
             self.ece_info[shot_number] = positions
-            
+
             print(f"[Spectrogram]   I_TF = {positions['I_TF']:.2f} kA, {len(positions['channels'])} channels")
-            
+
             self._update_channel_dropdown_ece(positions)
-            
+
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load ECE info: {str(e)}")
-    
+            QMessageBox.critical(self.frame, "Error", f"Failed to load ECE info: {str(e)}")
+
     def _update_channel_dropdown_ece(self, info):
         """Update channel dropdown with ECE channels (R, Z positions)"""
         channel_list = []
         for ch, R, Z in zip(info['channels'], info['R'], info['Z']):
             channel_list.append(f"ECE{ch:02d} (R={R:.3f}m, Z={Z:.3f}m)")
-        
-        self.channel_dropdown['values'] = channel_list
+
+        self.channel_dropdown.clear()
+        self.channel_dropdown.addItems(channel_list)
         if channel_list:
-            self.channel_dropdown.current(0)
-    
+            self.channel_dropdown.setCurrentIndex(0)
+
     def _load_bes_channels(self, shot_number):
         """Load BES channel info for given shot using BESLoader"""
         if shot_number in self.bes_info:
             info = self.bes_info[shot_number]
             self._update_channel_dropdown_bes(info)
             return
-        
+
         try:
             print(f"[Spectrogram] Loading BES channel info for #{shot_number}...")
-            
+
             # Use BESLoader to get channel positions
             positions = self.bes_loader.get_channel_positions(shot_number)
-            
+
             if not positions['channels']:
-                messagebox.showwarning("Warning", "No BES channels available for this shot")
+                QMessageBox.warning(self.frame, "Warning", "No BES channels available for this shot")
                 return
-            
+
             # Cache the info
             self.bes_info[shot_number] = positions
-            
+
             print(f"[Spectrogram]   {len(positions['channels'])} BES channels loaded")
-            
+
             self._update_channel_dropdown_bes(positions)
-            
+
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load BES info: {str(e)}")
-    
+            QMessageBox.critical(self.frame, "Error", f"Failed to load BES info: {str(e)}")
+
     def _update_channel_dropdown_bes(self, info):
         """Update channel dropdown with BES channels (R, Z positions)"""
         channel_list = []
         for ch, R, Z in zip(info['channels'], info['R'], info['Z']):
             channel_list.append(f"BES_{ch} (R={R:.3f}m, Z={Z:.3f}m)")
-        
-        self.channel_dropdown['values'] = channel_list
+
+        self.channel_dropdown.clear()
+        self.channel_dropdown.addItems(channel_list)
         if channel_list:
-            self.channel_dropdown.current(0)
-    
+            self.channel_dropdown.setCurrentIndex(0)
+
     def _load_tci_channels(self):
         """Load TCI channel list (processed ne and raw signals)"""
         # Processed ne channels
         channels = [f'TCI{i:02d} (ne)' for i in range(1, 6)]
         # Raw signal channels
         channels += [f'TCI{i:02d} (raw)' for i in range(1, 6)]
-        
-        self.channel_dropdown['values'] = channels
+
+        self.channel_dropdown.clear()
+        self.channel_dropdown.addItems(channels)
         if channels:
-            self.channel_dropdown.current(0)
-    
+            self.channel_dropdown.setCurrentIndex(0)
+
     def _load_mirnov_channels(self, diag_type):
         """Load Mirnov channel list"""
         from config.diagnostic_config import DIAGNOSTICS
         mirnov_config = DIAGNOSTICS.get('Mirnov', {})
-        
+
         if 'Toroidal' in diag_type:
             channels = mirnov_config.get('toroidal_channels', [])
         else:
             channels = mirnov_config.get('poloidal_channels', [])
-        
-        self.channel_dropdown['values'] = channels
+
+        self.channel_dropdown.clear()
+        self.channel_dropdown.addItems(channels)
         if channels:
-            self.channel_dropdown.current(0)
-    
+            self.channel_dropdown.setCurrentIndex(0)
+
     def _load_ecei_channels(self, shot_number, device):
         """Load ECEI channel info for given shot and device using ECEILoader"""
         cache_key = (shot_number, device)
@@ -622,34 +657,34 @@ class SpectrogramTab:
             info = self.ecei_info[cache_key]
             self._update_channel_dropdown_ecei(info, device)
             return
-        
+
         try:
             print(f"[Spectrogram] Loading ECEI-{device} channel info for #{shot_number}...")
-            
+
             # Use ECEILoader to get channel positions
             positions = self.ecei_loader.get_channel_positions(shot_number, device)
-            
+
             # GR excluded vertical channels
             excluded_v = ECEILoader.GR_EXCLUDED_VERTICAL if device == 'GR' else []
-            
+
             # Build channel list with positions (flattened from 2D arrays)
             channels = []
             R_values = []
             Z_values = []
-            
+
             for v in range(1, 25):
                 if v in excluded_v:
                     continue
-                
+
                 for r in range(1, 9):
                     ch_name = f'{device}{v:02d}{r:02d}'
                     R_pos = positions['R'][v - 1, r - 1]
                     Z_pos = positions['Z'][v - 1, r - 1]
-                    
+
                     channels.append(ch_name)
                     R_values.append(R_pos)
                     Z_values.append(Z_pos)
-            
+
             # Cache the info
             self.ecei_info[cache_key] = {
                 'channels': channels,
@@ -659,34 +694,35 @@ class SpectrogramTab:
                 'mode': positions['mode'],
                 'LO': positions['LO']
             }
-            
+
             print(f"[Spectrogram]   Bt = {positions['Bt']:.1f} T, mode = {positions['mode']}, LO = {positions['LO']} GHz")
             print(f"[Spectrogram]   R range: {min(R_values):.3f} - {max(R_values):.3f} m")
             print(f"[Spectrogram]   {len(channels)} channels loaded")
-            
+
             self._update_channel_dropdown_ecei(self.ecei_info[cache_key], device)
-            
+
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load ECEI-{device} info: {str(e)}")
-    
+            QMessageBox.critical(self.frame, "Error", f"Failed to load ECEI-{device} info: {str(e)}")
+
     def _update_channel_dropdown_ecei(self, info, device):
         """Update channel dropdown with ECEI channels (R, Z)"""
         channel_list = []
         for ch, R, Z in zip(info['channels'], info['R'], info['Z']):
             channel_list.append(f"{ch} (R={R:.3f}m, Z={Z:.3f}m)")
-        
-        self.channel_dropdown['values'] = channel_list
+
+        self.channel_dropdown.clear()
+        self.channel_dropdown.addItems(channel_list)
         if channel_list:
-            self.channel_dropdown.current(0)
-    
-    def _on_diag_changed(self, event=None):
+            self.channel_dropdown.setCurrentIndex(0)
+
+    def _on_diag_changed(self, text=None):
         """Handle diagnostic type change"""
         if self.current_shot is None:
             return
-        
-        diag_type = self.selected_diag.get()
+
+        diag_type = self.diag_dropdown.currentText()
         self._update_channel_list(diag_type, self.current_shot)
-    
+
     def _format_frequency(self, freq_hz):
         """Format frequency with appropriate unit (Hz, kHz, MHz, GHz)"""
         if freq_hz >= 1e9:
@@ -697,38 +733,39 @@ class SpectrogramTab:
             return f'{int(freq_hz / 1e3)}kHz'
         else:
             return f'{int(freq_hz)}Hz'
-    
+
     def _on_dyn_range_changed(self, value):
         """Handle dynamic range slider change"""
-        val = float(value)
-        self.dyn_range_label.config(text=f'{val:.1f}')
-        
+        val = value / 10.0  # Convert from int slider to float
+        self._dyn_range_value = val
+        self.dyn_range_label.setText(f'{val:.1f}')
+
         # Update colorbar if spectrogram exists
         if self.im is not None and self.spectrogram_data is not None:
             vmax = self.spectrogram_data['vmax']
             new_vmin = vmax - val
             self.im.set_clim(vmin=new_vmin, vmax=vmax)
             self.canvas.draw_idle()
-    
+
     def _load_signal_data(self):
         """Load selected signal data"""
         if self.current_shot is None:
-            messagebox.showerror("Error", "Please fetch a shot first")
+            QMessageBox.critical(self.frame, "Error", "Please fetch a shot first")
             return None
-        
+
         shot_number = self.current_shot
-        channel_str = self.selected_channel.get()
-        
+        channel_str = self.channel_dropdown.currentText()
+
         if not channel_str:
-            messagebox.showerror("Error", "Please select a channel")
+            QMessageBox.critical(self.frame, "Error", "Please select a channel")
             return None
-        
-        diag_type = self.selected_diag.get()
-        
+
+        diag_type = self.diag_dropdown.currentText()
+
         try:
             mds = Connection(self.app_config.MDS_IP)
             mds.openTree('kstar', shot_number)
-            
+
             if diag_type == 'ECE':
                 # Parse ECE channel number: "ECE05 (R=2.105m, Z=0.000m)"
                 ch_num = int(channel_str.split('(')[0].replace('ECE', '').strip())
@@ -755,24 +792,24 @@ class SpectrogramTab:
             else:
                 # Mirnov channel name directly
                 node_name = f'\\{channel_str}'
-            
+
             print(f"[Spectrogram] Loading {node_name}...")
             data = mds.get(node_name).data()
             time = mds.get(f'dim_of({node_name})').data()
-            
+
             mds.closeTree('kstar', shot_number)
-            
+
             # TCI raw signal has one extra time frame at the beginning
             if diag_type == 'TCI' and '(raw)' in channel_str:
                 time = time[1:]
-            
+
             # Check for bad channel (mean == 0)
             if np.mean(data) == 0:
-                messagebox.showwarning("Bad Channel", 
+                QMessageBox.warning(self.frame, "Bad Channel",
                     f"{channel_str} appears to be a bad channel (mean=0).\n"
                     "Please select another channel.")
                 return None
-            
+
             # Build result dict
             result = {
                 'time': np.array(time),
@@ -781,7 +818,7 @@ class SpectrogramTab:
                 'channel': channel_str,
                 'diag_type': diag_type
             }
-            
+
             # Add position info for ECEI
             if diag_type.startswith('ECEI-'):
                 device = diag_type.split('-')[1]
@@ -795,17 +832,18 @@ class SpectrogramTab:
                         result['Z'] = info['Z'][idx]
                     except ValueError:
                         pass
-            
+
             return result
-            
+
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load signal: {str(e)}")
+            QMessageBox.critical(self.frame, "Error", f"Failed to load signal: {str(e)}")
             return None
-    
+
     def _update_status(self, message, color='blue'):
         """Update status label with message and color"""
-        self.status_label.config(text=message, fg=color)
-        self.frame.update()
+        self.status_label.setText(message)
+        self.status_label.setStyleSheet(f'color: {color}; font-weight: bold;')
+        QApplication.processEvents()
 
     def _plot_spectrogram(self):
         """Calculate and plot spectrogram"""
@@ -824,13 +862,13 @@ class SpectrogramTab:
 
         # Get parameters
         try:
-            t_min = float(self.time_min_entry.get())
-            t_max = float(self.time_max_entry.get())
-            f_min = float(self.freq_min_entry.get()) * 1e3  # kHz to Hz
-            f_max = float(self.freq_max_entry.get()) * 1e3
-            nfft = int(self.selected_nfft.get())
+            t_min = float(self.time_min_entry.text())
+            t_max = float(self.time_max_entry.text())
+            f_min = float(self.freq_min_entry.text()) * 1e3  # kHz to Hz
+            f_max = float(self.freq_max_entry.text()) * 1e3
+            nfft = int(self.nfft_dropdown.currentText())
         except ValueError:
-            messagebox.showerror("Error", "Invalid parameter values")
+            QMessageBox.critical(self.frame, "Error", "Invalid parameter values")
             self._update_status('Error', 'red')
             return
 
@@ -840,7 +878,7 @@ class SpectrogramTab:
 
         mask = (time >= t_min) & (time <= t_max)
         if np.sum(mask) < nfft:
-            messagebox.showerror("Error", "Time range too short for selected NFFT")
+            QMessageBox.critical(self.frame, "Error", "Time range too short for selected NFFT")
             self._update_status('Error', 'red')
             return
 
@@ -875,7 +913,7 @@ class SpectrogramTab:
         f_mask = (f >= f_min) & (f <= f_max)
 
         # Calculate vmin from dynamic range slider
-        dyn_range = self.dyn_range_var.get()
+        dyn_range = self._dyn_range_value
         vmin = vmax - dyn_range
 
         self.im = self.ax.imshow(
@@ -918,48 +956,91 @@ class SpectrogramTab:
         print(f"[Spectrogram] Completed in {elapsed:.2f}s")
 
         # Enable save button
-        self.save_button.config(state='normal')
-    
+        self.save_button.setEnabled(True)
+
     def save_settings(self):
         """Save current tab settings"""
         settings = {
-            "shot": self.shot_entry.get(),
-            "tmin": self.time_min_entry.get(),
-            "tmax": self.time_max_entry.get(),
-            "fmin": self.freq_min_entry.get(),
-            "fmax": self.freq_max_entry.get(),
-            "nfft": self.selected_nfft.get(),
-            "dynamic_range": str(self.dyn_range_var.get())
+            "shot": self.shot_entry.text(),
+            "tmin": self.time_min_entry.text(),
+            "tmax": self.time_max_entry.text(),
+            "fmin": self.freq_min_entry.text(),
+            "fmax": self.freq_max_entry.text(),
+            "nfft": self.nfft_dropdown.currentText(),
+            "dynamic_range": str(self._dyn_range_value)
         }
         set_tab_settings("spectrogram", settings)
-    
+
     def load_settings(self):
         """Load and apply saved settings"""
         settings = get_tab_settings("spectrogram")
-        
+
         if settings.get("shot"):
-            self.shot_entry.delete(0, tk.END)
-            self.shot_entry.insert(0, settings["shot"])
-        
+            self.shot_entry.setText(settings["shot"])
+
         if settings.get("tmin"):
-            self.time_min_entry.delete(0, tk.END)
-            self.time_min_entry.insert(0, settings["tmin"])
-        
+            self.time_min_entry.setText(settings["tmin"])
+
         if settings.get("tmax"):
-            self.time_max_entry.delete(0, tk.END)
-            self.time_max_entry.insert(0, settings["tmax"])
-        
+            self.time_max_entry.setText(settings["tmax"])
+
         if settings.get("fmin"):
-            self.freq_min_entry.delete(0, tk.END)
-            self.freq_min_entry.insert(0, settings["fmin"])
-        
+            self.freq_min_entry.setText(settings["fmin"])
+
         if settings.get("fmax"):
-            self.freq_max_entry.delete(0, tk.END)
-            self.freq_max_entry.insert(0, settings["fmax"])
-        
+            self.freq_max_entry.setText(settings["fmax"])
+
         if settings.get("nfft"):
-            self.selected_nfft.set(settings["nfft"])
-        
+            self.nfft_dropdown.setCurrentText(settings["nfft"])
+
         if settings.get("dynamic_range"):
-            self.dyn_range_var.set(float(settings["dynamic_range"]))
-            self.dyn_range_label.config(text=settings["dynamic_range"])
+            val = float(settings["dynamic_range"])
+            self._dyn_range_value = val
+            self.dyn_range_slider.setValue(int(val * 10))
+            self.dyn_range_label.setText(settings["dynamic_range"])
+
+
+class PythonHighlighter(QSyntaxHighlighter):
+    """Simple Python syntax highlighter for the example script dialog"""
+
+    def __init__(self, document):
+        super().__init__(document)
+        import re
+        self._rules = []
+
+        # Keywords (purple)
+        kw_format = QTextCharFormat()
+        kw_format.setForeground(QColor('#c670e0'))
+        keywords = r'\b(import|from|as|def|class|if|elif|else|for|while|try|except|with|return|yield|lambda|and|or|not|in|is|None|True|False|print)\b'
+        self._rules.append((re.compile(keywords), kw_format))
+
+        # Builtins (orange)
+        builtin_format = QTextCharFormat()
+        builtin_format.setForeground(QColor('#fab16c'))
+        builtins = r'\b(np|plt|data|metadata|time|frequency|power|fig|ax|im)\b'
+        self._rules.append((re.compile(builtins), builtin_format))
+
+        # Numbers (yellow)
+        num_format = QTextCharFormat()
+        num_format.setForeground(QColor('#faed5c'))
+        numbers = r'\b(\d+\.?\d*)\b'
+        self._rules.append((re.compile(numbers), num_format))
+
+        # Strings (green)
+        str_format = QTextCharFormat()
+        str_format.setForeground(QColor('#b0e686'))
+        strings = r'(\"[^\"]*\"|\'[^\']*\'|f\"[^\"]*\"|f\'[^\']*\')'
+        self._rules.append((re.compile(strings), str_format))
+
+        # Comments (gray)
+        comment_format = QTextCharFormat()
+        comment_format.setForeground(QColor('#999999'))
+        comments = r'(#[^\n]*)'
+        self._rules.append((re.compile(comments), comment_format))
+
+    def highlightBlock(self, text):
+        for pattern, fmt in self._rules:
+            for match in pattern.finditer(text):
+                start = match.start()
+                length = match.end() - match.start()
+                self.setFormat(start, length, fmt)
