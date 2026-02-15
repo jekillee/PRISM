@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Prism left face - glass on light bg, more saturated -->
+    <linearGradient id="faceL" x1="0%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#B2EBF2"/>
+      <stop offset="100%" stop-color="#80DEEA"/>
+    </linearGradient>
+    <!-- Prism right face - deeper for contrast -->
+    <linearGradient id="faceR" x1="20%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4DD0E1"/>
+      <stop offset="100%" stop-color="#00ACC1"/>
+    </linearGradient>
+    <!-- Emoji shine -->
+    <radialGradient id="shine" cx="30%" cy="28%" r="40%">
+      <stop offset="0%" stop-color="white" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Internal refraction band -->
+    <linearGradient id="band" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FF5252"/>
+      <stop offset="20%" stop-color="#FF9800"/>
+      <stop offset="40%" stop-color="#FFEB3B"/>
+      <stop offset="60%" stop-color="#66BB6A"/>
+      <stop offset="80%" stop-color="#42A5F5"/>
+      <stop offset="100%" stop-color="#AB47BC"/>
+    </linearGradient>
+    <!-- Softer shadow for light bg -->
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#37474F" flood-opacity="0.18"/>
+    </filter>
+    <!-- Sparkle glow -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2.5"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Beam glow -->
+    <filter id="beamGlow">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Background clip -->
+    <clipPath id="bg">
+      <rect x="12" y="12" width="488" height="488" rx="64"/>
+    </clipPath>
+    <!-- Prism clip -->
+    <clipPath id="pc">
+      <path d="M246,117 L90,383 Q80,400 100,400 L412,400 Q432,400 422,383 L266,117 Q256,100 246,117 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Light background -->
+  <rect x="12" y="12" width="488" height="488" rx="64" fill="#ECEFF1"/>
+
+  <!-- All content clipped to rounded background -->
+  <g clip-path="url(#bg)">
+
+    <!-- ====== Rainbow spectrum fan ====== -->
+    <g opacity="0.88" filter="url(#beamGlow)">
+      <polygon points="345,250 520,20 520,100" fill="#FF1744"/>
+      <polygon points="345,250 520,100 520,178" fill="#FF6D00"/>
+      <polygon points="345,250 520,178 520,256" fill="#FFD600"/>
+      <polygon points="345,250 520,256 520,334" fill="#00E676"/>
+      <polygon points="345,250 520,334 520,412" fill="#2979FF"/>
+      <polygon points="345,250 520,412 520,500" fill="#AA00FF"/>
+    </g>
+
+    <!-- ====== Incoming warm beam (golden for light bg visibility) ====== -->
+    <g filter="url(#beamGlow)">
+      <line x1="-10" y1="258" x2="168" y2="258" stroke="#FFE082" stroke-width="24" stroke-linecap="round" opacity="0.75"/>
+      <line x1="-10" y1="258" x2="168" y2="258" stroke="white" stroke-width="10" stroke-linecap="round" opacity="0.6"/>
+    </g>
+
+    <!-- ====== Prism body ====== -->
+    <g filter="url(#shadow)">
+      <path d="M246,117 L90,383 Q80,400 100,400 L412,400 Q432,400 422,383 L266,117 Q256,100 246,117 Z" fill="url(#faceL)"/>
+      <path d="M256,103 L422,383 Q432,400 412,400 L256,400 Z" fill="url(#faceR)"/>
+    </g>
+
+    <!-- Rainbow refraction inside prism -->
+    <rect x="65" y="232" width="390" height="65" rx="4" fill="url(#band)" opacity="0.25" clip-path="url(#pc)"/>
+
+    <!-- Emoji shine blob -->
+    <ellipse cx="190" cy="240" rx="55" ry="62" fill="url(#shine)"/>
+
+    <!-- Left edge highlight -->
+    <path d="M244,123 L93,380" stroke="white" stroke-width="3.5" stroke-linecap="round" opacity="0.55"/>
+
+    <!-- Center face divider -->
+    <line x1="256" y1="105" x2="256" y2="400" stroke="#00838F" stroke-width="1.5" opacity="0.12"/>
+
+    <!-- Outline (darker for light bg contrast) -->
+    <path d="M246,117 L90,383 Q80,400 100,400 L412,400 Q432,400 422,383 L266,117 Q256,100 246,117 Z" fill="none" stroke="#00838F" stroke-width="2.5" stroke-linejoin="round" opacity="0.3"/>
+
+    <!-- ====== Sparkles (teal tint for light bg visibility) ====== -->
+    <g filter="url(#glow)">
+      <path d="M256,48 L262,78 L292,84 L262,90 L256,120 L250,90 L220,84 L250,78 Z" fill="#4DD0E1"/>
+    </g>
+    <path d="M460,72 L464,88 L480,92 L464,96 L460,112 L456,96 L440,92 L456,88 Z" fill="#4DD0E1" opacity="0.7"/>
+    <path d="M486,210 L488,220 L498,222 L488,224 L486,234 L484,224 L474,222 L484,220 Z" fill="#4DD0E1" opacity="0.5"/>
+    <circle cx="56" cy="105" r="3.5" fill="#4DD0E1" opacity="0.4"/>
+    <circle cx="455" cy="425" r="3" fill="#4DD0E1" opacity="0.3"/>
+
+  </g>
+</svg>

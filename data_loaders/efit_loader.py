@@ -3,24 +3,24 @@ EFIT equilibrium data loader
 Supports both 1D profile mapping and 2D poloidal cross-section data
 """
 
-import numpy as np
-from MDSplus import Connection, MdsException
-from scipy.interpolate import interp1d, interp2d
-from core.data_structures import EFITData, EFITData2D
-
 
 class EFITLoader:
     """Loader for EFIT equilibrium data"""
-    
+
     def __init__(self, config):
         self.config = config
         self.mds_ip = config.MDS_IP
-    
+
     def load_efit_data(self, shot_number, efit_tree=None):
         """Load EFIT equilibrium data for 1D profile mapping (R -> psi_n, rho)"""
+        import numpy as np
+        from MDSplus import Connection
+        from scipy.interpolate import interp1d, interp2d
+        from core.data_structures import EFITData
+
         if efit_tree is None:
             efit_tree = self.config.DEFAULT_EFIT_TREE
-            
+
         try:
             mds = Connection(self.mds_ip)
             mds.openTree(efit_tree, shot_number)
@@ -60,9 +60,12 @@ class EFITLoader:
     
     def load_efit_2d(self, shot_number, efit_tree=None):
         """Load 2D EFIT data for poloidal cross-section visualization"""
+        from MDSplus import Connection, MdsException
+        from core.data_structures import EFITData2D
+
         if efit_tree is None:
             efit_tree = self.config.DEFAULT_EFIT_TREE
-        
+
         try:
             mds = Connection(self.mds_ip)
             mds.openTree(efit_tree, shot_number)
@@ -109,6 +112,9 @@ class EFITLoader:
     
     def _process_efit_frame(self, r_grid, z_grid, psi_rz, simag, sibry, qpsi, psi_for_qpsi, nw):
         """Process a single EFIT time frame for 1D profile mapping"""
+        import numpy as np
+        from scipy.interpolate import interp1d, interp2d
+
         interp_psi_rz = interp2d(r_grid, z_grid, psi_rz)
         psi_rz_z0 = interp_psi_rz(r_grid, 0)
         psi_n = (psi_rz_z0 - simag) / (sibry - simag)

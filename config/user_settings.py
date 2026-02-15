@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QTextEdit, QWidget, QTabWidget,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPixmap
 
 from config.app_config import VERSION, CONTACT_EMAIL
 
@@ -250,11 +250,28 @@ def show_update_popup(parent):
     font_normal = QFont()
     font_normal.setPointSize(10)
 
-    # Version info label
-    version_label = QLabel(f"Current version: PRISM v{VERSION} ({date})")
+    # Logo + version header
+    header_widget = QWidget()
+    header_layout = QHBoxLayout(header_widget)
+    header_layout.setContentsMargins(0, 0, 0, 0)
+    header_layout.addStretch()
+
+    icon_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'ui', 'icons')
+    from ui.theme import ThemeManager
+    logo_file = 'prism-logo-dark.svg' if ThemeManager.current_theme == 'dark' else 'prism-logo-light.svg'
+    logo_path = os.path.join(icon_dir, logo_file)
+    pixmap = QPixmap(logo_path)
+    if not pixmap.isNull():
+        logo_label = QLabel()
+        pixmap = pixmap.scaled(36, 36, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        logo_label.setPixmap(pixmap)
+        header_layout.addWidget(logo_label)
+
+    version_label = QLabel(f"PRISM v{VERSION} ({date})")
     version_label.setFont(font_normal)
-    version_label.setAlignment(Qt.AlignCenter)
-    layout.addWidget(version_label)
+    header_layout.addWidget(version_label)
+    header_layout.addStretch()
+    layout.addWidget(header_widget)
 
     # Tabbed changelog
     tab_widget = QTabWidget()

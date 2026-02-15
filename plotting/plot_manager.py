@@ -2,10 +2,6 @@
 Plot management and styling
 """
 
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-
 
 # Legend item limits
 PROFILE_LEGEND_LIMIT = 30
@@ -14,39 +10,43 @@ TIMETRACE_LEGEND_LIMIT = 15
 
 class ColorManager:
     """Manages color assignment using viridis colormap"""
-    
+
     def get_colors_for_entries(self, entries):
         """Generate colors for entries using viridis colormap"""
+        import matplotlib.pyplot as plt
+
         n_colors = len(entries)
         if n_colors == 0:
             return []
         elif n_colors == 1:
             return [plt.cm.viridis(0.5)]
-        
+
         colors = [plt.cm.viridis(i / (n_colors - 1)) for i in range(n_colors)]
         return colors
 
 
 def apply_legend_with_limit(ax, max_items, **kwargs):
     """Apply legend with item limit, showing '... +N more' if exceeded"""
+    from matplotlib.lines import Line2D
+
     handles, labels = ax.get_legend_handles_labels()
-    
+
     if len(handles) == 0:
         return
-    
+
     if len(handles) <= max_items:
         ax.legend(handles, labels, **kwargs)
     else:
         # Show only first max_items
         truncated_handles = handles[:max_items]
         truncated_labels = labels[:max_items]
-        
+
         # Add "... +N more" indicator
         remaining = len(handles) - max_items
         dummy_handle = Line2D([], [], color='none', marker='', linestyle='')
         truncated_handles.append(dummy_handle)
         truncated_labels.append(f'... +{remaining} more')
-        
+
         ax.legend(truncated_handles, truncated_labels, **kwargs)
 
 
@@ -96,4 +96,5 @@ class PlotManager:
         for ax in [ax1, ax2]:
             if not skip_legend:
                 apply_legend_with_limit(ax, max_items, frameon=False, fontsize=8)
+            import matplotlib as mpl
             ax.grid(ls='--', lw=0.3, c=mpl.rcParams.get('grid.color', '#444444'))

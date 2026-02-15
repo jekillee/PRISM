@@ -11,21 +11,48 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTreeWidget, QTreeWidgetItem, QStackedWidget, QLabel,
     QPushButton, QStatusBar, QProgressBar, QMessageBox, QFrame, QStyle,
-    QGridLayout, QSizePolicy,
+    QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QColor, QFont, QPixmap, QIcon
 
 from config.app_config import AppConfig, VERSION, UPDATE_DATE, CONTACT_EMAIL, AUTHOR_NAME
 from config.diagnostic_config import get_enabled_diagnostics
 from config.user_settings import (
     load_settings, save_settings, show_update_popup
 )
-from data_loaders.efit_loader import EFITLoader
-from plotting.plot_manager import PlotManager
 from ui.tab_factory import TabFactory
 from ui.widgets.custom_toolbar import QuietNavigationToolbar
 from ui.theme import ThemeManager
+
+_ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+
+_CATEGORY_ORDER = ["Profiles", "Time Traces", "Spectral Analysis", "Imaging", "Other"]
+
+_TAB_TYPE_TO_CATEGORY = {
+    'profile': "Profiles",
+    'timetrace': "Time Traces",
+    'spectrogram': "Spectral Analysis",
+    'nmode': "Spectral Analysis",
+    'tv': "Imaging",
+    'tv_startup': "Imaging",
+    'irvb': "Imaging",
+}
+
+
+def _categorize_tabs(tab_configs):
+    """Categorize tab configs into ordered groups.
+
+    Returns list of (category_name, [(tab_index, tab_name), ...]) in display order.
+    """
+    categories = {}
+    for i, config in enumerate(tab_configs):
+        cat = _TAB_TYPE_TO_CATEGORY.get(config['tab_type'], "Other")
+        if cat not in categories:
+            categories[cat] = []
+        categories[cat].append((i, config['tab_name']))
+
+    return [(name, categories[name]) for name in _CATEGORY_ORDER if name in categories]
 
 
 class SidebarNav(QWidget):
@@ -40,11 +67,28 @@ class SidebarNav(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
 
-        # Title with version
-        title = QLabel(f'<p style="line-height:70%; margin:10;"><span style="font-size:35px; font-weight:bold;">PRISM</span></p><p style="line-height:100%; margin:0;"><span style="font-size:15px;">v{VERSION}</span></p>')
-        title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("color: #0d6efd; font-weight: bold; padding: 0 0 0 0;")
-        layout.addWidget(title)
+        # Logo + PRISM (horizontal, aligned to PRISM font height)
+        title_row = QWidget()
+        title_layout = QHBoxLayout(title_row)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(6)
+        title_layout.addStretch()
+
+        self.logo_label = QLabel()
+        self._update_logo()
+        title_layout.addWidget(self.logo_label, alignment=Qt.AlignVCenter)
+
+        title = QLabel(f'<span style="font-size:24px; font-weight:bold; color:#0d6efd;">PRISM</span>')
+        title_layout.addWidget(title, alignment=Qt.AlignVCenter)
+        title_layout.addStretch()
+        layout.addWidget(title_row)
+
+        # Version (below title, tight margin)
+        ver_label = QLabel(f'v{VERSION}')
+        ver_label.setAlignment(Qt.AlignCenter)
+        ver_label.setContentsMargins(0, 0, 0, 0)
+        ver_label.setStyleSheet("color: #888; font-size: 11px; margin-top: -4px;")
+        layout.addWidget(ver_label)
 
         # Tree
         self.tree = QTreeWidget()
@@ -61,31 +105,7 @@ class SidebarNav(QWidget):
 
     def _build_tree(self):
         """Build categorized tree from tab configs"""
-        # Categorize tabs
-        categories = {}
-        for i, config in enumerate(self.tab_configs):
-            tab_type = config['tab_type']
-            if tab_type == 'profile':
-                cat = "Profiles"
-            elif tab_type == 'timetrace':
-                cat = "Time Traces"
-            elif tab_type in ('spectrogram', 'nmode'):
-                cat = "Spectral Analysis"
-            elif tab_type in ('tv', 'tv_startup', 'irvb'):
-                cat = "Imaging"
-            else:
-                cat = "Other"
-
-            if cat not in categories:
-                categories[cat] = []
-            categories[cat].append((i, config['tab_name']))
-
-        # Maintain order
-        cat_order = ["Profiles", "Time Traces", "Spectral Analysis", "Imaging", "Other"]
-        for cat_name in cat_order:
-            if cat_name not in categories:
-                continue
-
+        for cat_name, items in _categorize_tabs(self.tab_configs):
             cat_item = QTreeWidgetItem(self.tree)
             cat_item.setText(0, f"  {cat_name}")
             cat_item.setFlags(Qt.ItemIsEnabled)
@@ -95,7 +115,7 @@ class SidebarNav(QWidget):
             cat_item.setFont(0, font)
             cat_item.setForeground(0, QColor("#888888"))
 
-            for tab_index, tab_name in categories[cat_name]:
+            for tab_index, tab_name in items:
                 child = QTreeWidgetItem(cat_item)
                 child.setText(0, f"    {tab_name}")
                 child.setData(0, Qt.UserRole, tab_index)
@@ -106,6 +126,16 @@ class SidebarNav(QWidget):
         tab_index = item.data(0, Qt.UserRole)
         if tab_index is not None:
             self.tabSelected.emit(tab_index)
+
+    def _update_logo(self):
+        """Update logo image based on current theme"""
+        theme = ThemeManager.current_theme
+        logo_file = 'prism-logo-dark.svg' if theme == 'dark' else 'prism-logo-light.svg'
+        logo_path = os.path.join(_ICON_DIR, logo_file)
+        pixmap = QPixmap(logo_path)
+        if not pixmap.isNull():
+            pixmap = pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.logo_label.setPixmap(pixmap)
 
     def select_first(self):
         """Select the first tab item"""
@@ -126,8 +156,12 @@ class PRISMApp(QMainWindow):
         super().__init__()
         self.mode = mode
         self.config = AppConfig()
-        self.efit_loader = EFITLoader(self.config)
-        self.plot_manager = PlotManager(self.config)
+
+        # Set window icon
+        icon_file = 'prism-logo-dark.svg' if ThemeManager.current_theme == 'dark' else 'prism-logo-light.svg'
+        self.setWindowIcon(QIcon(os.path.join(_ICON_DIR, icon_file)))
+        self._efit_loader = None
+        self._plot_manager = None
 
         # Load user settings
         load_settings()
@@ -143,7 +177,7 @@ class PRISMApp(QMainWindow):
             # Tab selector mode
             self._child_windows = []
             self.setWindowTitle(f'PRISM v{VERSION} - Select Viewer')
-            self.resize(500, 400)
+            self.resize(240, 380)
             self._create_selector_ui()
         else:
             # Full PRISM mode
@@ -157,13 +191,31 @@ class PRISMApp(QMainWindow):
             # Print startup message
             self._print_startup_message()
 
-            # Create first tab immediately
-            if self.tab_configs:
-                self.sidebar.select_first()
-                self._switch_tab(0)
+            # Defer first tab creation and update popup to after window is shown
+            # This prevents blocking the UI for 3+ seconds during startup
+            QTimer.singleShot(0, self._deferred_startup)
 
-            # Show update popup if new version
-            show_update_popup(self)
+    def _deferred_startup(self):
+        """Show update popup first (lightweight), then load first tab (heavy)"""
+        show_update_popup(self)
+
+        if self.tab_configs:
+            self.sidebar.select_first()
+            self._switch_tab(0)
+
+    @property
+    def efit_loader(self):
+        if self._efit_loader is None:
+            from data_loaders.efit_loader import EFITLoader
+            self._efit_loader = EFITLoader(self.config)
+        return self._efit_loader
+
+    @property
+    def plot_manager(self):
+        if self._plot_manager is None:
+            from plotting.plot_manager import PlotManager
+            self._plot_manager = PlotManager(self.config)
+        return self._plot_manager
 
     def _build_tab_configs(self):
         """Build full tab configuration list"""
@@ -193,61 +245,66 @@ class PRISMApp(QMainWindow):
     # ------------------------------------------------------------------
 
     def _create_selector_ui(self):
-        """Create tab selector screen with button grid"""
+        """Create tab selector screen with categorized button list"""
         central = QWidget()
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(30, 20, 30, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(30, 15, 30, 15)
+        layout.setSpacing(6)
 
-        # Title
+        # Logo + Title
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(6)
+        header_layout.addStretch()
+
+        self._selector_logo = QLabel()
+        theme = ThemeManager.current_theme
+        logo_file = 'prism-logo-dark.svg' if theme == 'dark' else 'prism-logo-light.svg'
+        logo_path = os.path.join(_ICON_DIR, logo_file)
+        pixmap = QPixmap(logo_path)
+        if not pixmap.isNull():
+            pixmap = pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self._selector_logo.setPixmap(pixmap)
+        header_layout.addWidget(self._selector_logo)
+
         title = QLabel(
-            f'<span style="font-size:28px; font-weight:bold; color:#0d6efd;">PRISM</span>'
-            f'  <span style="font-size:12px; color:#888;">v{VERSION}</span>'
+            f'<span style="font-size:22px; font-weight:bold; color:#0d6efd;">PRISM</span>'
+            f'  <span style="font-size:10px; color:#888;">v{VERSION}</span>'
         )
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+        layout.addWidget(header)
 
         subtitle = QLabel("Select a viewer to launch")
         subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setStyleSheet("color: #888; font-size: 13px; margin-bottom: 10px;")
+        subtitle.setStyleSheet("color: #888; font-size: 11px; margin-bottom: 2px;")
         layout.addWidget(subtitle)
 
-        # Button grid
-        grid = QGridLayout()
-        grid.setSpacing(8)
+        # Categorized buttons
+        for cat_name, items in _categorize_tabs(self.tab_configs):
+            cat_label = QLabel(cat_name)
+            cat_label.setStyleSheet(
+                "color: #888; font-size: 10px; font-weight: bold; "
+                "padding: 4px 0 1px 0;"
+            )
+            layout.addWidget(cat_label)
 
-        # Define buttons: (label, tab_indices)
-        buttons = []
-        for i, config in enumerate(self.tab_configs):
-            tab_type = config['tab_type']
-            tab_name = config['tab_name']
+            for tab_index, tab_name in items:
+                btn = QPushButton(tab_name)
+                btn.setFixedHeight(26)
+                btn.setStyleSheet("font-size: 11px; padding: 2px 8px;")
+                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.clicked.connect(partial(self._launch_single_tab, tab_index))
+                layout.addWidget(btn)
 
-            # Build display label
-            if tab_type == 'profile':
-                label = f"{tab_name} Profile"
-            elif tab_type == 'timetrace':
-                label = f"{tab_name} Time Trace"
-            else:
-                label = tab_name
-
-            buttons.append((label, i))
-
-        # Layout: 2 columns
-        for idx, (label, tab_index) in enumerate(buttons):
-            btn = QPushButton(label)
-            btn.setMinimumHeight(38)
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(partial(self._launch_single_tab, tab_index))
-            grid.addWidget(btn, idx // 2, idx % 2)
-
-        layout.addLayout(grid)
         layout.addStretch()
 
         # Developer info
-        dev_label = QLabel(f"Developed by {AUTHOR_NAME} ({CONTACT_EMAIL})")
+        dev_label = QLabel(f"{AUTHOR_NAME} ({CONTACT_EMAIL})")
         dev_label.setAlignment(Qt.AlignCenter)
-        dev_label.setStyleSheet("color: #888; font-size: 10px;")
+        dev_label.setStyleSheet("color: #888; font-size: 9px;")
         layout.addWidget(dev_label)
 
         self.setCentralWidget(central)
@@ -404,6 +461,10 @@ class PRISMApp(QMainWindow):
 
     def _on_theme_changed(self, theme_name):
         """Handle theme change: refresh canvases and UI elements"""
+        # Update sidebar logo
+        if hasattr(self, 'sidebar'):
+            self.sidebar._update_logo()
+
         # Refresh all cached matplotlib figures
         for tab in self.tab_cache.values():
             if hasattr(tab, 'canvas') and tab.canvas:
@@ -466,6 +527,10 @@ class _SingleTabWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f'PRISM v{VERSION} - {title}')
         self.resize(1400, 700)
+
+        # Set window icon
+        icon_file = 'prism-logo-dark.svg' if ThemeManager.current_theme == 'dark' else 'prism-logo-light.svg'
+        self.setWindowIcon(QIcon(os.path.join(_ICON_DIR, icon_file)))
 
         self.tab = None
         self.toolbar = None

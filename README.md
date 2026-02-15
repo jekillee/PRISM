@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="ui/icons/prism-logo-dark.svg" alt="PRISM Logo" width="128">
+</p>
+
 # PRISM
 
 **Plasma Research Integrated System for Multi-diagnostics**
@@ -7,6 +11,7 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 ## Features
 
 - **Modular Architecture**: Easily extensible for new diagnostics
+- **Sidebar Navigation**: Categorized tree view with lazy-loaded tabs
 - **Profile & Time Trace Views**: For each diagnostic system
 - **EFIT Mapping**: Support for multiple EFIT trees (efitrt1, efitrt2, efit01, efit02, efit04)
 - **Multiple Data Sources**: MDS+ and file-based data
@@ -37,19 +42,13 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 | TV | Visible Camera (IVIS) | Image sequence |
 | IRVB | Infra-Red Video Bolometer | 2D Prad |
 
-## Standalone Viewers
+## Usage
 
 | Command | Description |
 |---------|-------------|
-| `prism` | Full PRISM (all tabs) |
-| `prism tivt` | Ti, vT (CES/XICS) viewer |
-| `prism nete` | ne, Te (Thomson/ECE) viewer |
-| `prism mse` | MSE viewer |
-| `prism spec` | Spectrogram viewer |
-| `prism nmode` | n-Mode Spectrum viewer |
-| `prism tv` | TV image viewer |
-| `prism irvb` | IRVB viewer |
-| `prism startup` | TV Startup Comparison viewer |
+| `prism` | Full PRISM with sidebar navigation |
+| `prism -s` | Select and launch individual diagnostic viewers |
+| `prism -h` | Show help |
 
 ## Installation
 
@@ -58,18 +57,11 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 PRISM is pre-installed and available system-wide. No installation required.
 
 ```bash
-# Just run
+# Full PRISM
 prism
 
-# Or standalone viewers
-prism tivt
-prism nete
-prism mse
-prism spec
-prism nmode
-prism tv
-prism irvb
-prism startup
+# Select a viewer
+prism -s
 ```
 
 ### For External Users
@@ -129,7 +121,7 @@ PRISM/
 │   ├── tv_startup_tab.py        # TV Startup Comparison tab
 │   ├── tv_utils.py              # TV utility functions
 │   ├── irvb_tab.py              # IRVB viewer tab
-│   ├── icons/                   # SVG icons for themed widgets
+│   ├── icons/                   # SVG icons (logo, themed widgets)
 │   └── widgets/
 │       └── custom_toolbar.py    # Custom matplotlib toolbar
 ├── plotting/

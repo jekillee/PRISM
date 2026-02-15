@@ -4,10 +4,6 @@ Abstract base class for diagnostic data loaders
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
-import numpy as np
-from MDSplus import Connection
-
-from core.data_structures import DiagnosticData
 
 # IP fault detection threshold in kA
 IP_THRESHOLD_KA = 100
@@ -43,7 +39,7 @@ class BaseDiagnosticLoader(ABC):
         self,
         shot_number: int,
         analysis_type: Optional[str] = None
-    ) -> DiagnosticData:
+    ) -> "DiagnosticData":
         """Load diagnostic data from MDS+
 
         Args:
@@ -58,7 +54,7 @@ class BaseDiagnosticLoader(ABC):
         """
         pass
 
-    def _connect_mds(self, shot_number: int) -> Connection:
+    def _connect_mds(self, shot_number: int):
         """Establish MDS+ connection and open the diagnostic tree
 
         Args:
@@ -67,11 +63,13 @@ class BaseDiagnosticLoader(ABC):
         Returns:
             MDSplus Connection object with tree opened
         """
+        from MDSplus import Connection
+
         mds = Connection(self.mds_ip)
         mds.openTree(self.diag_config['mds_tree'], shot_number)
         return mds
 
-    def _close_mds(self, mds: Connection, shot_number: int) -> None:
+    def _close_mds(self, mds, shot_number: int) -> None:
         """Close MDS+ connection
 
         Args:
@@ -91,6 +89,9 @@ class BaseDiagnosticLoader(ABC):
         Returns:
             IP fault time in seconds, or None if not available
         """
+        import numpy as np
+        from MDSplus import Connection
+
         try:
             mds = Connection(self.mds_ip)
             mds.openTree('kstar', shot_number)
@@ -109,9 +110,9 @@ class BaseDiagnosticLoader(ABC):
 
     def get_valid_time_mask(
         self,
-        time_array: np.ndarray,
+        time_array,
         ip_fault_time: Optional[float]
-    ) -> np.ndarray:
+    ):
         """Get boolean mask for valid time points
 
         Returns mask where time > 0 and time <= ip_fault_time + IP_FAULT_OFFSET.

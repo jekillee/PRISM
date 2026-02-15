@@ -3,8 +3,8 @@ PRISM - Plasma Research Integrated System for Multi-diagnostics
 Global application configuration
 """
 
-VERSION = "2.0.0"
-UPDATE_DATE = "2026-02-13"
+VERSION = "2.0.1"
+UPDATE_DATE = "2026-02-15"
 APP_NAME = "PRISM"
 APP_FULL_NAME = "Plasma Research Integrated System for Multi-diagnostics"
 

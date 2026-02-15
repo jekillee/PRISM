@@ -5,6 +5,21 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-02-15
+
+### Added
+- **PRISM Logo**: Added prism refraction logo (dark/light variants) across the application
+  - Sidebar header (inline with PRISM title)
+  - Select Viewer (`prism -s`) header
+  - What's New dialog header
+  - Window icon for all windows (main, selector, standalone)
+  - README.md header
+
+### Changed
+- **Faster Startup**: Deferred first tab creation and What's New popup to after window is shown using `QTimer.singleShot()`; What's New shown first (lightweight), then first tab loaded after dialog closes
+- **Select Viewer Compactness**: Reduced window size from 300x550 to 240x380 with compact button height (26px), tighter spacing, and inline logo+title header
+- **README Updated**: Replaced outdated standalone viewer commands (`prism tivt`, `prism nete`, etc.) with current `prism -s` usage; added Sidebar Navigation to features list
+
 ## [2.0.0] - 2026-02-13
 
 ### Changed - GUI Framework Migration (tkinter → PySide6)
