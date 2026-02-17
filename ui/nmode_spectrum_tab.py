@@ -43,6 +43,15 @@ Example script for loading and plotting PRISM n-mode spectrum NPZ file
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+def get_mode_color(n):
+    """Get color for mode number"""
+    colors = ['#000000', '#FF0000', '#00FF00', '#0000FF', '#FF9100',
+              '#1f78b4', '#b2df8a', '#33a02c', '#ffffb3', '#b3bada',
+              '#1b9e77', '#b15928', '#CCEBC5', '#ff3d6f', '#e6ab02']
+    return colors[abs(n) % len(colors)]
+
+
 # Load NPZ file
 filepath = 'nmode_XXXXXX_3.0-5.0s.npz'
 data = np.load(filepath, allow_pickle=True)
@@ -249,7 +258,9 @@ def load_mirnov_data(shot, tmin, tmax):
 
     print(f"[n-Mode] Loading Mirnov data for shot #{shot} (year {year})...")
     print(f"[n-Mode]   Time range: {tmin:.2f} - {tmax:.2f} s")
-    print(f"[n-Mode]   Channels ({n_channels}): {config['names']}")
+    print(f"[n-Mode]   Channels ({n_channels}):")
+    for i, (name, angle) in enumerate(zip(config['names'], config['angles']), 1):
+        print(f"[n-Mode]     {i:>2d}. {name}  {angle:>6.2f}\u00b0")
     print(f"[n-Mode]   Threads: {n_channels}")
 
     args_list = [
@@ -1150,6 +1161,19 @@ class NModeSpectrumTab:
             else:  # all
                 n_modes_list = list(range(-nmodes, 0)) + list(range(1, nmodes + 1))
 
+            # Filter mode_spectrum and amplitude by sign setting
+            mode_save = self.mode_result.copy()
+            amp_save = self.amp_evolution.copy()
+
+            if msign == 1:  # pos only
+                mode_save = np.where(mode_save > 0, mode_save, 0)
+                amp_save = amp_save[:nmodes, :]
+            elif msign == -1:  # neg only
+                mode_save = np.where(mode_save < 0, mode_save, 0)
+                amp_save = amp_save[nmodes:, :]
+            elif msign == 0:  # abs
+                mode_save = np.abs(mode_save)
+
             # Prepare metadata
             metadata = {
                 'shot': shot,
@@ -1170,8 +1194,8 @@ class NModeSpectrumTab:
                      metadata=np.array(metadata),
                      time=self.fft_result.time,
                      frequency=self.freq_use,
-                     mode_spectrum=self.mode_result,
-                     amplitude=self.amp_evolution
+                     mode_spectrum=mode_save,
+                     amplitude=amp_save
             )
 
             print(f"[n-Mode] Data saved to: {filepath}")

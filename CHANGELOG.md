@@ -5,6 +5,19 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-02-17
+
+### Fixed
+- **N-Mode Spectrum NPZ Export**: Fixed bug where exporting negative-mode-only data included positive mode amplitudes and unfiltered mode spectrum
+  - `mode_spectrum` now correctly filtered by sign setting (pos/neg/abs)
+  - `amplitude` array now contains only the selected sign's modes instead of all modes
+  - Negative-mode export now preserves negative sign in `mode_spectrum` (consistent with `n_modes_list`)
+  - Affected export modes: positive-only, negative-only, and absolute
+- **N-Mode Spectrum Example Script**: Added missing `get_mode_color()` function definition that caused `NameError` when running the exported example script
+
+### Changed
+- **N-Mode Spectrum Channel Display**: Channel list now printed with numbered rows and toroidal angles instead of flat list
+
 ## [2.0.1] - 2026-02-15
 
 ### Added
