@@ -31,28 +31,55 @@ DEFAULT_SETTINGS = {
             "shot": "",
             "efit_tree": "efitrt1 (RT for PCS)",
             "coord_type": "psi_N",
-            "analysis_type": "nn"
+            "analysis_type": "nn",
+            "color_mode": "Gradient(viridis)",
+            "show_nodes": False,
+            "label_fontsize": 12,
+            "legend_fontsize": 8,
+            "tick_fontsize": 10
         },
         "tivt_timetrace": {
-            "shot": ""
+            "shot": "",
+            "color_mode": "Gradient(viridis)",
+            "label_fontsize": 12,
+            "legend_fontsize": 8,
+            "tick_fontsize": 10
         },
         "nete_profile": {
             "shot": "",
             "efit_tree": "efitrt1 (RT for PCS)",
             "coord_type": "psi_N",
-            "diagnostic": "TS+ECE"
+            "diagnostic": "TS+ECE",
+            "color_mode": "Gradient(viridis)",
+            "show_nodes": False,
+            "label_fontsize": 12,
+            "legend_fontsize": 8,
+            "tick_fontsize": 10
         },
         "nete_timetrace": {
             "shot": "",
-            "diagnostic": "TS"
+            "diagnostic": "TS",
+            "color_mode": "Gradient(viridis)",
+            "label_fontsize": 12,
+            "legend_fontsize": 8,
+            "tick_fontsize": 10
         },
         "mse_profile": {
             "shot": "",
             "efit_tree": "efitrt1 (RT for PCS)",
-            "param": "q"
+            "param": "q",
+            "color_mode": "Gradient(viridis)",
+            "show_nodes": False,
+            "label_fontsize": 12,
+            "legend_fontsize": 8,
+            "tick_fontsize": 10
         },
         "mse_timetrace": {
-            "shot": ""
+            "shot": "",
+            "color_mode": "Gradient(viridis)",
+            "label_fontsize": 12,
+            "legend_fontsize": 8,
+            "tick_fontsize": 10
         },
         "spectrogram": {
             "shot": "",
@@ -61,7 +88,10 @@ DEFAULT_SETTINGS = {
             "fmin": "0",
             "fmax": "100",
             "nfft": "1024",
-            "dynamic_range": "6.0"
+            "dynamic_range": "6.0",
+            "colormap": "viridis",
+            "label_fontsize": 12,
+            "tick_fontsize": 10
         },
         "nmode": {
             "shot": "",
@@ -77,6 +107,10 @@ DEFAULT_SETTINGS = {
             "integrate": False,
             "detrend": True,
             "plot_type": "contour",
+            "color_mode": "Default",
+            "label_fontsize": 12,
+            "legend_fontsize": 8,
+            "tick_fontsize": 10,
             "contour_levels": "50"
         },
         "tv": {
@@ -85,7 +119,18 @@ DEFAULT_SETTINGS = {
         "irvb": {
             "shot": "",
             "efit_tree": "efitrt1 (RT for PCS)",
-            "psi_bounds": "0.7, 1.0"
+            "psi_bounds": "0.7, 1.0",
+            "trace_color_mode": "Fixed(tab10)",
+            "trace_label_fontsize": 12,
+            "trace_legend_fontsize": 8,
+            "trace_tick_fontsize": 10,
+            "plot2d_colormap": "viridis",
+            "plot2d_lcfs_color": "black",
+            "plot2d_maxis_color": "black",
+            "plot2d_limiter_color": "white",
+            "plot2d_flux_color": "gray",
+            "plot2d_label_fontsize": 12,
+            "plot2d_tick_fontsize": 10
         }
     }
 }
@@ -233,8 +278,8 @@ def show_update_popup(parent):
     if not should_show_update_popup():
         return
 
-    # Build changelog for current major version
-    changelog, date = get_changelog_for_version(VERSION)
+    # Build changelog for header date display
+    _, date = get_changelog_for_version(VERSION)
 
     # Create popup dialog
     popup = QDialog(parent)
@@ -273,28 +318,19 @@ def show_update_popup(parent):
     header_layout.addStretch()
     layout.addWidget(header_widget)
 
-    # Tabbed changelog
+    # Tabbed changelog — group by major version
     tab_widget = QTabWidget()
     tab_widget.setFont(font_normal)
 
-    # Current major version tab (v2.x)
-    current_major = VERSION.split('.')[0]
-    text_current = QTextEdit()
-    text_current.setReadOnly(True)
-    text_current.setFont(font_normal)
-    text_current.setHtml(_render_markdown(changelog))
-    tab_widget.addTab(text_current, f"v{current_major}")
-
-    # Previous major version tabs
     all_changelogs = _get_all_major_changelogs()
+    current_major = int(VERSION.split('.')[0])
+
     for major_ver, cl_text in sorted(all_changelogs.items(), reverse=True):
-        if major_ver == int(current_major):
-            continue
-        text_old = QTextEdit()
-        text_old.setReadOnly(True)
-        text_old.setFont(font_normal)
-        text_old.setHtml(_render_markdown(cl_text))
-        tab_widget.addTab(text_old, f"v{major_ver}")
+        text_widget = QTextEdit()
+        text_widget.setReadOnly(True)
+        text_widget.setFont(font_normal)
+        text_widget.setHtml(_render_markdown(cl_text))
+        tab_widget.addTab(text_widget, f"v{major_ver}")
 
     layout.addWidget(tab_widget)
 

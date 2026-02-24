@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QLabel, QLineEdit, QPushButton, QComboBox,
     QSlider, QMessageBox, QFileDialog, QApplication,
     QSplitter, QDialog, QTextEdit, QStyle, QScrollArea,
+    QSpinBox, QDialogButtonBox, QFrame,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QColor, QTextCharFormat, QSyntaxHighlighter, QGuiApplication
@@ -105,13 +106,19 @@ class SpectrogramTab:
         self.im = None
         self.colorbar = None
 
+        # Plot options
+        self.selected_colormap = 'viridis'
+        self.label_fontsize = 12
+        self.tick_fontsize = 10
+
         # Widget references for enable/disable
         self.signal_widgets = []
 
     def create_widgets(self):
         """Create spectrogram tab widgets"""
         # Single canvas for spectrogram
-        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
+        self.figure = Figure(self.app_config.FIGURE_SIZE)
+        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.95, bottom=0.10)
         self.ax = self.figure.add_subplot(111)
         self.ax.set_xlabel('Time [s]')
         self.ax.set_ylabel('Frequency [kHz]')
@@ -325,10 +332,14 @@ class SpectrogramTab:
         self.nfft_dropdown.setCurrentText(self.DEFAULT_NFFT)
         grid.addWidget(self.nfft_dropdown, 2, 1)
 
-        # Plot button
+        # Plot button + Option button in same row
         plot_btn = QPushButton('Plot Spectrogram')
         plot_btn.clicked.connect(self._plot_spectrogram)
-        grid.addWidget(plot_btn, 3, 0, 1, 4)
+        grid.addWidget(plot_btn, 3, 0, 1, 3)
+
+        plot_options_btn = QPushButton('Option')
+        plot_options_btn.clicked.connect(self._show_plot_options_dialog)
+        grid.addWidget(plot_options_btn, 3, 3)
 
         # Status label
         self.status_label = QLabel('Ready')
@@ -336,6 +347,67 @@ class SpectrogramTab:
         grid.addWidget(self.status_label, 4, 0, 1, 4)
 
         parent.layout().addWidget(frame)
+
+    def _show_plot_options_dialog(self):
+        """Show Plot Options dialog for spectrogram"""
+        WIDGET_WIDTH = 150
+
+        dialog = QDialog(self.frame)
+        dialog.setWindowTitle("Plot Options")
+        dialog.setMinimumWidth(280)
+        dlg_layout = QVBoxLayout(dialog)
+
+        # Colorbar
+        cmap_row = QHBoxLayout()
+        cmap_row.addWidget(QLabel("Colorbar"))
+        cmap_combo = QComboBox()
+        cmap_combo.setFixedWidth(WIDGET_WIDTH)
+        cmap_combo.addItems([
+            "viridis", "hot", "jet", "coolwarm", "inferno", "plasma", "magma", "cividis",
+        ])
+        cmap_combo.setCurrentText(self.selected_colormap)
+        cmap_row.addWidget(cmap_combo)
+        dlg_layout.addLayout(cmap_row)
+
+        # Label font size
+        label_row = QHBoxLayout()
+        label_row.addWidget(QLabel("Label font size"))
+        label_spin = QSpinBox()
+        label_spin.setFixedWidth(WIDGET_WIDTH)
+        label_spin.setRange(6, 24)
+        label_spin.setValue(self.label_fontsize)
+        label_row.addWidget(label_spin)
+        dlg_layout.addLayout(label_row)
+
+        # Tick font size
+        tick_row = QHBoxLayout()
+        tick_row.addWidget(QLabel("Tick font size"))
+        tick_spin = QSpinBox()
+        tick_spin.setFixedWidth(WIDGET_WIDTH)
+        tick_spin.setRange(6, 20)
+        tick_spin.setValue(self.tick_fontsize)
+        tick_row.addWidget(tick_spin)
+        dlg_layout.addLayout(tick_row)
+
+        # Default / OK / Cancel
+        btn_box = QDialogButtonBox(QDialogButtonBox.RestoreDefaults | QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(dialog.accept)
+        btn_box.rejected.connect(dialog.reject)
+
+        def reset_defaults():
+            cmap_combo.setCurrentText("viridis")
+            label_spin.setValue(12)
+            tick_spin.setValue(10)
+        btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
+        dlg_layout.addWidget(btn_box)
+
+        if dialog.exec() == QDialog.Accepted:
+            self.selected_colormap = cmap_combo.currentText()
+            self.label_fontsize = label_spin.value()
+            self.tick_fontsize = tick_spin.value()
+            # Auto-replot if spectrogram exists
+            if self.im is not None:
+                self._plot_spectrogram()
 
     def _create_color_controls(self, parent):
         """Create color range control section"""
@@ -528,7 +600,7 @@ class SpectrogramTab:
 
         # Update shot display label
         self.shot_display_label.setText(f'#{shot_number}')
-        self.shot_display_label.setStyleSheet('color: white;')
+        self.shot_display_label.setStyleSheet('')
 
         # Enable signal selection widgets
         self._set_signal_selection_state(True)
@@ -905,9 +977,12 @@ class SpectrogramTab:
             'vmax': vmax
         }
 
-        # Clear and plot
+        # Clear figure and recreate subplot (avoids colorbar.remove() issues)
         self._update_status('Plotting...', 'blue')
-        self.ax.clear()
+        self.figure.clear()
+        self.ax = self.figure.add_subplot(111)
+        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.95, bottom=0.10)
+        apply_dark_figure_style(self.figure)
 
         # Frequency mask
         f_mask = (f >= f_min) & (f <= f_max)
@@ -924,11 +999,12 @@ class SpectrogramTab:
                     f[f_mask][0]/1e3, f[f_mask][-1]/1e3],
             vmin=vmin,
             vmax=vmax,
-            cmap='viridis'
+            cmap=self.selected_colormap
         )
 
-        self.ax.set_xlabel('Time [s]')
-        self.ax.set_ylabel('Frequency [kHz]')
+        self.ax.set_xlabel('Time [s]', fontsize=self.label_fontsize)
+        self.ax.set_ylabel('Frequency [kHz]', fontsize=self.label_fontsize)
+        self.ax.tick_params(labelsize=self.tick_fontsize)
 
         # Build title with position info for ECEI and sampling rate
         if signal.get('diag_type', '').startswith('ECEI-') and 'R' in signal:
@@ -944,9 +1020,7 @@ class SpectrogramTab:
         title += f" - {fs_str}"
         self.ax.set_title(title)
 
-        # Update or create colorbar
-        if self.colorbar is not None:
-            self.colorbar.remove()
+        # Create colorbar (fresh each time since figure was cleared)
         self.colorbar = self.figure.colorbar(self.im, ax=self.ax, label='log$_{10}$(Power) [a.u.]')
 
         self.canvas.draw()
@@ -967,7 +1041,10 @@ class SpectrogramTab:
             "fmin": self.freq_min_entry.text(),
             "fmax": self.freq_max_entry.text(),
             "nfft": self.nfft_dropdown.currentText(),
-            "dynamic_range": str(self._dyn_range_value)
+            "dynamic_range": str(self._dyn_range_value),
+            "colormap": self.selected_colormap,
+            "label_fontsize": self.label_fontsize,
+            "tick_fontsize": self.tick_fontsize,
         }
         set_tab_settings("spectrogram", settings)
 
@@ -998,6 +1075,13 @@ class SpectrogramTab:
             self._dyn_range_value = val
             self.dyn_range_slider.setValue(int(val * 10))
             self.dyn_range_label.setText(settings["dynamic_range"])
+
+        if settings.get("colormap"):
+            self.selected_colormap = settings["colormap"]
+        if settings.get("label_fontsize"):
+            self.label_fontsize = int(settings["label_fontsize"])
+        if settings.get("tick_fontsize"):
+            self.tick_fontsize = int(settings["tick_fontsize"])
 
 
 class PythonHighlighter(QSyntaxHighlighter):

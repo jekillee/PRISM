@@ -3,14 +3,19 @@ PRISM - Plasma Research Integrated System for Multi-diagnostics
 Global application configuration
 """
 
-VERSION = "2.0.2"
-UPDATE_DATE = "2026-02-17"
+import os
+
+VERSION = "2.1.0"
+UPDATE_DATE = "2026-02-24"
 APP_NAME = "PRISM"
 APP_FULL_NAME = "Plasma Research Integrated System for Multi-diagnostics"
 
 # Contact information
 CONTACT_EMAIL = "jklee@kfe.re.kr"
 AUTHOR_NAME = "Jekil Lee"
+
+# Application root directory (where config/ lives → parent)
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class AppConfig:
@@ -33,7 +38,7 @@ class AppConfig:
         self.DEFAULT_EFIT_TREE = "efitrt1"
 
         # Paths
-        self.MANUAL_PATH = "/home/users/jklee/PRISM/DiagnosticsManual(250814).pdf"
+        self.DOCS_PATH = os.path.join(_APP_ROOT, 'docs')
         self.CES_RESULT_PATH = '/home/users/jklee/CESresults/'
 
         # Plot configuration

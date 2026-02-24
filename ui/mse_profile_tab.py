@@ -11,11 +11,13 @@ from PySide6.QtWidgets import (
     QMessageBox, QLineEdit, QComboBox, QPushButton, QCheckBox,
     QWidget, QHBoxLayout, QVBoxLayout, QGroupBox, QGridLayout, QLabel,
     QSplitter, QStyle, QScrollArea, QRadioButton, QFrame,
+    QSpinBox, QDialog, QDialogButtonBox,
 )
 from PySide6.QtCore import Qt
 
 from ui.profile_base_tab import ProfileBaseTab
 from ui.ui_constants import CONTROL_PANEL_WIDTH, get_icon
+from ui.theme import ThemeManager
 
 
 class MSEProfileTab(ProfileBaseTab):
@@ -33,7 +35,7 @@ class MSEProfileTab(ProfileBaseTab):
     def create_widgets(self):
         """Create MSE profile tab widgets"""
         self.figure = Figure(self.app_config.FIGURE_SIZE)
-        self.figure.subplots_adjust(left=0.08, right=0.97, top=0.93, bottom=0.10, wspace=0.20)
+        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.93, bottom=0.10, wspace=0.20)
 
         # Setup 1x2 plot with shared x-axis: TGAMMA (left), j or q (right)
         self.ax1 = self.figure.add_subplot(121)
@@ -64,7 +66,7 @@ class MSEProfileTab(ProfileBaseTab):
         control_frame = QWidget()
         control_layout = QVBoxLayout(control_frame)
         control_layout.setContentsMargins(9, 9, 9, 9)
-        control_layout.setSizeConstraint(QVBoxLayout.SetNoConstraint)
+        control_layout.setSizeConstraint(QVBoxLayout.SetMinimumSize)
 
         scroll_area.setWidget(control_frame)
         scroll_area.viewport().setAutoFillBackground(False)
@@ -85,6 +87,7 @@ class MSEProfileTab(ProfileBaseTab):
         self._create_plot_controls(control_frame)
         self._create_efit_controls(control_frame)
         self._create_save_controls(control_frame, section_num=5)
+        control_layout.addStretch()
 
     def _create_shot_input(self, parent):
         """Create data loading section"""
@@ -163,6 +166,10 @@ class MSEProfileTab(ProfileBaseTab):
         plot_button.clicked.connect(self.plot_data)
         row1.addWidget(plot_button, 2)
 
+        style_btn = QPushButton("Option")
+        style_btn.clicked.connect(self._show_style_dialog)
+        row1.addWidget(style_btn, 1)
+
         group_layout.addLayout(row1)
 
         # Separator line
@@ -171,7 +178,21 @@ class MSEProfileTab(ProfileBaseTab):
         separator.setFrameShadow(QFrame.Sunken)
         group_layout.addWidget(separator)
 
-        # Row 2: Show Nodes + Select Channels
+        # Hidden combo for color mode (used by _get_plot_colors, saved to settings)
+        self.color_mode_combo = QComboBox()
+        self.color_mode_combo.addItems([
+            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
+            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
+        ])
+        self.color_mode_combo.setCurrentText("Gradient(viridis)")
+        self.color_mode_combo.hide()
+
+        # Default font sizes
+        self.label_fontsize = 12
+        self.legend_fontsize = 8
+        self.tick_fontsize = 10
+
+        # Show Nodes + Select Channels
         row2 = QHBoxLayout()
 
         self.show_channel_checkbox = QCheckBox("Show Nodes")
@@ -391,17 +412,22 @@ class MSEProfileTab(ProfileBaseTab):
                 print(f"[MSE] Error plotting {entry}: {str(e)}")
 
         # Set limits
-        self.ax1.axhline(0, color='gray', linestyle='--', alpha=0.5)
+        zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
+        self.ax1.axhline(0, color=zc, linestyle='--', gid='zero_ref')
         gamma_margin = (gamma_max - gamma_min) * 0.1
         self.ax1.set_ylim(gamma_min - gamma_margin, gamma_max + gamma_margin)
 
         if param == 'q':
-            self.ax2.axhline(1, color='gray', linestyle='--', alpha=0.5)
+            self.ax2.axhline(1, color=zc, linestyle='--', gid='zero_ref')
         else:
-            self.ax2.axhline(0, color='gray', linestyle='--', alpha=0.5)
+            self.ax2.axhline(0, color=zc, linestyle='--', gid='zero_ref')
         self.ax2.set_ylim(0, 6)
 
-        self.plot_manager.apply_common_styling(self.ax1, self.ax2)
+        self.plot_manager.apply_common_styling(
+            self.ax1, self.ax2,
+            legend_fontsize=self.legend_fontsize,
+            label_fontsize=self.label_fontsize,
+            tick_fontsize=self.tick_fontsize)
         self.canvas.draw()
 
         if self.toolbar:
@@ -555,14 +581,15 @@ class MSEProfileTab(ProfileBaseTab):
         else:
             self.ax2.set_ylabel('j [MA/m$^2$]')
 
-        self.ax1.axhline(0, color='gray', linestyle='--', alpha=0.5)
+        zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
+        self.ax1.axhline(0, color=zc, linestyle='--', gid='zero_ref')
         gamma_margin = (gamma_max - gamma_min) * 0.1
         self.ax1.set_ylim(gamma_min - gamma_margin, gamma_max + gamma_margin)
 
         if param == 'q':
-            self.ax2.axhline(1, color='gray', linestyle='--', alpha=0.5)
+            self.ax2.axhline(1, color=zc, linestyle='--', gid='zero_ref')
         else:
-            self.ax2.axhline(0, color='gray', linestyle='--', alpha=0.5)
+            self.ax2.axhline(0, color=zc, linestyle='--', gid='zero_ref')
         self.ax2.set_ylim(0, 6)
 
         for ax in [self.ax1, self.ax2]:
@@ -572,7 +599,11 @@ class MSEProfileTab(ProfileBaseTab):
         self.ax1.set_xlim(-0.5, 1.05)
         self.ax2.set_xlim(0, 1.05)
 
-        self.plot_manager.apply_common_styling(self.ax1, self.ax2)
+        self.plot_manager.apply_common_styling(
+            self.ax1, self.ax2,
+            legend_fontsize=self.legend_fontsize,
+            label_fontsize=self.label_fontsize,
+            tick_fontsize=self.tick_fontsize)
         self.canvas.draw()
 
         if self.toolbar:

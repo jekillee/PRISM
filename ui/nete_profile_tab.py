@@ -444,7 +444,11 @@ class NeTeProfileTab(ProfileBaseTab):
             ne_margin = ne_max * 0.1
             self.ax2.set_ylim(0, ne_max + ne_margin)
 
-        self.plot_manager.apply_common_styling(self.ax1, self.ax2)
+        self.plot_manager.apply_common_styling(
+            self.ax1, self.ax2,
+            legend_fontsize=self.legend_fontsize,
+            label_fontsize=self.label_fontsize,
+            tick_fontsize=self.tick_fontsize)
         self.canvas.draw()
 
         if self.toolbar:
@@ -670,7 +674,11 @@ class NeTeProfileTab(ProfileBaseTab):
             ax.axvline(x=0, c='k', ls='--')
             ax.axvline(x=1, c='k', ls='--')
 
-        self.plot_manager.apply_common_styling(self.ax1, self.ax2)
+        self.plot_manager.apply_common_styling(
+            self.ax1, self.ax2,
+            legend_fontsize=self.legend_fontsize,
+            label_fontsize=self.label_fontsize,
+            tick_fontsize=self.tick_fontsize)
         self.canvas.draw()
 
         if self.toolbar:

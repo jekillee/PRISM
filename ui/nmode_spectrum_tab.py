@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QRadioButton, QButtonGroup, QSlider, QFrame,
     QMessageBox, QFileDialog, QApplication, QSplitter,
     QDialog, QTextEdit, QStyle, QScrollArea,
+    QSpinBox, QDialogButtonBox,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QColor, QTextCharFormat, QSyntaxHighlighter, QGuiApplication
@@ -546,7 +547,8 @@ def get_mode_color(n):
 
 def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
                        tmin, tmax, fmin, fmax, nmodes, msign, integrate,
-                       plot_type='contour', numc=50):
+                       plot_type='contour', numc=50, colors=None,
+                       legend_fontsize=8, label_fontsize=None, tick_fontsize=None):
     """Plot n-mode spectrum"""
     ax.clear()
 
@@ -608,7 +610,7 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
         thismode = np.zeros_like(amp_plot)
         thismode[k] = amp_plot[k]
 
-        color = get_mode_color(abs(n_val))
+        color = colors[abs(n_val) - 1] if colors and abs(n_val) - 1 < len(colors) else get_mode_color(abs(n_val))
 
         if plot_type == 'contour':
             valid_data = thismode[thismode > 0]
@@ -621,18 +623,24 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
                     np.log10(valid_data.max()),
                     numc
                 )
-                ax.contour(x, y, thismode.T, levels, colors=color, linewidths=0.8)
+                ax.contour(x, y, thismode.T, levels, colors=[color], linewidths=0.8)
             except Exception:
-                ax.contour(x, y, thismode.T, numc, colors=color, linewidths=0.8)
+                ax.contour(x, y, thismode.T, numc, colors=[color], linewidths=0.8)
         else:
             thismode_masked = np.ma.masked_where(thismode == 0, thismode)
             ax.pcolormesh(x, y, thismode_masked.T, shading='auto', alpha=0.7)
 
-    ax.set_ylabel('Frequency [kHz]')
+    if label_fontsize:
+        ax.set_ylabel('Frequency [kHz]', fontsize=label_fontsize)
+    else:
+        ax.set_ylabel('Frequency [kHz]')
+    if tick_fontsize:
+        ax.tick_params(labelsize=tick_fontsize)
     ax.set_xlim(tmin, tmax)
     ax.set_ylim(fmin, fmax)
     ax.set_axisbelow(False)
-    ax.grid(True, linestyle='--', linewidth=0.5, color='gray', alpha=0.5)
+    import matplotlib as mpl
+    ax.grid(True, linestyle='--', linewidth=0.3, color=mpl.rcParams.get('grid.color', '#444444'))
 
     ax.set_title(f'#{fft_result.shot}')
 
@@ -640,7 +648,7 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
     legend_elements = []
     from matplotlib.lines import Line2D
     for n in range(1, nmodes + 1):
-        color = get_mode_color(n)
+        color = colors[n - 1] if colors and n - 1 < len(colors) else get_mode_color(n)
         if msign == 2:
             legend_elements.append(Line2D([0], [0], color=color, label=f'n=+{n}'))
             legend_elements.append(Line2D([0], [0], color=color, linestyle='--', label=f'n=-{n}'))
@@ -653,13 +661,14 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
 
 
     if legend_elements:
-        ax.legend(handles=legend_elements, loc='upper right', fontsize=8,
+        ax.legend(handles=legend_elements, loc='upper right', fontsize=legend_fontsize,
                   framealpha=0.8, ncol=min(len(legend_elements), 5))
 
     return lv
 
 
-def plot_amplitude_evolution(ax, fft_result, amp_evolution, tmin, tmax, nmodes, msign):
+def plot_amplitude_evolution(ax, fft_result, amp_evolution, tmin, tmax, nmodes, msign,
+                              colors=None, legend_fontsize=8, label_fontsize=None, tick_fontsize=None):
     """Plot amplitude evolution for each mode"""
     ax.clear()
 
@@ -672,20 +681,29 @@ def plot_amplitude_evolution(ax, fft_result, amp_evolution, tmin, tmax, nmodes, 
         n = i + 1
         if msign in [0, 1, 2]:
             amp_pos = amp_evolution[i, j1:j2]
-            ax.plot(time_plot, amp_pos, color=get_mode_color(n),
+            c = colors[n - 1] if colors and n - 1 < len(colors) else get_mode_color(n)
+            ax.plot(time_plot, amp_pos, color=c,
                    linewidth=1.5, label=f'n=+{n}')
         if msign in [0, -1, 2]:
             amp_neg = amp_evolution[i + nmodes, j1:j2]
             ls = '--' if msign == 2 else '-'
-            ax.plot(time_plot, amp_neg, color=get_mode_color(n),
+            c = colors[n - 1] if colors and n - 1 < len(colors) else get_mode_color(n)
+            ax.plot(time_plot, amp_neg, color=c,
                    linewidth=1.5, linestyle=ls, label=f'n=-{n}')
 
-    ax.set_xlabel('Time [s]')
-    ax.set_ylabel('Amplitude [Gauss]')
+    if label_fontsize:
+        ax.set_xlabel('Time [s]', fontsize=label_fontsize)
+        ax.set_ylabel('Amplitude [Gauss]', fontsize=label_fontsize)
+    else:
+        ax.set_xlabel('Time [s]')
+        ax.set_ylabel('Amplitude [Gauss]')
+    if tick_fontsize:
+        ax.tick_params(labelsize=tick_fontsize)
     ax.set_xlim(tmin, tmax)
     ax.set_ylim(bottom=0)
-    ax.legend(loc='upper right', fontsize=8, framealpha=0.8, ncol=5)
-    ax.grid(True, linestyle='--', linewidth=0.5, color='gray', alpha=0.5)
+    ax.legend(loc='upper right', fontsize=legend_fontsize, framealpha=0.8, ncol=5)
+    import matplotlib as mpl
+    ax.grid(True, linestyle='--', linewidth=0.3, color=mpl.rcParams.get('grid.color', '#444444'))
 
 
 # =============================================================================
@@ -713,9 +731,16 @@ class NModeSpectrumTab:
         self.amp_evolution = None
         self.current_shot = None
 
+        # Plot options
+        self.color_mode = "Default"
+        self.label_fontsize = 12
+        self.legend_fontsize = 8
+        self.tick_fontsize = 10
+
     def create_widgets(self):
         """Create n-mode spectrum tab widgets"""
-        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
+        self.figure = Figure(self.app_config.FIGURE_SIZE)
+        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.95, bottom=0.10, hspace=0.15)
         self.ax1 = self.figure.add_subplot(211)
         self.ax2 = self.figure.add_subplot(212, sharex=self.ax1)
         self.ax1.set_ylabel('Frequency [kHz]')
@@ -855,7 +880,7 @@ class NModeSpectrumTab:
         row += 1
 
         # Time interval
-        grid.addWidget(QLabel('Time interval [s]'), row, 0)
+        grid.addWidget(QLabel('dt [s]'), row, 0)
         self.tinterval_entry = QLineEdit()
         self.tinterval_entry.setText('0.01')
         self.tinterval_entry.setFixedWidth(80)
@@ -990,10 +1015,14 @@ class NModeSpectrumTab:
 
         row = 0
 
-        # Calculate and Plot button
+        # Calculate and Plot button + Option button
         self.run_button = QPushButton('Calculate and Plot')
         self.run_button.clicked.connect(self._run_calculation)
-        grid.addWidget(self.run_button, row, 0, 1, 4)
+        grid.addWidget(self.run_button, row, 0, 1, 3)
+
+        plot_options_btn = QPushButton('Option')
+        plot_options_btn.clicked.connect(self._show_plot_options_dialog)
+        grid.addWidget(plot_options_btn, row, 3)
         row += 1
 
         # Status
@@ -1204,6 +1233,98 @@ class NModeSpectrumTab:
         except Exception as e:
             QMessageBox.critical(self.frame, "Error", f"Failed to save data: {str(e)}")
 
+    def _show_plot_options_dialog(self):
+        """Show Plot Options dialog for N-Mode spectrum"""
+        WIDGET_WIDTH = 150
+
+        dialog = QDialog(self.frame)
+        dialog.setWindowTitle("Plot Options")
+        dialog.setMinimumWidth(280)
+        dlg_layout = QVBoxLayout(dialog)
+
+        # Color mode
+        color_row = QHBoxLayout()
+        color_row.addWidget(QLabel("Color"))
+        color_combo = QComboBox()
+        color_combo.setFixedWidth(WIDGET_WIDTH)
+        color_combo.addItems([
+            "Default",
+            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
+            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
+        ])
+        color_combo.setCurrentText(self.color_mode)
+        color_row.addWidget(color_combo)
+        dlg_layout.addLayout(color_row)
+
+        # Label font size
+        label_row = QHBoxLayout()
+        label_row.addWidget(QLabel("Label font size"))
+        label_spin = QSpinBox()
+        label_spin.setFixedWidth(WIDGET_WIDTH)
+        label_spin.setRange(6, 24)
+        label_spin.setValue(self.label_fontsize)
+        label_row.addWidget(label_spin)
+        dlg_layout.addLayout(label_row)
+
+        # Legend font size
+        legend_row = QHBoxLayout()
+        legend_row.addWidget(QLabel("Legend font size"))
+        legend_spin = QSpinBox()
+        legend_spin.setFixedWidth(WIDGET_WIDTH)
+        legend_spin.setRange(4, 20)
+        legend_spin.setValue(self.legend_fontsize)
+        legend_row.addWidget(legend_spin)
+        dlg_layout.addLayout(legend_row)
+
+        # Tick font size
+        tick_row = QHBoxLayout()
+        tick_row.addWidget(QLabel("Tick font size"))
+        tick_spin = QSpinBox()
+        tick_spin.setFixedWidth(WIDGET_WIDTH)
+        tick_spin.setRange(6, 20)
+        tick_spin.setValue(self.tick_fontsize)
+        tick_row.addWidget(tick_spin)
+        dlg_layout.addLayout(tick_row)
+
+        # Default / OK / Cancel
+        btn_box = QDialogButtonBox(QDialogButtonBox.RestoreDefaults | QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(dialog.accept)
+        btn_box.rejected.connect(dialog.reject)
+
+        def reset_defaults():
+            color_combo.setCurrentText("Default")
+            label_spin.setValue(12)
+            legend_spin.setValue(8)
+            tick_spin.setValue(10)
+        btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
+        dlg_layout.addWidget(btn_box)
+
+        if dialog.exec() == QDialog.Accepted:
+            self.color_mode = color_combo.currentText()
+            self.label_fontsize = label_spin.value()
+            self.legend_fontsize = legend_spin.value()
+            self.tick_fontsize = tick_spin.value()
+            # Auto-replot if data exists
+            if self.fft_result is not None and self.mode_result is not None:
+                self._update_plot()
+
+    def _get_mode_colors(self, nmodes):
+        """Get colors for mode numbers using selected color mode"""
+        if self.color_mode == "Default":
+            # Use built-in n-mode color palette
+            return [get_mode_color(i + 1) for i in range(nmodes)]
+
+        from plotting.plot_manager import ColorManager
+        start = self.color_mode.find('(')
+        end = self.color_mode.find(')')
+        if start != -1 and end != -1:
+            cmap_name = self.color_mode[start + 1:end]
+        else:
+            cmap_name = 'tab10'
+        cm = ColorManager()
+        entries = list(range(nmodes))
+        return cm.get_colors_for_entries(entries, colormap=cmap_name)
+
     def _toggle_time_entries(self):
         """Enable/disable time entry fields based on checkbox state"""
         if self.use_full_shot_checkbox.isChecked():
@@ -1385,13 +1506,20 @@ class NModeSpectrumTab:
             if tmax > actual_tmax:
                 tmax = actual_tmax
 
+            mode_colors = self._get_mode_colors(nmodes)
+
             plot_mode_spectrum(self.ax1, self.fft_result, self.mode_result, self.freq_use,
                               self.amp_evolution, tmin, tmax, fmin, fmax, nmodes, msign,
-                              integrate, plot_type, numc)
+                              integrate, plot_type, numc, colors=mode_colors,
+                              legend_fontsize=self.legend_fontsize,
+                              label_fontsize=self.label_fontsize,
+                              tick_fontsize=self.tick_fontsize)
             plot_amplitude_evolution(self.ax2, self.fft_result, self.amp_evolution,
-                                    tmin, tmax, nmodes, msign)
+                                    tmin, tmax, nmodes, msign, colors=mode_colors,
+                                    legend_fontsize=self.legend_fontsize,
+                                    label_fontsize=self.label_fontsize,
+                                    tick_fontsize=self.tick_fontsize)
 
-            self.figure.tight_layout()
             self.canvas.draw()
         except Exception as e:
             QMessageBox.critical(self.frame, "Error", f"Plot failed: {str(e)}")
@@ -1413,7 +1541,11 @@ class NModeSpectrumTab:
             "integrate": self.integrate_checkbox.isChecked(),
             "detrend": self.detrend_checkbox.isChecked(),
             "plot_type": self._plot_type_value,
-            "contour_levels": self.contour_levels_entry.text()
+            "contour_levels": self.contour_levels_entry.text(),
+            "color_mode": self.color_mode,
+            "label_fontsize": self.label_fontsize,
+            "legend_fontsize": self.legend_fontsize,
+            "tick_fontsize": self.tick_fontsize,
         }
         set_tab_settings("nmode", settings)
 
@@ -1478,6 +1610,15 @@ class NModeSpectrumTab:
 
         if settings.get("contour_levels"):
             self.contour_levels_entry.setText(str(settings["contour_levels"]))
+
+        if settings.get("color_mode"):
+            self.color_mode = settings["color_mode"]
+        if settings.get("label_fontsize"):
+            self.label_fontsize = int(settings["label_fontsize"])
+        if settings.get("legend_fontsize"):
+            self.legend_fontsize = int(settings["legend_fontsize"])
+        if settings.get("tick_fontsize"):
+            self.tick_fontsize = int(settings["tick_fontsize"])
 
 
 class NModePythonHighlighter(QSyntaxHighlighter):

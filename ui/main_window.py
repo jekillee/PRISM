@@ -177,8 +177,9 @@ class PRISMApp(QMainWindow):
             # Tab selector mode
             self._child_windows = []
             self.setWindowTitle(f'PRISM v{VERSION} - Select Viewer')
-            self.resize(240, 380)
             self._create_selector_ui()
+            self.setFixedWidth(360)
+            self.adjustSize()
         else:
             # Full PRISM mode
             self.setWindowTitle(f'PRISM v{VERSION} - Plasma Research Integrated System for Multi-diagnostics')
@@ -276,12 +277,7 @@ class PRISMApp(QMainWindow):
         header_layout.addStretch()
         layout.addWidget(header)
 
-        subtitle = QLabel("Select a viewer to launch")
-        subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setStyleSheet("color: #888; font-size: 11px; margin-bottom: 2px;")
-        layout.addWidget(subtitle)
-
-        # Categorized buttons
+        # Categorized buttons (one row per category, equal-width buttons)
         for cat_name, items in _categorize_tabs(self.tab_configs):
             cat_label = QLabel(cat_name)
             cat_label.setStyleSheet(
@@ -290,6 +286,8 @@ class PRISMApp(QMainWindow):
             )
             layout.addWidget(cat_label)
 
+            btn_row = QHBoxLayout()
+            btn_row.setSpacing(4)
             for tab_index, tab_name in items:
                 btn = QPushButton(tab_name)
                 btn.setFixedHeight(26)
@@ -297,17 +295,24 @@ class PRISMApp(QMainWindow):
                 btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 btn.setCursor(Qt.PointingHandCursor)
                 btn.clicked.connect(partial(self._launch_single_tab, tab_index))
-                layout.addWidget(btn)
-
-        layout.addStretch()
-
-        # Developer info
-        dev_label = QLabel(f"{AUTHOR_NAME} ({CONTACT_EMAIL})")
-        dev_label.setAlignment(Qt.AlignCenter)
-        dev_label.setStyleSheet("color: #888; font-size: 9px;")
-        layout.addWidget(dev_label)
+                btn_row.addWidget(btn, 1)
+            layout.addLayout(btn_row)
 
         self.setCentralWidget(central)
+
+        # Register theme callback so selector follows full PRISM theme
+        def _on_selector_theme_changed(theme_name):
+            logo_file = 'prism-logo-dark.svg' if theme_name == 'dark' else 'prism-logo-light.svg'
+            logo_path = os.path.join(_ICON_DIR, logo_file)
+            pixmap = QPixmap(logo_path)
+            if not pixmap.isNull():
+                pixmap = pixmap.scaled(40, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self._selector_logo.setPixmap(pixmap)
+            icon_file = 'prism-logo-dark.svg' if theme_name == 'dark' else 'prism-logo-light.svg'
+            self.setWindowIcon(QIcon(os.path.join(_ICON_DIR, icon_file)))
+
+        self._on_selector_theme_changed = _on_selector_theme_changed
+        ThemeManager.on_theme_changed(_on_selector_theme_changed)
 
     def _launch_single_tab(self, tab_index):
         """Launch a single tab viewer in a new window (selector stays open)"""
@@ -390,15 +395,15 @@ class PRISMApp(QMainWindow):
 
         self.toolbar = None
 
-        # Right side: developer info + theme toggle + manual
+        # Right side: developer info + theme toggle + docs
         self.dev_label = QLabel(f"Developed by {AUTHOR_NAME} ({CONTACT_EMAIL})")
         self.dev_label.setStyleSheet("color: #888; font-size: 11px;")
         bottom_layout.addWidget(self.dev_label)
 
-        manual_button = QPushButton("View Manual")
-        manual_button.setFixedWidth(100)
-        manual_button.clicked.connect(self._show_manual)
-        bottom_layout.addWidget(manual_button)
+        docs_button = QPushButton("View Docs")
+        docs_button.setFixedWidth(100)
+        docs_button.clicked.connect(self._show_docs)
+        bottom_layout.addWidget(docs_button)
 
         parent_layout.addWidget(self.bottom_frame)
 
@@ -471,20 +476,20 @@ class PRISMApp(QMainWindow):
                 ThemeManager.apply_theme_to_figure(tab.canvas.figure)
                 tab.canvas.draw_idle()
 
-    def _show_manual(self):
-        """Open user manual PDF"""
+    def _show_docs(self):
+        """Open docs folder"""
         try:
-            if not os.path.exists(self.config.MANUAL_PATH):
+            if not os.path.exists(self.config.DOCS_PATH):
                 QMessageBox.information(
-                    self, "Manual Not Found",
-                    f"User manual not found.\n\nPlease contact {AUTHOR_NAME} ({CONTACT_EMAIL}) for the manual."
+                    self, "Docs Not Found",
+                    f"Docs folder not found.\n\nPlease contact {AUTHOR_NAME} ({CONTACT_EMAIL})."
                 )
                 return
 
-            subprocess.run(["xdg-open", self.config.MANUAL_PATH], check=True)
+            subprocess.run(["xdg-open", self.config.DOCS_PATH], check=True)
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error opening manual: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error opening docs: {str(e)}")
 
     def _print_startup_message(self):
         """Print startup message to console"""

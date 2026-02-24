@@ -8,11 +8,13 @@ from scipy.interpolate import interp1d
 from PySide6.QtWidgets import (
     QMessageBox, QLineEdit, QComboBox, QPushButton, QWidget,
     QHBoxLayout, QVBoxLayout, QGroupBox, QGridLayout, QLabel,
-    QFileDialog, QStyle, QRadioButton,
+    QFileDialog, QStyle, QRadioButton, QFrame,
+    QSpinBox, QDialog, QDialogButtonBox,
 )
 
 from ui.timetrace_base_tab import TimeTraceBaseTab
 from ui.ui_constants import get_icon
+from ui.theme import ThemeManager
 
 
 class MSETimeTraceTab(TimeTraceBaseTab):
@@ -101,7 +103,25 @@ class MSETimeTraceTab(TimeTraceBaseTab):
         plot_button.clicked.connect(self.plot_data)
         row1.addWidget(plot_button, 2)
 
+        style_btn = QPushButton("Option")
+        style_btn.clicked.connect(self._show_style_dialog)
+        row1.addWidget(style_btn, 1)
+
         group_layout.addLayout(row1)
+
+        # Hidden combo for color mode (used by _get_plot_colors, saved to settings)
+        self.color_mode_combo = QComboBox()
+        self.color_mode_combo.addItems([
+            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
+            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
+        ])
+        self.color_mode_combo.setCurrentText("Gradient(viridis)")
+        self.color_mode_combo.hide()
+
+        # Default font sizes
+        self.label_fontsize = 12
+        self.legend_fontsize = 8
+        self.tick_fontsize = 10
 
         parent.layout().addWidget(group)
 
@@ -177,7 +197,7 @@ class MSETimeTraceTab(TimeTraceBaseTab):
             return
 
         gamma_min, gamma_max, param_max, param_min = 0, 0, 0, 0
-        colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
+        colors = self._get_plot_colors(selected_entries)
 
         for i, entry in enumerate(selected_entries):
             try:
@@ -261,15 +281,16 @@ class MSETimeTraceTab(TimeTraceBaseTab):
                 print(f"[MSE] Error plotting {entry}: {str(e)}")
 
         # Set limits and styling
-        self.ax1.axhline(0, color='gray', linestyle='--', alpha=0.5)
+        zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
+        self.ax1.axhline(0, color=zc, linestyle='--', gid='zero_ref')
         if gamma_max > 0:
             gamma_margin = (gamma_max - gamma_min) * 0.1
             self.ax1.set_ylim(gamma_min - gamma_margin, gamma_max + gamma_margin)
 
         if param == 'q':
-            self.ax2.axhline(1, color='gray', linestyle='--', alpha=0.5)
+            self.ax2.axhline(1, color=zc, linestyle='--', gid='zero_ref')
         else:
-            self.ax2.axhline(0, color='gray', linestyle='--', alpha=0.5)
+            self.ax2.axhline(0, color=zc, linestyle='--', gid='zero_ref')
         self.ax2.set_ylim(0, 6)
 
         self._finalize_plot()

@@ -93,6 +93,7 @@ run_prism_dev.sh
 # Claude Code
 .claude/
 CLAUDE.md
+SKILL.md
 
 # Local settings
 settings.local.json

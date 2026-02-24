@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from ui.profile_base_tab import ProfileBaseTab
 from ui.ui_constants import get_icon
+from ui.theme import ThemeManager
 
 
 class TiVTProfileTab(ProfileBaseTab):
@@ -438,9 +439,14 @@ class TiVTProfileTab(ProfileBaseTab):
 
         vt_margin = (vt_max - vt_min) * 0.1
         self.ax2.set_ylim(vt_min - vt_margin, vt_max + vt_margin)
-        self.ax2.axhline(y=0, c='silver', ls='--')
+        zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
+        self.ax2.axhline(y=0, c=zc, ls='--', gid='zero_ref')
 
-        self.plot_manager.apply_common_styling(self.ax1, self.ax2)
+        self.plot_manager.apply_common_styling(
+            self.ax1, self.ax2,
+            legend_fontsize=self.legend_fontsize,
+            label_fontsize=self.label_fontsize,
+            tick_fontsize=self.tick_fontsize)
         self.canvas.draw()
 
         if self.toolbar:
@@ -613,13 +619,18 @@ class TiVTProfileTab(ProfileBaseTab):
         self.ax2.set_xlim(0, 1.05)
         self.ax1.set_ylim(0, ti_max * 1.1)
         self.ax2.set_ylim(-vt_max * 0.1, vt_max * 1.1)
-        self.ax2.axhline(y=0, c='silver', ls='--')
+        zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
+        self.ax2.axhline(y=0, c=zc, ls='--', gid='zero_ref')
 
         for ax in [self.ax1, self.ax2]:
             ax.axvline(x=0, c='k', ls='--')
             ax.axvline(x=1, c='k', ls='--')
 
-        self.plot_manager.apply_common_styling(self.ax1, self.ax2)
+        self.plot_manager.apply_common_styling(
+            self.ax1, self.ax2,
+            legend_fontsize=self.legend_fontsize,
+            label_fontsize=self.label_fontsize,
+            tick_fontsize=self.tick_fontsize)
         self.canvas.draw()
 
         if self.toolbar:

@@ -28,6 +28,9 @@ from ui.ui_constants import CONTROL_PANEL_WIDTH, get_icon
 class BaseTab(ABC):
     """Abstract base class for all diagnostic tabs"""
 
+    # Height of Select Data listboxes (available / selected)
+    LISTBOX_HEIGHT = 180
+
     # Mapping from diagnostic_name to settings key prefix
     _SETTINGS_KEY_MAP = {
         'CES': 'tivt',
@@ -65,12 +68,29 @@ class BaseTab(ABC):
         self._settings_key = f"{prefix}_{tab_type}"
 
     def _restore_shot_from_settings(self):
-        """Restore shot number from saved settings (called after create_widgets)"""
+        """Restore shot number and UI state from saved settings (called after create_widgets)"""
         from config.user_settings import get_tab_settings
         tab_settings = get_tab_settings(self._settings_key)
         saved_shot = tab_settings.get("shot", "")
         if saved_shot and hasattr(self, 'shot_entry'):
             self.shot_entry.setText(str(saved_shot))
+        # Restore color mode
+        if hasattr(self, 'color_mode_combo'):
+            saved_color = tab_settings.get("color_mode", "Fixed(tab10)")
+            idx = self.color_mode_combo.findText(saved_color)
+            if idx >= 0:
+                self.color_mode_combo.setCurrentIndex(idx)
+        # Restore show nodes checkbox
+        if hasattr(self, 'show_channel_checkbox'):
+            saved_show = tab_settings.get("show_nodes", False)
+            self.show_channel_checkbox.setChecked(saved_show)
+        # Restore font sizes
+        if hasattr(self, 'label_fontsize'):
+            self.label_fontsize = tab_settings.get("label_fontsize", 12)
+        if hasattr(self, 'legend_fontsize'):
+            self.legend_fontsize = tab_settings.get("legend_fontsize", 8)
+        if hasattr(self, 'tick_fontsize'):
+            self.tick_fontsize = tab_settings.get("tick_fontsize", 10)
 
     def save_settings(self):
         """Save current tab state to settings (called on app close)"""
@@ -78,6 +98,16 @@ class BaseTab(ABC):
         tab_settings = get_tab_settings(self._settings_key)
         if hasattr(self, 'shot_entry'):
             tab_settings["shot"] = self.shot_entry.text()
+        if hasattr(self, 'color_mode_combo'):
+            tab_settings["color_mode"] = self.color_mode_combo.currentText()
+        if hasattr(self, 'show_channel_checkbox'):
+            tab_settings["show_nodes"] = self.show_channel_checkbox.isChecked()
+        if hasattr(self, 'label_fontsize'):
+            tab_settings["label_fontsize"] = self.label_fontsize
+        if hasattr(self, 'legend_fontsize'):
+            tab_settings["legend_fontsize"] = self.legend_fontsize
+        if hasattr(self, 'tick_fontsize'):
+            tab_settings["tick_fontsize"] = self.tick_fontsize
         set_tab_settings(self._settings_key, tab_settings)
 
     @abstractmethod
@@ -116,6 +146,7 @@ class BaseTab(ABC):
 
         self.available_listbox = QListWidget()
         self.available_listbox.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.available_listbox.setFixedHeight(self.LISTBOX_HEIGHT)
         available_column.addWidget(self.available_listbox)
         content_layout.addLayout(available_column, stretch=1)
 
@@ -141,6 +172,7 @@ class BaseTab(ABC):
 
         self.selected_listbox = QListWidget()
         self.selected_listbox.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.selected_listbox.setFixedHeight(self.LISTBOX_HEIGHT)
         selected_column.addWidget(self.selected_listbox)
         content_layout.addLayout(selected_column, stretch=1)
 

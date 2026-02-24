@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QComboBox, QGroupBox,
     QCheckBox, QSlider, QSplitter, QMessageBox, QFileDialog,
     QApplication, QDialog, QTextEdit, QScrollBar, QStyle,
-    QScrollArea,
+    QScrollArea, QSpinBox, QDialogButtonBox, QFrame,
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QColor, QTextCharFormat, QSyntaxHighlighter
@@ -174,6 +174,21 @@ class IRVBTab:
         # Slider value tracking
         self._slider_value = 0
 
+        # Plot Options settings - Time Trace
+        self.trace_color_mode = "Fixed(tab10)"
+        self.trace_label_fontsize = 12
+        self.trace_legend_fontsize = 8
+        self.trace_tick_fontsize = 10
+
+        # Plot Options settings - 2D Plot
+        self.plot2d_colormap = "viridis"
+        self.plot2d_lcfs_color = "black"
+        self.plot2d_maxis_color = "black"
+        self.plot2d_limiter_color = "white"
+        self.plot2d_flux_color = "gray"
+        self.plot2d_label_fontsize = 12
+        self.plot2d_tick_fontsize = 10
+
     def create_widgets(self):
         """Create IRVB tab widgets"""
         main_layout = QHBoxLayout(self.frame)
@@ -317,9 +332,18 @@ class IRVBTab:
         group = QGroupBox("3. Plot")
         layout = QVBoxLayout(group)
 
+        # Plot + Option buttons in same row
+        plot_row = QHBoxLayout()
+
         plot_btn = QPushButton('Plot')
         plot_btn.clicked.connect(self._plot_data)
-        layout.addWidget(plot_btn)
+        plot_row.addWidget(plot_btn, 3)
+
+        style_btn = QPushButton("Option")
+        style_btn.clicked.connect(self._show_plot_options_dialog)
+        plot_row.addWidget(style_btn, 1)
+
+        layout.addLayout(plot_row)
 
         parent_layout.addWidget(group)
 
@@ -460,6 +484,211 @@ class IRVBTab:
         layout.addLayout(btn_layout)
 
         parent_layout.addWidget(group)
+
+    def _show_plot_options_dialog(self):
+        """Show Plot Options dialog with Time Trace and 2D Plot sections"""
+        WIDGET_WIDTH = 150
+
+        dialog = QDialog(self.frame)
+        dialog.setWindowTitle("Plot Options")
+        dialog.setMinimumWidth(320)
+        dlg_layout = QVBoxLayout(dialog)
+
+        # === Time Trace Section ===
+        trace_group = QGroupBox("Time Trace")
+        trace_layout = QVBoxLayout(trace_group)
+
+        # Color mode
+        color_row = QHBoxLayout()
+        color_row.addWidget(QLabel("Color"))
+        trace_color_combo = QComboBox()
+        trace_color_combo.setFixedWidth(WIDGET_WIDTH)
+        trace_color_combo.addItems([
+            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
+            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
+        ])
+        trace_color_combo.setCurrentText(self.trace_color_mode)
+        color_row.addWidget(trace_color_combo)
+        trace_layout.addLayout(color_row)
+
+        # Label font size
+        label_row = QHBoxLayout()
+        label_row.addWidget(QLabel("Label font size"))
+        trace_label_spin = QSpinBox()
+        trace_label_spin.setFixedWidth(WIDGET_WIDTH)
+        trace_label_spin.setRange(6, 24)
+        trace_label_spin.setValue(self.trace_label_fontsize)
+        label_row.addWidget(trace_label_spin)
+        trace_layout.addLayout(label_row)
+
+        # Legend font size
+        legend_row = QHBoxLayout()
+        legend_row.addWidget(QLabel("Legend font size"))
+        trace_legend_spin = QSpinBox()
+        trace_legend_spin.setFixedWidth(WIDGET_WIDTH)
+        trace_legend_spin.setRange(4, 20)
+        trace_legend_spin.setValue(self.trace_legend_fontsize)
+        legend_row.addWidget(trace_legend_spin)
+        trace_layout.addLayout(legend_row)
+
+        # Tick font size
+        tick_row = QHBoxLayout()
+        tick_row.addWidget(QLabel("Tick font size"))
+        trace_tick_spin = QSpinBox()
+        trace_tick_spin.setFixedWidth(WIDGET_WIDTH)
+        trace_tick_spin.setRange(6, 20)
+        trace_tick_spin.setValue(self.trace_tick_fontsize)
+        tick_row.addWidget(trace_tick_spin)
+        trace_layout.addLayout(tick_row)
+
+        dlg_layout.addWidget(trace_group)
+
+        # === 2D Plot Section ===
+        plot2d_group = QGroupBox("2D Plot")
+        plot2d_layout = QVBoxLayout(plot2d_group)
+
+        # Colorbar
+        cbar_row = QHBoxLayout()
+        cbar_row.addWidget(QLabel("Colorbar"))
+        plot2d_cmap_combo = QComboBox()
+        plot2d_cmap_combo.setFixedWidth(WIDGET_WIDTH)
+        plot2d_cmap_combo.addItems([
+            "viridis", "hot", "jet", "coolwarm", "inferno", "plasma", "magma", "cividis"
+        ])
+        plot2d_cmap_combo.setCurrentText(self.plot2d_colormap)
+        cbar_row.addWidget(plot2d_cmap_combo)
+        plot2d_layout.addLayout(cbar_row)
+
+        # LCFS color
+        lcfs_row = QHBoxLayout()
+        lcfs_row.addWidget(QLabel("LCFS color"))
+        lcfs_combo = QComboBox()
+        lcfs_combo.setFixedWidth(WIDGET_WIDTH)
+        lcfs_combo.addItems(["black", "white", "red", "blue", "green", "yellow", "cyan", "magenta"])
+        lcfs_combo.setCurrentText(self.plot2d_lcfs_color)
+        lcfs_row.addWidget(lcfs_combo)
+        plot2d_layout.addLayout(lcfs_row)
+
+        # Magnetic axis color
+        maxis_row = QHBoxLayout()
+        maxis_row.addWidget(QLabel("Mag. axis color"))
+        maxis_combo = QComboBox()
+        maxis_combo.setFixedWidth(WIDGET_WIDTH)
+        maxis_combo.addItems(["black", "white", "red", "blue", "green", "yellow", "cyan", "magenta"])
+        maxis_combo.setCurrentText(self.plot2d_maxis_color)
+        maxis_row.addWidget(maxis_combo)
+        plot2d_layout.addLayout(maxis_row)
+
+        # Limiter color
+        limiter_row = QHBoxLayout()
+        limiter_row.addWidget(QLabel("Limiter color"))
+        limiter_combo = QComboBox()
+        limiter_combo.setFixedWidth(WIDGET_WIDTH)
+        limiter_combo.addItems(["white", "black", "red", "blue", "green", "yellow", "cyan", "magenta", "gray"])
+        limiter_combo.setCurrentText(self.plot2d_limiter_color)
+        limiter_row.addWidget(limiter_combo)
+        plot2d_layout.addLayout(limiter_row)
+
+        # Flux contour color
+        flux_row = QHBoxLayout()
+        flux_row.addWidget(QLabel("Flux contour color"))
+        flux_combo = QComboBox()
+        flux_combo.setFixedWidth(WIDGET_WIDTH)
+        flux_combo.addItems(["gray", "white", "black", "silver", "lightblue", "lightgreen"])
+        flux_combo.setCurrentText(self.plot2d_flux_color)
+        flux_row.addWidget(flux_combo)
+        plot2d_layout.addLayout(flux_row)
+
+        # Label font size
+        p2d_label_row = QHBoxLayout()
+        p2d_label_row.addWidget(QLabel("Label font size"))
+        plot2d_label_spin = QSpinBox()
+        plot2d_label_spin.setFixedWidth(WIDGET_WIDTH)
+        plot2d_label_spin.setRange(6, 24)
+        plot2d_label_spin.setValue(self.plot2d_label_fontsize)
+        p2d_label_row.addWidget(plot2d_label_spin)
+        plot2d_layout.addLayout(p2d_label_row)
+
+        # Tick font size
+        p2d_tick_row = QHBoxLayout()
+        p2d_tick_row.addWidget(QLabel("Tick font size"))
+        plot2d_tick_spin = QSpinBox()
+        plot2d_tick_spin.setFixedWidth(WIDGET_WIDTH)
+        plot2d_tick_spin.setRange(6, 20)
+        plot2d_tick_spin.setValue(self.plot2d_tick_fontsize)
+        p2d_tick_row.addWidget(plot2d_tick_spin)
+        plot2d_layout.addLayout(p2d_tick_row)
+
+        dlg_layout.addWidget(plot2d_group)
+
+        # Default / OK / Cancel
+        btn_box = QDialogButtonBox(QDialogButtonBox.RestoreDefaults | QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(dialog.accept)
+        btn_box.rejected.connect(dialog.reject)
+
+        def reset_defaults():
+            trace_color_combo.setCurrentText("Fixed(tab10)")
+            trace_label_spin.setValue(12)
+            trace_legend_spin.setValue(8)
+            trace_tick_spin.setValue(10)
+            plot2d_cmap_combo.setCurrentText("viridis")
+            lcfs_combo.setCurrentText("black")
+            maxis_combo.setCurrentText("black")
+            limiter_combo.setCurrentText("white")
+            flux_combo.setCurrentText("gray")
+            plot2d_label_spin.setValue(12)
+            plot2d_tick_spin.setValue(10)
+        btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
+        dlg_layout.addWidget(btn_box)
+
+        if dialog.exec() == QDialog.Accepted:
+            self.trace_color_mode = trace_color_combo.currentText()
+            self.trace_label_fontsize = trace_label_spin.value()
+            self.trace_legend_fontsize = trace_legend_spin.value()
+            self.trace_tick_fontsize = trace_tick_spin.value()
+            self.plot2d_colormap = plot2d_cmap_combo.currentText()
+            self.plot2d_lcfs_color = lcfs_combo.currentText()
+            self.plot2d_maxis_color = maxis_combo.currentText()
+            self.plot2d_limiter_color = limiter_combo.currentText()
+            self.plot2d_flux_color = flux_combo.currentText()
+            self.plot2d_label_fontsize = plot2d_label_spin.value()
+            self.plot2d_tick_fontsize = plot2d_tick_spin.value()
+            # Auto-replot if data exists
+            if self.region_prad is not None:
+                self._setup_figure()
+                self._update_plot(self.current_frame)
+
+    @staticmethod
+    def _parse_color_mode(text):
+        """Extract colormap name from dropdown text like 'Fixed(tab10)' → 'tab10'"""
+        start = text.find('(')
+        end = text.find(')')
+        if start != -1 and end != -1:
+            return text[start + 1:end]
+        return 'tab10'
+
+    def _get_trace_colors(self, n_regions):
+        """Get colors for time trace regions based on color mode setting"""
+        cmap_name = self._parse_color_mode(self.trace_color_mode)
+        is_gradient = self.trace_color_mode.startswith("Gradient")
+
+        try:
+            cmap = plt.cm.get_cmap(cmap_name)
+        except ValueError:
+            cmap = plt.cm.get_cmap('tab10')
+            is_gradient = False
+
+        colors = []
+        for i in range(n_regions):
+            if is_gradient:
+                colors.append(cmap(i / max(1, n_regions - 1)))
+            else:
+                if hasattr(cmap, 'N'):
+                    colors.append(cmap(i % cmap.N))
+                else:
+                    colors.append(cmap(i / 10))
+
+        return colors
 
     def _show_example_script(self):
         """Show example script for loading NPZ file with syntax highlighting"""
@@ -963,6 +1192,9 @@ class IRVBTab:
         n_regions = len(self.psi_boundaries) + 1
         boundaries = [0] + self.psi_boundaries + [np.inf]
 
+        # Get colors from Plot Options
+        self._trace_colors = self._get_trace_colors(n_regions)
+
         self.time_vlines = []
 
         for i, ax in enumerate(self.ax_traces):
@@ -971,7 +1203,8 @@ class IRVBTab:
             # Title on first axis with shot number and EFIT tree
             if i == 0:
                 efit_display = self.efit_tree_combo.currentText()
-                ax.set_title(f'#{self.shot_number} ({efit_display})')
+                ax.set_title(f'#{self.shot_number} ({efit_display})',
+                            fontsize=self.trace_label_fontsize)
 
             # Region label
             psi_min = boundaries[i]
@@ -982,22 +1215,18 @@ class IRVBTab:
             else:
                 label = f'{psi_min} < $\\psi_N$ < {psi_max}'
 
-            # Last region (SOL) uses gray color, others use REGION_COLORS
-            if i == n_regions - 1:
-                color = 'gray'
-            else:
-                color = self.REGION_COLORS[i % len(self.REGION_COLORS)]
+            color = self._trace_colors[i]
 
             ax.plot(time, self.region_prad[i], color=color, linewidth=2)
 
             # Text annotation instead of legend (no line, text only)
             ax.text(0.02, 0.95, label, transform=ax.transAxes,
-                   fontsize=9, verticalalignment='top',
+                   fontsize=self.trace_legend_fontsize, verticalalignment='top',
                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.5,
                              edgecolor='gray', linewidth=0.5))
 
             # ylabel without psi range, fixed position
-            ax.set_ylabel(r'$P_{rad}$ [MW]')
+            ax.set_ylabel(r'$P_{rad}$ [MW]', fontsize=self.trace_label_fontsize)
             ax.yaxis.set_label_coords(-0.08, 0.5)
 
             # Set ylim with bottom=0
@@ -1008,12 +1237,14 @@ class IRVBTab:
 
             # Only show x-label on bottom plot
             if i == n_regions - 1:
-                ax.set_xlabel('Time [s]')
+                ax.set_xlabel('Time [s]', fontsize=self.trace_label_fontsize)
             else:
                 plt.setp(ax.get_xticklabels(), visible=False)
 
             ax.set_xlim(0, self.efit_2d.time[-1])
-            ax.grid(ls='--', lw=0.3, c='lightgray')
+            import matplotlib as mpl
+            ax.grid(ls='--', lw=0.3, c=mpl.rcParams.get('grid.color', '#444444'))
+            ax.tick_params(labelsize=self.trace_tick_fontsize)
 
             # Vertical line for current time
             vline = ax.axvline(time[self.current_frame], color='k',
@@ -1046,6 +1277,7 @@ class IRVBTab:
                                              levels=levels,
                                              vmin=self.PRAD_VMIN,
                                              vmax=self.PRAD_VMAX,
+                                             cmap=self.plot2d_colormap,
                                              extend='max')
 
             # Colorbar
@@ -1054,13 +1286,15 @@ class IRVBTab:
                 ticks=np.linspace(self.PRAD_VMIN, self.PRAD_VMAX, 5),
                 shrink=0.8
             )
-            self.colorbar.set_label(r'$P_{rad}$ [MW/m$^{3}$]')
+            self.colorbar.set_label(r'$P_{rad}$ [MW/m$^{3}$]',
+                                    fontsize=self.plot2d_label_fontsize)
 
-            self.ax_2d.set_xlabel('R [m]')
-            self.ax_2d.set_ylabel('Z [m]')
+            self.ax_2d.set_xlabel('R [m]', fontsize=self.plot2d_label_fontsize)
+            self.ax_2d.set_ylabel('Z [m]', fontsize=self.plot2d_label_fontsize)
             self.ax_2d.set_xlim(x_grid[0], x_grid[-1])
             self.ax_2d.set_ylim(y_grid[0], y_grid[-1])
             self.ax_2d.set_aspect('equal')
+            self.ax_2d.tick_params(labelsize=self.plot2d_tick_fontsize)
         else:
             # Update contourf
             for coll in self.im_2d.collections:
@@ -1070,6 +1304,7 @@ class IRVBTab:
                                              levels=levels,
                                              vmin=self.PRAD_VMIN,
                                              vmax=self.PRAD_VMAX,
+                                             cmap=self.plot2d_colormap,
                                              extend='max')
 
         # Remove old contours
@@ -1081,21 +1316,27 @@ class IRVBTab:
                 coll.remove()
         self.contour_psi_bounds = []
 
-        # Background psi contours (9 levels, light gray)
+        # Background psi contours (9 levels)
         self.contour_psi_bg = self.ax_2d.contour(
             self.efit_2d.r_grid, self.efit_2d.z_grid, psi_n,
-            levels=self.PSI_BG_LEVELS, colors='gray',
+            levels=self.PSI_BG_LEVELS, colors=self.plot2d_flux_color,
             linewidths=0.5, linestyles='-', alpha=0.5, zorder=2
         )
 
         # Update plasma boundary (draw before psi bounds so bounds appear on top)
         if self.contour_bdry is not None:
             self.contour_bdry[0].remove()
-        self.contour_bdry = self.ax_2d.plot(bdry_r, bdry_z, 'k-', linewidth=2, zorder=3)
+        self.contour_bdry = self.ax_2d.plot(bdry_r, bdry_z, '-',
+                                            color=self.plot2d_lcfs_color,
+                                            linewidth=2, zorder=3)
 
         # Psi boundary contours with matching colors (drawn on top of bdry)
+        trace_colors = getattr(self, '_trace_colors', None)
         for idx, psi_level in enumerate(self.psi_boundaries):
-            color = self.REGION_COLORS[idx % len(self.REGION_COLORS)]
+            if trace_colors and idx < len(trace_colors):
+                color = trace_colors[idx]
+            else:
+                color = self.REGION_COLORS[idx % len(self.REGION_COLORS)]
             contour = self.ax_2d.contour(
                 self.efit_2d.r_grid, self.efit_2d.z_grid, psi_n,
                 levels=[psi_level], colors=[color],
@@ -1109,18 +1350,20 @@ class IRVBTab:
         if self.efit_2d.limiter_r is not None:
             self.limiter_line = self.ax_2d.plot(
                 self.efit_2d.limiter_r, self.efit_2d.limiter_z,
-                'w-', linewidth=1.5
+                '-', color=self.plot2d_limiter_color, linewidth=1.5
             )
 
         # Update magnetic axis marker
         if self.maxis_marker is not None:
             self.maxis_marker[0].remove()
         if maxis_r is not None:
-            self.maxis_marker = self.ax_2d.plot(maxis_r, maxis_z, 'kx',
+            self.maxis_marker = self.ax_2d.plot(maxis_r, maxis_z, 'x',
+                                                 color=self.plot2d_maxis_color,
                                                  markersize=10, markeredgewidth=2)
 
         # Update title
-        self.ax_2d.set_title(f'#{self.shot_number} t = {time:.3f} s')
+        self.ax_2d.set_title(f'#{self.shot_number} t = {time:.3f} s',
+                            fontsize=self.plot2d_label_fontsize)
 
         # Update time markers on traces
         for vline in self.time_vlines:
@@ -1332,7 +1575,20 @@ class IRVBTab:
         settings = {
             "shot": self.shot_entry.text(),
             "efit_tree": self.efit_tree_combo.currentText(),
-            "psi_bounds": self.psi_entry.text()
+            "psi_bounds": self.psi_entry.text(),
+            # Plot Options - Time Trace
+            "trace_color_mode": self.trace_color_mode,
+            "trace_label_fontsize": self.trace_label_fontsize,
+            "trace_legend_fontsize": self.trace_legend_fontsize,
+            "trace_tick_fontsize": self.trace_tick_fontsize,
+            # Plot Options - 2D Plot
+            "plot2d_colormap": self.plot2d_colormap,
+            "plot2d_lcfs_color": self.plot2d_lcfs_color,
+            "plot2d_maxis_color": self.plot2d_maxis_color,
+            "plot2d_limiter_color": self.plot2d_limiter_color,
+            "plot2d_flux_color": self.plot2d_flux_color,
+            "plot2d_label_fontsize": self.plot2d_label_fontsize,
+            "plot2d_tick_fontsize": self.plot2d_tick_fontsize,
         }
         set_tab_settings("irvb", settings)
 
@@ -1348,3 +1604,18 @@ class IRVBTab:
 
         if settings.get("psi_bounds"):
             self.psi_entry.setText(settings["psi_bounds"])
+
+        # Plot Options - Time Trace
+        self.trace_color_mode = settings.get("trace_color_mode", "Fixed(tab10)")
+        self.trace_label_fontsize = settings.get("trace_label_fontsize", 12)
+        self.trace_legend_fontsize = settings.get("trace_legend_fontsize", 8)
+        self.trace_tick_fontsize = settings.get("trace_tick_fontsize", 10)
+
+        # Plot Options - 2D Plot
+        self.plot2d_colormap = settings.get("plot2d_colormap", "viridis")
+        self.plot2d_lcfs_color = settings.get("plot2d_lcfs_color", "black")
+        self.plot2d_maxis_color = settings.get("plot2d_maxis_color", "black")
+        self.plot2d_limiter_color = settings.get("plot2d_limiter_color", "white")
+        self.plot2d_flux_color = settings.get("plot2d_flux_color", "gray")
+        self.plot2d_label_fontsize = settings.get("plot2d_label_fontsize", 12)
+        self.plot2d_tick_fontsize = settings.get("plot2d_tick_fontsize", 10)

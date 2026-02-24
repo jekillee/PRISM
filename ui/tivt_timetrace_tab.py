@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 from ui.timetrace_base_tab import TimeTraceBaseTab
 from ui.ui_constants import get_icon
+from ui.theme import ThemeManager
 
 
 class TiVTTimeTraceTab(TimeTraceBaseTab):
@@ -38,7 +39,6 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
         grid.addWidget(QLabel('Shot'), 0, 0)
 
         self.shot_entry = QLineEdit()
-        self.shot_entry.setMinimumWidth(65)
         grid.addWidget(self.shot_entry, 0, 1)
         self.shot_entry.returnPressed.connect(self.load_shot_data)
 
@@ -289,7 +289,7 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
             return
 
         ti_max, vt_max, vt_min = 0, 0, 0
-        colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
+        colors = self._get_plot_colors(selected_entries)
 
         for i, entry in enumerate(selected_entries):
             try:
@@ -392,7 +392,8 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
 
         vt_margin = (vt_max - vt_min) * 0.1
         self.ax2.set_ylim(vt_min - vt_margin, vt_max + vt_margin)
-        self.ax2.axhline(y=0, c='silver', ls='--')
+        zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
+        self.ax2.axhline(y=0, c=zc, ls='--', gid='zero_ref')
 
         self._finalize_plot()
 

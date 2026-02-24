@@ -23,7 +23,7 @@ from PySide6.QtCore import Qt
 
 from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_icon
 from ui.tv_utils import (
-    TV_FPS, get_tv_startup_zip_path, find_available_tvs, frame_to_time_ms
+    TV_FPS, TV_OFFSET, get_tv_startup_zip_path, find_available_tvs, frame_to_time
 )
 from config.user_settings import get_tab_settings, set_tab_settings
 
@@ -47,9 +47,8 @@ class TVStartupTab:
         self.frame = QWidget()
         self.toolbar = None
 
-        # Shot list storage (shot numbers only, images generated on Plot)
-        self.shot_list = []  # List of shot numbers
-        self.current_tv = None  # TV type locked when first shot added
+        # Shot list storage: list of (shot_number, tv_name) tuples
+        self.shot_list = []
         self.last_canvas = None  # Combined stacked canvas
         self.available_tvs = []  # Available TVs for current shot
 
@@ -171,7 +170,7 @@ class TVStartupTab:
 
     def _create_display_controls(self, parent_layout):
         """Create display options section with shot list and action buttons"""
-        group = QGroupBox("2. Added Shots")
+        group = QGroupBox("2. Shot List")
         h_layout = QHBoxLayout(group)
 
         # Left: Shots list (QListWidget) showing shot + TV type
@@ -214,24 +213,86 @@ class TVStartupTab:
         range_layout = QHBoxLayout()
 
         self.frame_start_entry = QLineEdit('1')
-        self.frame_start_entry.setFixedWidth(50)
+        self.frame_start_entry.setFixedWidth(100)
+        self.frame_start_entry.editingFinished.connect(self._sync_time_from_frame)
         range_layout.addWidget(self.frame_start_entry)
 
         range_layout.addWidget(QLabel('~'))
 
         self.frame_end_entry = QLineEdit('24')
-        self.frame_end_entry.setFixedWidth(50)
+        self.frame_end_entry.setFixedWidth(100)
+        self.frame_end_entry.editingFinished.connect(self._sync_time_from_frame)
         range_layout.addWidget(self.frame_end_entry)
         range_layout.addStretch()
 
         grid.addLayout(range_layout, 0, 1)
 
+        # Time range (synced with frame range)
+        grid.addWidget(QLabel('Time Range [ms]'), 1, 0)
+
+        time_range_layout = QHBoxLayout()
+
+        self.time_start_entry = QLineEdit()
+        self.time_start_entry.setFixedWidth(100)
+        self.time_start_entry.editingFinished.connect(self._sync_frame_from_time)
+        time_range_layout.addWidget(self.time_start_entry)
+
+        time_range_layout.addWidget(QLabel('~'))
+
+        self.time_end_entry = QLineEdit()
+        self.time_end_entry.setFixedWidth(100)
+        self.time_end_entry.editingFinished.connect(self._sync_frame_from_time)
+        time_range_layout.addWidget(self.time_end_entry)
+
+        time_range_layout.addStretch()
+
+        grid.addLayout(time_range_layout, 1, 1)
+
+        # Initialize time values from default frame values
+        self._sync_time_from_frame()
+
         # Plot button
         plot_btn = QPushButton('Plot')
         plot_btn.clicked.connect(self._plot)
-        grid.addWidget(plot_btn, 1, 0, 1, 2)
+        grid.addWidget(plot_btn, 2, 0, 1, 2)
 
         parent_layout.addWidget(group)
+
+    def _sync_time_from_frame(self):
+        """Update time range entries from current frame range values"""
+        try:
+            frame_start = int(self.frame_start_entry.text().strip())
+            frame_idx_start = frame_start - 1  # 0-based
+            time_start_ms = frame_to_time(frame_idx_start) * 1000
+            self.time_start_entry.setText(f'{time_start_ms:.1f}')
+        except (ValueError, AttributeError):
+            pass
+
+        try:
+            frame_end = int(self.frame_end_entry.text().strip())
+            frame_idx_end = frame_end - 1  # 0-based
+            time_end_ms = frame_to_time(frame_idx_end) * 1000
+            self.time_end_entry.setText(f'{time_end_ms:.1f}')
+        except (ValueError, AttributeError):
+            pass
+
+    def _sync_frame_from_time(self):
+        """Update frame range entries from current time range values"""
+        try:
+            time_start_ms = float(self.time_start_entry.text().strip())
+            time_start_sec = time_start_ms / 1000
+            frame_num_start = max(1, round((time_start_sec + TV_OFFSET) * TV_FPS))
+            self.frame_start_entry.setText(str(frame_num_start))
+        except (ValueError, AttributeError):
+            pass
+
+        try:
+            time_end_ms = float(self.time_end_entry.text().strip())
+            time_end_sec = time_end_ms / 1000
+            frame_num_end = max(1, round((time_end_sec + TV_OFFSET) * TV_FPS))
+            self.frame_end_entry.setText(str(frame_num_end))
+        except (ValueError, AttributeError):
+            pass
 
     def _create_display(self, splitter):
         """Create matplotlib display area (no scroll)"""
@@ -298,59 +359,22 @@ class TVStartupTab:
         # Use tv_utils to find available TVs
         self.available_tvs = find_available_tvs(shot, startup=True)
 
-        # Get current TV selection
-        selected_tv = 'TV01' if self.tv01_radio.isChecked() else 'TV02'
+        # Enable radio buttons based on availability (no TV type lock)
+        self.tv01_radio.setEnabled('TV01' in self.available_tvs)
+        self.tv02_radio.setEnabled('TV02' in self.available_tvs)
 
-        # Update radio buttons based on availability and lock status
-        if self.current_tv is not None:
-            # TV type is locked - only enable if matches locked type and available
-            if 'TV01' in self.available_tvs and self.current_tv == 'TV01':
-                self.tv01_radio.setEnabled(True)
+        # Auto-select first available if current selection is disabled
+        selected_tv = 'TV01' if self.tv01_radio.isChecked() else 'TV02'
+        if self.available_tvs and selected_tv not in self.available_tvs:
+            if self.available_tvs[0] == 'TV01':
                 self.tv01_radio.setChecked(True)
             else:
-                self.tv01_radio.setEnabled(False)
-
-            if 'TV02' in self.available_tvs and self.current_tv == 'TV02':
-                self.tv02_radio.setEnabled(True)
                 self.tv02_radio.setChecked(True)
-            else:
-                self.tv02_radio.setEnabled(False)
-        else:
-            # No lock - enable based on availability
-            if 'TV01' in self.available_tvs:
-                self.tv01_radio.setEnabled(True)
-            else:
-                self.tv01_radio.setEnabled(False)
 
-            if 'TV02' in self.available_tvs:
-                self.tv02_radio.setEnabled(True)
-            else:
-                self.tv02_radio.setEnabled(False)
-
-            # Auto-select first available
-            if self.available_tvs:
-                if self.available_tvs[0] == 'TV01':
-                    self.tv01_radio.setChecked(True)
-                else:
-                    self.tv02_radio.setChecked(True)
-
-        # Re-read selected TV after updating radio states
+        # Enable Add button if selected TV is available
         selected_tv = 'TV01' if self.tv01_radio.isChecked() else 'TV02'
-
-        # Enable/disable Add button
-        if self.available_tvs:
-            # Check if selected TV is available (considering lock)
-            if self.current_tv is not None:
-                if selected_tv == self.current_tv and selected_tv in self.available_tvs:
-                    self.add_btn.setEnabled(True)
-                else:
-                    self.add_btn.setEnabled(False)
-            else:
-                if selected_tv in self.available_tvs:
-                    self.add_btn.setEnabled(True)
-                else:
-                    self.add_btn.setEnabled(False)
-
+        if self.available_tvs and selected_tv in self.available_tvs:
+            self.add_btn.setEnabled(True)
             self._set_status(f"Found: {', '.join(self.available_tvs)} for #{shot}", 'green')
             print(f"[TV Startup] Found {self.available_tvs} for shot #{shot}")
         else:
@@ -359,7 +383,11 @@ class TVStartupTab:
             print(f"[TV Startup] No TV startup data for shot #{shot}")
 
     def _add_time_label(self, canvas, frame_start, frame_end):
-        """Add time labels to the top of canvas"""
+        """Add time labels to the top of canvas
+
+        Uses frame_to_time (same as TV tab) for consistent time display.
+        Frame 1 = first frame in ZIP (frame_idx=0).
+        """
         h, w, _ = canvas.shape
         ncol = frame_end - frame_start + 1
 
@@ -374,41 +402,60 @@ class TVStartupTab:
         # Add label every 4 frames
         for i in range(0, ncol, 4):
             frame_num = frame_start + i
-            time_ms = frame_to_time_ms(frame_num)
+            # frame_num is 1-based UI frame, frame_idx is 0-based
+            frame_idx = frame_num - 1
+            time_sec = frame_to_time(frame_idx)
+            time_ms = time_sec * 1000
             text = f'{time_ms:3.0f} ms'
             draw.text((i * self.FRAME_WIDTH + 10, 30), text, fill=(255, 255, 255), font=font)
 
         return np.asarray(img, dtype=np.float32) / 255.0
 
-    def _add_shot_label(self, canvas, shot):
-        """Add shot number label to left side of canvas"""
+    def _add_shot_label(self, canvas, shot, tv_name):
+        """Add shot number and TV name label to left side of canvas"""
         h, w, _ = canvas.shape
 
         img = Image.new('RGB', (self.LABEL_WIDTH, h), (0, 0, 0))
         draw = ImageDraw.Draw(img)
 
         text_shot = str(shot)
+        text_tv = tv_name
 
         try:
-            font_shot = ImageFont.truetype("DejaVuSans.ttf", size=max(16, h // 10))
+            font_shot = ImageFont.truetype("DejaVuSans.ttf", size=max(16, h // 12))
+            font_tv = ImageFont.truetype("DejaVuSans.ttf", size=max(12, h // 16))
         except Exception:
             font_shot = ImageFont.load_default()
+            font_tv = font_shot
 
-        # Shot number position
+        # Measure text sizes
         bbox_shot = draw.textbbox((0, 0), text_shot, font=font_shot)
         tw_shot = bbox_shot[2] - bbox_shot[0]
         th_shot = bbox_shot[3] - bbox_shot[1]
 
-        x_shot = (self.LABEL_WIDTH - tw_shot) // 2
-        y_shot = (h - th_shot) // 2
+        bbox_tv = draw.textbbox((0, 0), text_tv, font=font_tv)
+        tw_tv = bbox_tv[2] - bbox_tv[0]
+        th_tv = bbox_tv[3] - bbox_tv[1]
 
-        draw.text((x_shot, y_shot), text_shot, fill=(255, 255, 255), font=font_shot)
+        spacing = 4
+        total_h = th_shot + spacing + th_tv
+
+        # Center both lines vertically
+        y_start = (h - total_h) // 2
+        x_shot = (self.LABEL_WIDTH - tw_shot) // 2
+        x_tv = (self.LABEL_WIDTH - tw_tv) // 2
+
+        draw.text((x_shot, y_start), text_shot, fill=(255, 255, 255), font=font_shot)
+        draw.text((x_tv, y_start + th_shot + spacing), text_tv, fill=(180, 180, 180), font=font_tv)
 
         label_arr = np.asarray(img, dtype=np.float32) / 255.0
         return np.concatenate([label_arr, canvas], axis=1)
 
     def _load_startup_images(self, shot, tv_name, frame_start, frame_end):
-        """Load startup images from ZIP file for specified frame range"""
+        """Load startup images from ZIP file for specified frame range
+
+        Frame numbering matches TV tab: frame 1 = first BMP in ZIP (index 0).
+        """
         ncol = frame_end - frame_start + 1
         canvas = np.zeros((self.FRAME_HEIGHT, self.FRAME_WIDTH * ncol, 3), dtype=float)
 
@@ -418,14 +465,10 @@ class TVStartupTab:
 
         print(f"[TV Startup] Loading {zip_name} (frames {frame_start}-{frame_end})")
 
-        # Calculate BMP index from frame number
-        # Original: index0 = int((time_i * 1000 + 100) * TV_FPS / 1000)
-        # For frame 1 at time 0ms: index = (0 + 100) * 210 / 1000 = 21
-        base_index = 21  # Frame 1 corresponds to index 21
-
         with zipfile.ZipFile(zip_name, 'r') as zf:
             for i, frame_num in enumerate(range(frame_start, frame_end + 1)):
-                bmp_index = base_index + (frame_num - 1)
+                # Frame 1 = BMP index 0 (first frame in ZIP)
+                bmp_index = frame_num - 1
                 bmp_name = f"{shot:06d}-{bmp_index:05d}.bmp"
 
                 try:
@@ -447,7 +490,7 @@ class TVStartupTab:
         return canvas
 
     def _add_shot(self):
-        """Add shot to list"""
+        """Add shot to list (allows mixing TV01 and TV02)"""
         try:
             shot = int(self.shot_entry.text().strip())
         except ValueError:
@@ -456,34 +499,20 @@ class TVStartupTab:
 
         tv_name = 'TV01' if self.tv01_radio.isChecked() else 'TV02'
 
-        # Check if TV type is locked
-        if self.current_tv is not None and self.current_tv != tv_name:
+        # Check if same shot+TV combination already added
+        if (shot, tv_name) in self.shot_list:
             QMessageBox.warning(self.frame, "Warning",
-                f"Only {self.current_tv} shots can be added.\nClear all to change TV type.")
+                                f"Shot #{shot} ({tv_name}) is already added")
             return
-
-        # Check if shot already added
-        if shot in self.shot_list:
-            QMessageBox.warning(self.frame, "Warning", f"Shot #{shot} is already added")
-            return
-
-        # Lock TV type on first shot
-        if self.current_tv is None:
-            self.current_tv = tv_name
-            # Disable the other radio button
-            if tv_name == 'TV01':
-                self.tv02_radio.setEnabled(False)
-            else:
-                self.tv01_radio.setEnabled(False)
 
         # Add to list
-        self.shot_list.append(shot)
+        self.shot_list.append((shot, tv_name))
         self.shots_listbox.addItem(f"#{shot} ({tv_name})")
 
         # Disable Add and TV buttons after adding
         self._disable_add_controls()
 
-        self._set_status(f"Added #{shot}. Total: {len(self.shot_list)} shots", 'green')
+        self._set_status(f"Added #{shot} ({tv_name}). Total: {len(self.shot_list)} shots", 'green')
         print(f"[TV Startup] Added shot #{shot} ({tv_name})")
 
     def _remove_selected(self):
@@ -492,38 +521,24 @@ class TVStartupTab:
         if current_row < 0:
             return
 
-        shot = self.shot_list[current_row]
+        shot, tv_name = self.shot_list[current_row]
 
         # Remove from storage
         del self.shot_list[current_row]
         self.shots_listbox.takeItem(current_row)
 
-        # Unlock TV type if list is empty
         if len(self.shot_list) == 0:
-            self.current_tv = None
-            # Re-enable based on last fetched availability
-            if 'TV01' in self.available_tvs:
-                self.tv01_radio.setEnabled(True)
-            if 'TV02' in self.available_tvs:
-                self.tv02_radio.setEnabled(True)
             self._set_status("Ready", 'gray')
         else:
             self._set_status(f"Removed #{shot}. Total: {len(self.shot_list)} shots", 'green')
 
-        print(f"[TV Startup] Removed shot #{shot}")
+        print(f"[TV Startup] Removed shot #{shot} ({tv_name})")
 
     def _clear_all(self):
         """Clear all shots"""
         self.shot_list = []
-        self.current_tv = None
         self.last_canvas = None
         self.shots_listbox.clear()
-
-        # Re-enable radio buttons based on last fetched availability
-        if 'TV01' in self.available_tvs:
-            self.tv01_radio.setEnabled(True)
-        if 'TV02' in self.available_tvs:
-            self.tv02_radio.setEnabled(True)
 
         # Reset display
         self.ax.clear()
@@ -561,23 +576,22 @@ class TVStartupTab:
             return
 
         ncol = frame_end - frame_start + 1
-        tv_name = self.current_tv
 
         self._set_status("Loading images...", 'blue')
         QApplication.processEvents()
 
         images = []
         try:
-            for i, shot in enumerate(self.shot_list):
-                # Load images for this shot
+            for i, (shot, tv_name) in enumerate(self.shot_list):
+                # Load images for this shot with its own TV type
                 canvas = self._load_startup_images(shot, tv_name, frame_start, frame_end)
 
                 # Add time labels only for first shot
                 if i == 0:
                     canvas = self._add_time_label(canvas, frame_start, frame_end)
 
-                # Add shot label
-                canvas = self._add_shot_label(canvas, shot)
+                # Add shot + TV name label
+                canvas = self._add_shot_label(canvas, shot, tv_name)
 
                 images.append(canvas)
 
@@ -642,3 +656,6 @@ class TVStartupTab:
                 self.tv02_radio.setChecked(True)
             else:
                 self.tv01_radio.setChecked(True)
+
+        # Sync time range after restoring frame range
+        self._sync_time_from_frame()

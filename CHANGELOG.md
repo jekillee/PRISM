@@ -5,6 +5,44 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-02-24
+
+### Added
+- **Plot Options Dialog**: Unified "Plot Options" button across all visualization tabs
+  - Profile and Time Trace tabs: Color mode (9 colormap options), label font size, legend font size, tick font size; separator repositioned above button
+  - Spectrogram tab: Colorbar selection (8 colormaps), label font size, tick font size
+  - N-Mode Spectrum tab: Color mode (fixed/gradient), label font size, legend font size, tick font size; ColorManager integration
+  - IRVB tab: Two-section dialog — Time Trace (color mode, label/legend/tick font sizes) and 2D Plot (colorbar, LCFS/mag. axis/flux contour colors, label/tick font sizes)
+  - All settings persist across sessions
+- **TV Startup Time Range**: Added Time Range row (ms) below Frame Range with bidirectional sync — editing frame values auto-updates time values and vice versa
+- **N-Mode Default Color Palette**: Added "Default" option to N-Mode color dropdown — restores the original 15-color palette used in previous versions
+- **Docs Folder**: Created `docs/` folder for documentation; "View Manual" button replaced with "View Docs" that opens the docs folder
+
+### Changed
+- **TV Startup Mixed TV Support**: TV01 and TV02 shots can now be freely mixed in the same comparison (no TV type locking)
+- **TV Startup Shot Labels**: Left-side labels now show shot number and TV name (e.g., "38000\nTV01") instead of just shot number
+- **TV Startup Frame Numbering**: Frame 1 now corresponds to the first frame in the ZIP file (consistent with TV tab), instead of the 0ms frame
+- **TV Startup Section Rename**: "2. Added Shots" renamed to "2. Shot List" for consistency with other tabs
+- **Select Viewer UI**: Widened selector to 360px with horizontal button rows per category; dynamic window height based on content; theme follows full PRISM theme setting automatically
+- **Select Data Listbox Height**: Increased listbox height from 120px to 180px (1.5x) for better visibility
+- **Option Button Width**: Option button now proportionally sized (3:1 ratio with Plot button) to match EFIT Mapping button width
+- **Scrollable Control Panels**: Fixed scroll behavior — control panels now properly scroll when window is resized smaller than content
+- **Spectrogram/N-Mode Margins**: Replaced `tight_layout` with explicit `subplots_adjust` so toolbar margin adjustments apply correctly
+- **N-Mode Figure Margins**: Default margins now match Time Traces layout (left=0.10, right=0.97, top=0.95, bottom=0.10, hspace=0.15)
+- **IRVB Plot Options**: Added Limiter color option to 2D Plot section
+
+### Fixed
+- **View Docs Path**: Docs folder path now resolves relative to application root directory instead of hardcoded absolute path
+- **N-Mode RGBA Error**: Fixed `Invalid RGBA argument` error caused by incorrect discrete colormap indexing in ColorManager
+- **Spectrogram Colorbar Error**: Fixed `KeyError` on re-plot caused by `colorbar.remove()` — now clears entire figure and recreates subplot
+- **What's New Dialog**: v2 tab now shows all v2.x entries (2.1.0 + 2.0.x) instead of only the current minor version
+- **Control Panel Stretch**: Fixed Select Data box stretching when window height exceeds control panel content
+- **Zero Reference Lines**: vT=0 (Ti/vT), tgamma=0, q=1, j=0 (MSE) dashed lines now theme-aware (dark: white, light: gray); previously hardcoded silver/gray with inconsistent alpha
+- **Profile Left Margins**: Increased left margin from 0.08 to 0.10 for all profile tabs (Ti/vT, ne/Te, MSE) to prevent y-axis label clipping
+- **Grid Styling Unified**: All tabs (except TV, TV Startup, Spectrogram) now use consistent grid style (`lw=0.3`, theme-aware color); fixed IRVB hardcoded `lightgray` and N-Mode Spectrum `lw=0.5` + hardcoded `gray`
+- **Theme Switch Updates**: `apply_theme_to_figure()` now refreshes grid colors and zero reference lines (`gid='zero_ref'`) on theme change
+- **Spectrogram Shot Label**: Fixed loaded shot number always showing white text; now follows theme text color
+
 ## [2.0.2] - 2026-02-17
 
 ### Fixed

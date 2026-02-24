@@ -37,7 +37,6 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
         grid.addWidget(QLabel('Shot'), 0, 0)
 
         self.shot_entry = QLineEdit()
-        self.shot_entry.setMinimumWidth(80)
         grid.addWidget(self.shot_entry, 0, 1)
         self.shot_entry.returnPressed.connect(self.load_shot_data)
 
@@ -288,7 +287,7 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
             return
 
         te_max, ne_max = 0, 0
-        colors = self.plot_manager.color_manager.get_colors_for_entries(selected_entries)
+        colors = self._get_plot_colors(selected_entries)
 
         for i, entry in enumerate(selected_entries):
             try:

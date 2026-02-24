@@ -13,7 +13,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QLayout,
     QGroupBox, QCheckBox, QPushButton, QMessageBox, QLabel,
-    QDialog, QScrollArea, QDialogButtonBox, QFrame,
+    QComboBox, QSpinBox, QDialog, QScrollArea, QDialogButtonBox, QFrame,
 )
 from PySide6.QtCore import Qt
 
@@ -66,7 +66,7 @@ class ProfileBaseTab(BaseTab):
         control_frame = QWidget()
         control_layout = QVBoxLayout(control_frame)
         control_layout.setContentsMargins(9, 9, 9, 9)
-        control_layout.setSizeConstraint(QLayout.SetNoConstraint)
+        control_layout.setSizeConstraint(QLayout.SetMinimumSize)
 
         scroll_area.setWidget(control_frame)
         scroll_area.viewport().setAutoFillBackground(False)
@@ -88,16 +88,25 @@ class ProfileBaseTab(BaseTab):
         self._create_plot_controls(control_frame)
         self._create_efit_controls(control_frame)
         self._create_save_controls(control_frame, section_num=5)
+        control_layout.addStretch()
 
     def _create_plot_controls(self, parent: QWidget) -> None:
         """Create plot control buttons (common for all profile tabs)"""
         group = QGroupBox("3. Plot")
         group_layout = QVBoxLayout(group)
 
-        # Row 1: Plot button only
+        # Plot + Option buttons in same row
+        plot_row = QHBoxLayout()
+
         plot_button = QPushButton("Plot")
         plot_button.clicked.connect(self.plot_data)
-        group_layout.addWidget(plot_button)
+        plot_row.addWidget(plot_button, 3)
+
+        style_btn = QPushButton("Option")
+        style_btn.clicked.connect(self._show_style_dialog)
+        plot_row.addWidget(style_btn, 1)
+
+        group_layout.addLayout(plot_row)
 
         # Separator line
         separator = QFrame()
@@ -105,7 +114,21 @@ class ProfileBaseTab(BaseTab):
         separator.setFrameShadow(QFrame.Sunken)
         group_layout.addWidget(separator)
 
-        # Row 2: Show Nodes | Select Channels
+        # Hidden combo for color mode (used by _get_plot_colors, saved to settings)
+        self.color_mode_combo = QComboBox()
+        self.color_mode_combo.addItems([
+            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
+            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
+        ])
+        self.color_mode_combo.setCurrentText("Gradient(viridis)")
+        self.color_mode_combo.hide()
+
+        # Default font sizes
+        self.label_fontsize = 12
+        self.legend_fontsize = 8
+        self.tick_fontsize = 10
+
+        # Show Nodes | Select Channels
         row2 = QHBoxLayout()
 
         self.show_channel_checkbox = QCheckBox("Show Nodes")
@@ -198,9 +221,95 @@ class ProfileBaseTab(BaseTab):
         """
         return np.array([k not in self._disabled_channels for k in channel_keys])
 
+    @staticmethod
+    def _parse_color_mode(text):
+        """Extract colormap name from dropdown text like 'Fixed(tab10)' → 'tab10'"""
+        start = text.find('(')
+        end = text.find(')')
+        if start != -1 and end != -1:
+            return text[start + 1:end]
+        return 'tab10'
+
     def _get_plot_colors(self, entries: List[str]) -> List:
-        """Get plot colors for entries."""
-        return self.plot_manager.color_manager.get_colors_for_entries(entries)
+        """Get plot colors for entries using selected color mode."""
+        combo = getattr(self, 'color_mode_combo', None)
+        mode = combo.currentText() if combo else "Fixed(tab10)"
+        cmap_name = self._parse_color_mode(mode)
+        return self.plot_manager.color_manager.get_colors_for_entries(entries, colormap=cmap_name)
+
+    def _show_style_dialog(self):
+        """Show Plot Options settings dialog"""
+        WIDGET_WIDTH = 150
+
+        dialog = QDialog(self.frame)
+        dialog.setWindowTitle("Plot Options")
+        dialog.setMinimumWidth(280)
+        dlg_layout = QVBoxLayout(dialog)
+
+        # Color mode
+        color_row = QHBoxLayout()
+        color_row.addWidget(QLabel("Color"))
+        color_combo = QComboBox()
+        color_combo.setFixedWidth(WIDGET_WIDTH)
+        color_combo.addItems([
+            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
+            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
+        ])
+        color_combo.setCurrentText(self.color_mode_combo.currentText())
+        color_row.addWidget(color_combo)
+        dlg_layout.addLayout(color_row)
+
+        # Label font size
+        label_row = QHBoxLayout()
+        label_row.addWidget(QLabel("Label font size"))
+        label_spin = QSpinBox()
+        label_spin.setFixedWidth(WIDGET_WIDTH)
+        label_spin.setRange(6, 24)
+        label_spin.setValue(self.label_fontsize)
+        label_row.addWidget(label_spin)
+        dlg_layout.addLayout(label_row)
+
+        # Legend font size
+        legend_row = QHBoxLayout()
+        legend_row.addWidget(QLabel("Legend font size"))
+        legend_spin = QSpinBox()
+        legend_spin.setFixedWidth(WIDGET_WIDTH)
+        legend_spin.setRange(4, 20)
+        legend_spin.setValue(self.legend_fontsize)
+        legend_row.addWidget(legend_spin)
+        dlg_layout.addLayout(legend_row)
+
+        # Tick font size
+        tick_row = QHBoxLayout()
+        tick_row.addWidget(QLabel("Tick font size"))
+        tick_spin = QSpinBox()
+        tick_spin.setFixedWidth(WIDGET_WIDTH)
+        tick_spin.setRange(6, 20)
+        tick_spin.setValue(self.tick_fontsize)
+        tick_row.addWidget(tick_spin)
+        dlg_layout.addLayout(tick_row)
+
+        # Default / OK / Cancel
+        btn_box = QDialogButtonBox(QDialogButtonBox.RestoreDefaults | QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(dialog.accept)
+        btn_box.rejected.connect(dialog.reject)
+
+        def reset_defaults():
+            color_combo.setCurrentText("Gradient(viridis)")
+            label_spin.setValue(12)
+            legend_spin.setValue(8)
+            tick_spin.setValue(10)
+        btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
+        dlg_layout.addWidget(btn_box)
+
+        if dialog.exec() == QDialog.Accepted:
+            self.color_mode_combo.setCurrentText(color_combo.currentText())
+            self.label_fontsize = label_spin.value()
+            self.legend_fontsize = legend_spin.value()
+            self.tick_fontsize = tick_spin.value()
+            # Auto-apply if plot exists
+            if self.ax1.lines or self.ax1.collections:
+                self.plot_data()
 
     @abstractmethod
     def _create_shot_input(self, parent: QWidget) -> None:
@@ -261,7 +370,11 @@ class ProfileBaseTab(BaseTab):
         # Apply axis limits
         self._apply_plot_limits(y1_max, y2_max, y2_min)
 
-        self.plot_manager.apply_common_styling(self.ax1, self.ax2)
+        self.plot_manager.apply_common_styling(
+            self.ax1, self.ax2,
+            legend_fontsize=self.legend_fontsize,
+            label_fontsize=self.label_fontsize,
+            tick_fontsize=self.tick_fontsize)
         self.canvas.draw()
 
         if self.toolbar:
@@ -386,7 +499,11 @@ class ProfileBaseTab(BaseTab):
             ax.axvline(x=0, c='k', ls='--')
             ax.axvline(x=1, c='k', ls='--')
 
-        self.plot_manager.apply_common_styling(self.ax1, self.ax2)
+        self.plot_manager.apply_common_styling(
+            self.ax1, self.ax2,
+            legend_fontsize=self.legend_fontsize,
+            label_fontsize=self.label_fontsize,
+            tick_fontsize=self.tick_fontsize)
         self.canvas.draw()
 
         if self.toolbar:

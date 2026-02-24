@@ -637,6 +637,7 @@ class ThemeManager:
         """Apply current theme colors to an existing matplotlib figure"""
         theme = THEMES[cls.current_theme]
         mpl_colors = theme['mpl']
+        zero_line_color = 'white' if cls.current_theme == 'dark' else 'gray'
 
         figure.set_facecolor(mpl_colors['figure.facecolor'])
         for ax in figure.get_axes():
@@ -647,6 +648,15 @@ class ThemeManager:
             ax.title.set_color(mpl_colors['text.color'])
             for spine in ax.spines.values():
                 spine.set_edgecolor(mpl_colors['axes.edgecolor'])
+            # Update grid colors
+            for line in ax.xaxis.get_gridlines():
+                line.set_color(mpl_colors['grid.color'])
+            for line in ax.yaxis.get_gridlines():
+                line.set_color(mpl_colors['grid.color'])
+            # Update zero reference lines (tagged with gid='zero_ref')
+            for line in ax.get_lines():
+                if line.get_gid() == 'zero_ref':
+                    line.set_color(zero_line_color)
             legend = ax.get_legend()
             if legend:
                 legend.get_frame().set_facecolor(mpl_colors['legend.facecolor'])
