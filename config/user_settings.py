@@ -91,7 +91,8 @@ DEFAULT_SETTINGS = {
             "dynamic_range": "6.0",
             "colormap": "viridis",
             "label_fontsize": 12,
-            "tick_fontsize": 10
+            "tick_fontsize": 10,
+            "title_fontsize": 12
         },
         "nmode": {
             "shot": "",
@@ -111,10 +112,21 @@ DEFAULT_SETTINGS = {
             "label_fontsize": 12,
             "legend_fontsize": 8,
             "tick_fontsize": 10,
-            "contour_levels": "50"
+            "title_fontsize": 12,
+            "contour_levels": "50",
+            "contour_linewidth": 0.8,
+            "amp_linewidth": 1.5,
+            "selected_modes": [1, 2, 3, 4, 5]
         },
         "tv": {
             "shot": ""
+        },
+        "neutron": {
+            "shot": "",
+            "color_mode": "Gradient(viridis)",
+            "label_fontsize": 12,
+            "legend_fontsize": 8,
+            "tick_fontsize": 10
         },
         "irvb": {
             "shot": "",

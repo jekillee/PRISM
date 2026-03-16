@@ -109,6 +109,7 @@ class SpectrogramTab:
         # Plot options
         self.selected_colormap = 'viridis'
         self.label_fontsize = 12
+        self.title_fontsize = 12
         self.tick_fontsize = 10
 
         # Widget references for enable/disable
@@ -118,10 +119,14 @@ class SpectrogramTab:
         """Create spectrogram tab widgets"""
         # Single canvas for spectrogram
         self.figure = Figure(self.app_config.FIGURE_SIZE)
-        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.95, bottom=0.10)
+        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.92, bottom=0.10)
         self.ax = self.figure.add_subplot(111)
-        self.ax.set_xlabel('Time [s]')
-        self.ax.set_ylabel('Frequency [kHz]')
+        self.ax.set_xlabel('Time [s]', fontsize=self.label_fontsize)
+        self.ax.set_ylabel('Frequency [kHz]', fontsize=self.label_fontsize)
+        self.ax.set_label('Spectrogram')
+        self.ax.tick_params(labelsize=self.tick_fontsize)
+        import matplotlib as mpl
+        self.ax.grid(ls='--', lw=0.3, c=mpl.rcParams.get('grid.color', '#444444'))
         apply_dark_figure_style(self.figure)
 
         # Create canvas
@@ -379,6 +384,16 @@ class SpectrogramTab:
         label_row.addWidget(label_spin)
         dlg_layout.addLayout(label_row)
 
+        # Title font size
+        title_row = QHBoxLayout()
+        title_row.addWidget(QLabel("Title font size"))
+        title_spin = QSpinBox()
+        title_spin.setFixedWidth(WIDGET_WIDTH)
+        title_spin.setRange(6, 24)
+        title_spin.setValue(self.title_fontsize)
+        title_row.addWidget(title_spin)
+        dlg_layout.addLayout(title_row)
+
         # Tick font size
         tick_row = QHBoxLayout()
         tick_row.addWidget(QLabel("Tick font size"))
@@ -397,6 +412,7 @@ class SpectrogramTab:
         def reset_defaults():
             cmap_combo.setCurrentText("viridis")
             label_spin.setValue(12)
+            title_spin.setValue(12)
             tick_spin.setValue(10)
         btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
         dlg_layout.addWidget(btn_box)
@@ -404,6 +420,7 @@ class SpectrogramTab:
         if dialog.exec() == QDialog.Accepted:
             self.selected_colormap = cmap_combo.currentText()
             self.label_fontsize = label_spin.value()
+            self.title_fontsize = title_spin.value()
             self.tick_fontsize = tick_spin.value()
             # Auto-replot if spectrogram exists
             if self.im is not None:
@@ -981,7 +998,8 @@ class SpectrogramTab:
         self._update_status('Plotting...', 'blue')
         self.figure.clear()
         self.ax = self.figure.add_subplot(111)
-        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.95, bottom=0.10)
+        self.ax.set_label('Spectrogram')
+        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.92, bottom=0.10)
         apply_dark_figure_style(self.figure)
 
         # Frequency mask
@@ -1018,10 +1036,7 @@ class SpectrogramTab:
         # Add sampling rate to title
         fs_str = self._format_frequency(fs)
         title += f" - {fs_str}"
-        self.ax.set_title(title)
-
-        # Create colorbar (fresh each time since figure was cleared)
-        self.colorbar = self.figure.colorbar(self.im, ax=self.ax, label='log$_{10}$(Power) [a.u.]')
+        self.ax.set_title(title, fontsize=self.title_fontsize)
 
         self.canvas.draw()
 
@@ -1044,6 +1059,7 @@ class SpectrogramTab:
             "dynamic_range": str(self._dyn_range_value),
             "colormap": self.selected_colormap,
             "label_fontsize": self.label_fontsize,
+            "title_fontsize": self.title_fontsize,
             "tick_fontsize": self.tick_fontsize,
         }
         set_tab_settings("spectrogram", settings)
@@ -1080,6 +1096,8 @@ class SpectrogramTab:
             self.selected_colormap = settings["colormap"]
         if settings.get("label_fontsize"):
             self.label_fontsize = int(settings["label_fontsize"])
+        if settings.get("title_fontsize"):
+            self.title_fontsize = int(settings["title_fontsize"])
         if settings.get("tick_fontsize"):
             self.tick_fontsize = int(settings["tick_fontsize"])
 

@@ -24,6 +24,10 @@ Author: Jekil Lee (jklee@kfe.re.kr)
 
 import os
 import sys
+import warnings
+
+# Suppress matplotlib tight_layout warnings (IRVB colorbar axes are incompatible)
+warnings.filterwarnings("ignore", message=".*tight_layout.*", category=UserWarning)
 
 # X11 forwarding compatibility (e.g. Bitvise SSH + Xming, NoMachine)
 # - Disable GLX (OpenGL) to prevent GLX initialization crash on remote X servers

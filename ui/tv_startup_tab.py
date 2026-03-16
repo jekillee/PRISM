@@ -178,7 +178,7 @@ class TVStartupTab:
         self.shots_listbox.setMaximumHeight(150)
         h_layout.addWidget(self.shots_listbox, 1)
 
-        # Right: action buttons stacked vertically
+        # Right: action buttons stacked vertically (compact)
         btn_widget = QWidget()
         btn_layout = QVBoxLayout(btn_widget)
         btn_layout.setContentsMargins(0, 0, 0, 0)
@@ -213,14 +213,14 @@ class TVStartupTab:
         range_layout = QHBoxLayout()
 
         self.frame_start_entry = QLineEdit('1')
-        self.frame_start_entry.setFixedWidth(100)
+        self.frame_start_entry.setFixedWidth(60)
         self.frame_start_entry.editingFinished.connect(self._sync_time_from_frame)
         range_layout.addWidget(self.frame_start_entry)
 
         range_layout.addWidget(QLabel('~'))
 
         self.frame_end_entry = QLineEdit('24')
-        self.frame_end_entry.setFixedWidth(100)
+        self.frame_end_entry.setFixedWidth(60)
         self.frame_end_entry.editingFinished.connect(self._sync_time_from_frame)
         range_layout.addWidget(self.frame_end_entry)
         range_layout.addStretch()
@@ -233,14 +233,14 @@ class TVStartupTab:
         time_range_layout = QHBoxLayout()
 
         self.time_start_entry = QLineEdit()
-        self.time_start_entry.setFixedWidth(100)
+        self.time_start_entry.setFixedWidth(60)
         self.time_start_entry.editingFinished.connect(self._sync_frame_from_time)
         time_range_layout.addWidget(self.time_start_entry)
 
         time_range_layout.addWidget(QLabel('~'))
 
         self.time_end_entry = QLineEdit()
-        self.time_end_entry.setFixedWidth(100)
+        self.time_end_entry.setFixedWidth(60)
         self.time_end_entry.editingFinished.connect(self._sync_frame_from_time)
         time_range_layout.addWidget(self.time_end_entry)
 
@@ -302,9 +302,10 @@ class TVStartupTab:
         container_layout.setContentsMargins(0, 0, 0, 0)
 
         # Matplotlib figure
-        self.figure = Figure(figsize=self.app_config.FIGURE_SIZE, tight_layout=True)
+        self.figure = Figure(figsize=self.app_config.FIGURE_SIZE, tight_layout=False)
         self.ax = self.figure.add_subplot(111)
         self.ax.set_axis_off()
+        self.ax.set_label('TV Startup')
         self.ax.text(0.5, 0.5, 'Add shots and click Plot to compare startup sequences',
                      ha='center', va='center', fontsize=12,
                      transform=self.ax.transAxes, color='gray')
@@ -604,7 +605,7 @@ class TVStartupTab:
             self.ax.imshow(stacked)
             self.ax.set_axis_off()
 
-            self.figure.tight_layout()
+            self.figure.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
             self.canvas.draw()
 
             self._set_status(f"Plotted {len(self.shot_list)} shots", 'green')

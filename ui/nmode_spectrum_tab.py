@@ -548,7 +548,8 @@ def get_mode_color(n):
 def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
                        tmin, tmax, fmin, fmax, nmodes, msign, integrate,
                        plot_type='contour', numc=50, colors=None,
-                       legend_fontsize=8, label_fontsize=None, tick_fontsize=None):
+                       legend_fontsize=8, label_fontsize=None, tick_fontsize=None,
+                       title_fontsize=None, contour_linewidth=0.8, selected_modes=None):
     """Plot n-mode spectrum"""
     ax.clear()
 
@@ -602,6 +603,8 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
     for i, n_val in enumerate(lv):
         if n_val == 0:
             continue
+        if selected_modes and abs(n_val) not in selected_modes:
+            continue
 
         k = np.where(mode_filtered == n_val)
         if len(k[0]) == 0:
@@ -623,12 +626,16 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
                     np.log10(valid_data.max()),
                     numc
                 )
-                ax.contour(x, y, thismode.T, levels, colors=[color], linewidths=0.8)
+                ax.contour(x, y, thismode.T, levels, colors=[color], linewidths=contour_linewidth)
             except Exception:
-                ax.contour(x, y, thismode.T, numc, colors=[color], linewidths=0.8)
+                ax.contour(x, y, thismode.T, numc, colors=[color], linewidths=contour_linewidth)
         else:
+            from matplotlib.colors import ListedColormap
             thismode_masked = np.ma.masked_where(thismode == 0, thismode)
-            ax.pcolormesh(x, y, thismode_masked.T, shading='auto', alpha=0.7)
+            # Single flat color for this mode (masked zeros are transparent)
+            mono_cmap = ListedColormap([color])
+            ax.pcolormesh(x, y, thismode_masked.T, shading='auto',
+                         cmap=mono_cmap, alpha=1.0)
 
     if label_fontsize:
         ax.set_ylabel('Frequency [kHz]', fontsize=label_fontsize)
@@ -642,12 +649,13 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
     import matplotlib as mpl
     ax.grid(True, linestyle='--', linewidth=0.3, color=mpl.rcParams.get('grid.color', '#444444'))
 
-    ax.set_title(f'#{fft_result.shot}')
+    ax.set_title(f'#{fft_result.shot}', fontsize=title_fontsize)
 
-    # Always show all modes in legend based on nmodes setting
+    # Show legend for selected modes
     legend_elements = []
     from matplotlib.lines import Line2D
-    for n in range(1, nmodes + 1):
+    show_modes = selected_modes if selected_modes else list(range(1, nmodes + 1))
+    for n in show_modes:
         color = colors[n - 1] if colors and n - 1 < len(colors) else get_mode_color(n)
         if msign == 2:
             legend_elements.append(Line2D([0], [0], color=color, label=f'n=+{n}'))
@@ -668,7 +676,8 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
 
 
 def plot_amplitude_evolution(ax, fft_result, amp_evolution, tmin, tmax, nmodes, msign,
-                              colors=None, legend_fontsize=8, label_fontsize=None, tick_fontsize=None):
+                              colors=None, legend_fontsize=8, label_fontsize=None, tick_fontsize=None,
+                              amp_linewidth=1.5, selected_modes=None):
     """Plot amplitude evolution for each mode"""
     ax.clear()
 
@@ -677,19 +686,23 @@ def plot_amplitude_evolution(ax, fft_result, amp_evolution, tmin, tmax, nmodes, 
     j2 = np.argmin(np.abs(time - tmax))
     time_plot = time[j1:j2]
 
+    show_modes = selected_modes if selected_modes else list(range(1, nmodes + 1))
+
     for i in range(nmodes):
         n = i + 1
+        if n not in show_modes:
+            continue
         if msign in [0, 1, 2]:
             amp_pos = amp_evolution[i, j1:j2]
             c = colors[n - 1] if colors and n - 1 < len(colors) else get_mode_color(n)
             ax.plot(time_plot, amp_pos, color=c,
-                   linewidth=1.5, label=f'n=+{n}')
+                   linewidth=amp_linewidth, label=f'n=+{n}')
         if msign in [0, -1, 2]:
             amp_neg = amp_evolution[i + nmodes, j1:j2]
             ls = '--' if msign == 2 else '-'
             c = colors[n - 1] if colors and n - 1 < len(colors) else get_mode_color(n)
             ax.plot(time_plot, amp_neg, color=c,
-                   linewidth=1.5, linestyle=ls, label=f'n=-{n}')
+                   linewidth=amp_linewidth, linestyle=ls, label=f'n=-{n}')
 
     if label_fontsize:
         ax.set_xlabel('Time [s]', fontsize=label_fontsize)
@@ -734,18 +747,27 @@ class NModeSpectrumTab:
         # Plot options
         self.color_mode = "Default"
         self.label_fontsize = 12
+        self.title_fontsize = 12
         self.legend_fontsize = 8
         self.tick_fontsize = 10
+        self.contour_linewidth = 0.8
+        self.amp_linewidth = 1.5
 
     def create_widgets(self):
         """Create n-mode spectrum tab widgets"""
         self.figure = Figure(self.app_config.FIGURE_SIZE)
-        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.95, bottom=0.10, hspace=0.15)
+        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.92, bottom=0.10, hspace=0.15)
         self.ax1 = self.figure.add_subplot(211)
         self.ax2 = self.figure.add_subplot(212, sharex=self.ax1)
-        self.ax1.set_ylabel('Frequency [kHz]')
-        self.ax2.set_xlabel('Time [s]')
-        self.ax2.set_ylabel('Amplitude')
+        self.ax1.set_ylabel('Frequency [kHz]', fontsize=self.label_fontsize)
+        self.ax1.set_label('Frequency [kHz]')
+        self.ax2.set_xlabel('Time [s]', fontsize=self.label_fontsize)
+        self.ax2.set_ylabel('Amplitude [Gauss]', fontsize=self.label_fontsize)
+        self.ax2.set_label('Amplitude [Gauss]')
+        for ax in [self.ax1, self.ax2]:
+            ax.tick_params(labelsize=self.tick_fontsize)
+            import matplotlib as mpl
+            ax.grid(ls='--', lw=0.3, c=mpl.rcParams.get('grid.color', '#444444'))
         apply_dark_figure_style(self.figure)
 
         # Create canvas
@@ -843,32 +865,35 @@ class NModeSpectrumTab:
 
         row += 1
 
-        # Time range
+        # Time range (same layout as Freq)
         grid.addWidget(QLabel('Time [s]'), row, 0)
 
         time_widget = QWidget()
-        time_grid = QGridLayout(time_widget)
-        time_grid.setContentsMargins(0, 0, 0, 0)
+        time_layout = QHBoxLayout(time_widget)
+        time_layout.setContentsMargins(0, 0, 0, 0)
 
         self.tmin_entry = QLineEdit()
         self.tmin_entry.setText(str(NModeConfig.DEFAULT_TMIN))
         self.tmin_entry.setFixedWidth(80)
-        time_grid.addWidget(self.tmin_entry, 0, 0)
+        time_layout.addWidget(self.tmin_entry)
 
-        time_grid.addWidget(QLabel('-'), 0, 1)
+        time_layout.addWidget(QLabel('-'))
 
         self.tmax_entry = QLineEdit()
         self.tmax_entry.setText(str(NModeConfig.DEFAULT_TMAX))
         self.tmax_entry.setFixedWidth(80)
-        time_grid.addWidget(self.tmax_entry, 0, 2)
+        time_layout.addWidget(self.tmax_entry)
+        time_layout.addStretch()
 
-        # Use full shot checkbox (below tmin entry)
+        grid.addWidget(time_widget, row, 1, 1, 3)
+
+        row += 1
+
+        # Use full shot checkbox
         self.use_full_shot_checkbox = QCheckBox('Use full shot length')
         self.use_full_shot_checkbox.setChecked(False)
         self.use_full_shot_checkbox.stateChanged.connect(self._toggle_time_entries)
-        time_grid.addWidget(self.use_full_shot_checkbox, 1, 0, 1, 3)
-
-        grid.addWidget(time_widget, row, 1, 1, 3)
+        grid.addWidget(self.use_full_shot_checkbox, row, 1, 1, 3)
 
         row += 1
 
@@ -908,28 +933,6 @@ class NModeSpectrumTab:
         freq_layout.addStretch()
 
         grid.addWidget(freq_widget, row, 1, 1, 3)
-        row += 1
-
-        # n-modes slider
-        grid.addWidget(QLabel('n-modes'), row, 0)
-
-        nmodes_widget = QWidget()
-        nmodes_layout = QHBoxLayout(nmodes_widget)
-        nmodes_layout.setContentsMargins(0, 0, 0, 0)
-
-        self._nmodes_value = NModeConfig.DEFAULT_NMODES
-        self.nmodes_slider = QSlider(Qt.Horizontal)
-        self.nmodes_slider.setMinimum(1)
-        self.nmodes_slider.setMaximum(8)
-        self.nmodes_slider.setValue(NModeConfig.DEFAULT_NMODES)
-        self.nmodes_slider.valueChanged.connect(self._on_nmodes_changed)
-        nmodes_layout.addWidget(self.nmodes_slider, 1)
-
-        self.nmodes_label = QLabel(str(NModeConfig.DEFAULT_NMODES))
-        self.nmodes_label.setFixedWidth(25)
-        nmodes_layout.addWidget(self.nmodes_label)
-
-        grid.addWidget(nmodes_widget, row, 1, 1, 3)
         row += 1
 
         # Tolerance
@@ -1036,6 +1039,26 @@ class NModeSpectrumTab:
         separator.setFrameShape(QFrame.HLine)
         separator.setFrameShadow(QFrame.Sunken)
         grid.addWidget(separator, row, 0, 1, 4)
+        row += 1
+
+        # n-modes checkboxes
+        grid.addWidget(QLabel('n-modes'), row, 0)
+
+        nmodes_widget = QWidget()
+        nmodes_layout = QHBoxLayout(nmodes_widget)
+        nmodes_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._selected_modes = [1, 2, 3, 4, 5]
+        self.mode_checkboxes = {}
+        for n in range(1, 6):
+            cb = QCheckBox(str(n))
+            cb.setChecked(True)
+            cb.stateChanged.connect(self._on_modes_changed)
+            nmodes_layout.addWidget(cb)
+            self.mode_checkboxes[n] = cb
+        nmodes_layout.addStretch()
+
+        grid.addWidget(nmodes_widget, row, 1, 1, 3)
         row += 1
 
         # Plot type (radio buttons)
@@ -1160,7 +1183,7 @@ class NModeSpectrumTab:
         tmax = float(self.tmax_entry.text())
         fmin = float(self.fmin_entry.text())
         fmax = float(self.fmax_entry.text())
-        nmodes = self._nmodes_value
+        nmodes = 5  # Always export all 5 modes
 
         # Default filename
         default_name = f"nmode_{shot}_{tmin:.1f}-{tmax:.1f}s.npz"
@@ -1266,6 +1289,16 @@ class NModeSpectrumTab:
         label_row.addWidget(label_spin)
         dlg_layout.addLayout(label_row)
 
+        # Title font size
+        title_row = QHBoxLayout()
+        title_row.addWidget(QLabel("Title font size"))
+        title_spin = QSpinBox()
+        title_spin.setFixedWidth(WIDGET_WIDTH)
+        title_spin.setRange(6, 24)
+        title_spin.setValue(self.title_fontsize)
+        title_row.addWidget(title_spin)
+        dlg_layout.addLayout(title_row)
+
         # Legend font size
         legend_row = QHBoxLayout()
         legend_row.addWidget(QLabel("Legend font size"))
@@ -1286,6 +1319,37 @@ class NModeSpectrumTab:
         tick_row.addWidget(tick_spin)
         dlg_layout.addLayout(tick_row)
 
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFrameShadow(QFrame.Sunken)
+        dlg_layout.addWidget(sep)
+
+        # Contour line width
+        lw_row = QHBoxLayout()
+        lw_row.addWidget(QLabel("Contour line width"))
+        from PySide6.QtWidgets import QDoubleSpinBox
+        lw_spin = QDoubleSpinBox()
+        lw_spin.setFixedWidth(WIDGET_WIDTH)
+        lw_spin.setRange(0.1, 5.0)
+        lw_spin.setSingleStep(0.1)
+        lw_spin.setDecimals(1)
+        lw_spin.setValue(self.contour_linewidth)
+        lw_row.addWidget(lw_spin)
+        dlg_layout.addLayout(lw_row)
+
+        # Amplitude line width
+        alw_row = QHBoxLayout()
+        alw_row.addWidget(QLabel("Amplitude line width"))
+        alw_spin = QDoubleSpinBox()
+        alw_spin.setFixedWidth(WIDGET_WIDTH)
+        alw_spin.setRange(0.1, 5.0)
+        alw_spin.setSingleStep(0.1)
+        alw_spin.setDecimals(1)
+        alw_spin.setValue(self.amp_linewidth)
+        alw_row.addWidget(alw_spin)
+        dlg_layout.addLayout(alw_row)
+
         # Default / OK / Cancel
         btn_box = QDialogButtonBox(QDialogButtonBox.RestoreDefaults | QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btn_box.accepted.connect(dialog.accept)
@@ -1294,16 +1358,22 @@ class NModeSpectrumTab:
         def reset_defaults():
             color_combo.setCurrentText("Default")
             label_spin.setValue(12)
+            title_spin.setValue(12)
             legend_spin.setValue(8)
             tick_spin.setValue(10)
+            lw_spin.setValue(0.8)
+            alw_spin.setValue(1.5)
         btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
         dlg_layout.addWidget(btn_box)
 
         if dialog.exec() == QDialog.Accepted:
             self.color_mode = color_combo.currentText()
             self.label_fontsize = label_spin.value()
+            self.title_fontsize = title_spin.value()
             self.legend_fontsize = legend_spin.value()
             self.tick_fontsize = tick_spin.value()
+            self.contour_linewidth = lw_spin.value()
+            self.amp_linewidth = alw_spin.value()
             # Auto-replot if data exists
             if self.fft_result is not None and self.mode_result is not None:
                 self._update_plot()
@@ -1341,17 +1411,16 @@ class NModeSpectrumTab:
 
     def _toggle_contour_levels(self):
         """Enable/disable contour levels entry based on plot type"""
-        if self._plot_type_value == 'contour':
-            self.contour_levels_label.setEnabled(True)
-            self.contour_levels_entry.setEnabled(True)
-        else:
-            self.contour_levels_label.setEnabled(False)
-            self.contour_levels_entry.setEnabled(False)
+        is_contour = self._plot_type_value == 'contour'
+        self.contour_levels_label.setEnabled(is_contour)
+        self.contour_levels_entry.setEnabled(is_contour)
+        self.contour_levels_entry.setStyleSheet(
+            "" if is_contour else "background-color: rgba(128,128,128,0.3);"
+        )
 
-    def _on_nmodes_changed(self, value):
-        """Update nmodes label"""
-        self._nmodes_value = value
-        self.nmodes_label.setText(str(value))
+    def _on_modes_changed(self):
+        """Update selected modes list from checkboxes"""
+        self._selected_modes = [n for n in range(1, 6) if self.mode_checkboxes[n].isChecked()]
 
     def _on_msign_changed(self, button):
         """Handle sign radio button change"""
@@ -1386,7 +1455,7 @@ class NModeSpectrumTab:
             fmin = float(self.fmin_entry.text())
             fmax = float(self.fmax_entry.text())
             tol = float(self.tol_entry.text())
-            nmodes = self._nmodes_value
+            nmodes = 5  # Always calculate all 5 modes
             frac = float(self.frac_entry.text())
             msign = self._msign_value
             integrate = self.integrate_checkbox.isChecked()
@@ -1491,7 +1560,8 @@ class NModeSpectrumTab:
             tmax = float(self.tmax_entry.text())
             fmin = float(self.fmin_entry.text())
             fmax = float(self.fmax_entry.text())
-            nmodes = self._nmodes_value
+            nmodes = 5  # Always use all 5 modes for data access
+            selected_modes = self._selected_modes
             msign = self._msign_value
             plot_type = self._plot_type_value
             numc = int(self.contour_levels_entry.text())
@@ -1513,12 +1583,17 @@ class NModeSpectrumTab:
                               integrate, plot_type, numc, colors=mode_colors,
                               legend_fontsize=self.legend_fontsize,
                               label_fontsize=self.label_fontsize,
-                              tick_fontsize=self.tick_fontsize)
+                              tick_fontsize=self.tick_fontsize,
+                              title_fontsize=self.title_fontsize,
+                              contour_linewidth=self.contour_linewidth,
+                              selected_modes=selected_modes)
             plot_amplitude_evolution(self.ax2, self.fft_result, self.amp_evolution,
                                     tmin, tmax, nmodes, msign, colors=mode_colors,
                                     legend_fontsize=self.legend_fontsize,
                                     label_fontsize=self.label_fontsize,
-                                    tick_fontsize=self.tick_fontsize)
+                                    tick_fontsize=self.tick_fontsize,
+                                    amp_linewidth=self.amp_linewidth,
+                                    selected_modes=selected_modes)
 
             self.canvas.draw()
         except Exception as e:
@@ -1534,7 +1609,7 @@ class NModeSpectrumTab:
             "tinterval": self.tinterval_entry.text(),
             "fmin": self.fmin_entry.text(),
             "fmax": self.fmax_entry.text(),
-            "nmodes": self._nmodes_value,
+            "selected_modes": self._selected_modes,
             "tolerance": self.tol_entry.text(),
             "fraction": self.frac_entry.text(),
             "sign": self._msign_value,
@@ -1544,8 +1619,11 @@ class NModeSpectrumTab:
             "contour_levels": self.contour_levels_entry.text(),
             "color_mode": self.color_mode,
             "label_fontsize": self.label_fontsize,
+            "title_fontsize": self.title_fontsize,
             "legend_fontsize": self.legend_fontsize,
             "tick_fontsize": self.tick_fontsize,
+            "contour_linewidth": self.contour_linewidth,
+            "amp_linewidth": self.amp_linewidth,
         }
         set_tab_settings("nmode", settings)
 
@@ -1575,11 +1653,10 @@ class NModeSpectrumTab:
         if settings.get("fmax"):
             self.fmax_entry.setText(str(settings["fmax"]))
 
-        if settings.get("nmodes") is not None:
-            val = int(settings["nmodes"])
-            self._nmodes_value = val
-            self.nmodes_slider.setValue(val)
-            self.nmodes_label.setText(str(val))
+        if settings.get("selected_modes") is not None:
+            self._selected_modes = [int(m) for m in settings["selected_modes"]]
+            for n in range(1, 6):
+                self.mode_checkboxes[n].setChecked(n in self._selected_modes)
 
         if settings.get("tolerance"):
             self.tol_entry.setText(str(settings["tolerance"]))
@@ -1615,10 +1692,16 @@ class NModeSpectrumTab:
             self.color_mode = settings["color_mode"]
         if settings.get("label_fontsize"):
             self.label_fontsize = int(settings["label_fontsize"])
+        if settings.get("title_fontsize"):
+            self.title_fontsize = int(settings["title_fontsize"])
         if settings.get("legend_fontsize"):
             self.legend_fontsize = int(settings["legend_fontsize"])
         if settings.get("tick_fontsize"):
             self.tick_fontsize = int(settings["tick_fontsize"])
+        if settings.get("contour_linewidth"):
+            self.contour_linewidth = float(settings["contour_linewidth"])
+        if settings.get("amp_linewidth"):
+            self.amp_linewidth = float(settings["amp_linewidth"])
 
 
 class NModePythonHighlighter(QSyntaxHighlighter):

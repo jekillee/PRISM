@@ -9,7 +9,7 @@ from functools import partial
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QTreeWidget, QTreeWidgetItem, QStackedWidget, QLabel,
+    QTreeWidget, QTreeWidgetItem, QStackedWidget, QLabel, QLineEdit,
     QPushButton, QStatusBar, QProgressBar, QMessageBox, QFrame, QStyle,
     QSizePolicy,
 )
@@ -29,6 +29,9 @@ _ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
 
 _CATEGORY_ORDER = ["Profiles", "Time Traces", "Spectral Analysis", "Imaging", "Other"]
 
+# Tab types highlighted with accent color in sidebar
+_NEW_TABS = {'neutron'}
+
 _TAB_TYPE_TO_CATEGORY = {
     'profile': "Profiles",
     'timetrace': "Time Traces",
@@ -37,20 +40,21 @@ _TAB_TYPE_TO_CATEGORY = {
     'tv': "Imaging",
     'tv_startup': "Imaging",
     'irvb': "Imaging",
+    'neutron': "Time Traces",
 }
 
 
 def _categorize_tabs(tab_configs):
     """Categorize tab configs into ordered groups.
 
-    Returns list of (category_name, [(tab_index, tab_name), ...]) in display order.
+    Returns list of (category_name, [(tab_index, tab_name, tab_type), ...]) in display order.
     """
     categories = {}
     for i, config in enumerate(tab_configs):
         cat = _TAB_TYPE_TO_CATEGORY.get(config['tab_type'], "Other")
         if cat not in categories:
             categories[cat] = []
-        categories[cat].append((i, config['tab_name']))
+        categories[cat].append((i, config['tab_name'], config['tab_type']))
 
     return [(name, categories[name]) for name in _CATEGORY_ORDER if name in categories]
 
@@ -90,6 +94,27 @@ class SidebarNav(QWidget):
         ver_label.setStyleSheet("color: #888; font-size: 11px; margin-top: -4px;")
         layout.addWidget(ver_label)
 
+        # Global shot input (single row: apply button + entry)
+        shot_widget = QWidget()
+        shot_row = QHBoxLayout(shot_widget)
+        shot_row.setContentsMargins(8, 6, 8, 2)
+        shot_row.setSpacing(3)
+
+        self.global_shot_entry = QLineEdit()
+        self.global_shot_entry.setAlignment(Qt.AlignCenter)
+        self.global_shot_entry.setFixedHeight(24)
+        self.global_shot_entry.setPlaceholderText("Shot #")
+        self.global_shot_entry.setFocusPolicy(Qt.ClickFocus)
+        shot_row.addWidget(self.global_shot_entry, stretch=1)
+
+        self.apply_all_btn = QPushButton()
+        self.apply_all_btn.setIcon(self.style().standardIcon(QStyle.SP_DialogApplyButton))
+        self.apply_all_btn.setFixedSize(24, 24)
+        self.apply_all_btn.setToolTip("Apply shot to all tabs")
+        shot_row.addWidget(self.apply_all_btn)
+
+        layout.addWidget(shot_widget)
+
         # Tree
         self.tree = QTreeWidget()
         self.tree.setObjectName("sidebar")
@@ -115,10 +140,12 @@ class SidebarNav(QWidget):
             cat_item.setFont(0, font)
             cat_item.setForeground(0, QColor("#888888"))
 
-            for tab_index, tab_name in items:
+            for tab_index, tab_name, tab_type in items:
                 child = QTreeWidgetItem(cat_item)
                 child.setText(0, f"    {tab_name}")
                 child.setData(0, Qt.UserRole, tab_index)
+                if tab_type in _NEW_TABS:
+                    child.setForeground(0, QColor("#0d6efd"))
 
             cat_item.setExpanded(True)
 
@@ -234,7 +261,7 @@ class PRISMApp(QMainWindow):
                     'tab_name': tab_name
                 })
 
-        for special_type in ['spectrogram', 'nmode', 'tv', 'tv_startup', 'irvb']:
+        for special_type in ['spectrogram', 'nmode', 'tv', 'tv_startup', 'irvb', 'neutron']:
             self.tab_configs.append({
                 'diagnostic': None,
                 'tab_type': special_type,
@@ -288,7 +315,7 @@ class PRISMApp(QMainWindow):
 
             btn_row = QHBoxLayout()
             btn_row.setSpacing(4)
-            for tab_index, tab_name in items:
+            for tab_index, tab_name, tab_type in items:
                 btn = QPushButton(tab_name)
                 btn.setFixedHeight(26)
                 btn.setStyleSheet("font-size: 11px; padding: 2px 8px;")
@@ -359,6 +386,7 @@ class PRISMApp(QMainWindow):
         # Sidebar
         self.sidebar = SidebarNav(self.tab_configs)
         self.sidebar.tabSelected.connect(self._switch_tab)
+        self.sidebar.apply_all_btn.clicked.connect(self._apply_shot_to_all_tabs)
 
         # Content stack
         self.stack = QStackedWidget()
@@ -423,6 +451,29 @@ class PRISMApp(QMainWindow):
         if tab_index in self.tab_widgets:
             self.stack.setCurrentWidget(self.tab_widgets[tab_index])
             self._update_toolbar(tab_index)
+
+    def _apply_shot_to_all_tabs(self):
+        """Apply global shot number to all tabs (creating uncached ones first)"""
+        shot_text = self.sidebar.global_shot_entry.text().strip()
+        if not shot_text:
+            return
+
+        self.statusBar().showMessage(f"Applying shot #{shot_text} to all tabs...")
+        self.progress.setRange(0, 0)
+        self.progress.show()
+        QApplication.processEvents()
+
+        count = 0
+        for i in range(len(self.tab_configs)):
+            if i not in self.tab_cache:
+                self._create_tab_content(i)
+            tab = self.tab_cache.get(i)
+            if tab and hasattr(tab, 'shot_entry'):
+                tab.shot_entry.setText(shot_text)
+                count += 1
+
+        self.progress.hide()
+        self.statusBar().showMessage(f"Shot #{shot_text} applied to {count} tab(s)")
 
     def _create_tab_content(self, tab_index):
         """Create actual tab content when first accessed"""

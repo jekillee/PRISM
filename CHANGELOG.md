@@ -5,6 +5,63 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-03-16
+
+### Added
+- **SVG Save Button**: Added "SVG" button to toolbar next to PNG save — saves figure as SVG with white background
+- **N-Mode Contour Line Width**: Added contour line width (0.1–5.0, default 0.8) control to N-Mode Plot Options dialog
+- **N-Mode Amplitude Line Width**: Added amplitude line width (0.5–5.0, default 1.5) control to N-Mode Plot Options dialog
+- **N-Mode Selective Mode Checkboxes**: Replaced n-modes slider (1–8) with 5 checkboxes (n=1~5) in Plot section — always calculates nmodes=5, filters at plot time
+- **N-Mode Title Font Size**: Added title font size (6–24, default 12) control to N-Mode Plot Options dialog
+- **Spectrogram Title Font Size**: Added title font size (6–24, default 12) control to Spectrogram Plot Options dialog
+- **Global Shot Input**: Added shot number entry with "Apply All" icon button to sidebar — sets shot number across all tabs at once
+- **Neutron Time Trace Tab**: New tab for fusion neutron diagnostics (near J-port) — 3x1 subplot layout (Fission Chamber, He3 Counter, Diamond Detector) with shot overplot
+- **CES nn Paper**: Added `docs/CES/Lee_2026_Fusion_Eng._Des._222_115518.pdf`
+
+### Changed
+- **Unified Initial Canvas Styling**: All tabs now apply consistent font sizes (label 12, tick 10) and grid style (`--`, lw=0.3) on initial empty canvas, matching post-data-load styling
+  - Affected: Profile tabs, Time Trace tabs, Spectrogram, N-Mode Spectrum, MSE Profile
+- **Profile Top Margin**: Changed from `top=0.93` to `top=0.95` (unified with Time Trace)
+- **PNG Save Background**: Changed from figure facecolor (dark gray) to white for clean exports
+- **PNG/SVG Save**: Removed `bbox_inches='tight'` to preserve manual margin settings
+- **PNG Save Button**: Replaced default matplotlib save icon with "PNG" text button matching SVG button style
+- **Toolbar Icon Colors**: All toolbar icons (except theme toggle) now colorized per theme — black in light theme, white in dark theme
+- **TV Tab Control Panel**: Added `ScrollBarAlwaysOn` and consistent margins (`9, 9, 9, 9`) — panel width now matches all other tabs
+- **TV Startup Control Panel**: Reduced Shot List listbox stretch ratio (3:1→1:1) and input field widths (100→60px) to match other tabs' control panel width
+- **TV Compare Mode Filename**: Changed filename display from `|` separator to newline for better readability
+- **Edit Axis Dropdown Labels**: All tabs now show meaningful axis names in matplotlib's "Customize" → "Select Axes" dropdown instead of empty/coordinate strings
+  - Profile: parameter labels (e.g., "Ti [keV]", "vT [km/s]")
+  - Time Trace: parameter labels
+  - MSE: "γ [rad]", "q"
+  - Spectrogram: "Spectrogram"
+  - N-Mode: "Frequency [kHz]", "Amplitude [Gauss]"
+  - TV: "TV Image", "TV01", "TV02"
+  - TV Startup: "TV Startup"
+  - IRVB: "P_rad (psi=...)", "2D Profile"
+- **N-Mode Time [s] Layout**: Changed from 2-row span grid to HBoxLayout with stretch, matching Freq [kHz] layout
+- **N-Mode Imshow Alpha**: Fixed alpha to 1.0 (removed adjustable alpha option)
+- **Spectrogram Colorbar**: Removed colorbar from spectrogram plot for cleaner display
+- **Spectrogram Top Margin**: Changed from `top=0.95` to `top=0.92`
+- **N-Mode Top Margin**: Changed from `top=0.95` to `top=0.92`
+- **IRVB Margins**: Changed from `top=0.95, right=0.95` to `top=0.92, right=0.93`
+- **Toolbar Icon Size**: Fixed inconsistent icon sizes between dark/light themes by setting `setIconSize(QSize(24, 24))`
+- **Toolbar Button Colors**: PNG/SVG button colors now match toolbar icon colors (dark: #cccccc, light: #555555)
+- **MSE Gamma Conversion**: Changed TGAMMA display from raw to degrees — `arctan(tgamma) * 180/π + 90`, reference line moved from 0 to 90 deg
+- **MSE Labels**: Updated axis labels and export headers from `γ [rad]` to `γ [deg]`
+- **IRVB Legend Colors**: Legend text and background now theme-aware via `rcParams` (previously hardcoded white/gray)
+- **IRVB Time Entry Width**: Increased from 60px to 75px for full timestamp display
+- **Sidebar New Tab Highlight**: New tabs (Neutron) shown with accent color in sidebar
+
+### Fixed
+- **N-Mode Imshow Colors**: Fixed black/wrong colors when using "Default" palette with imshow mode — changed from `LinearSegmentedColormap` (which created gradient artifacts for dark colors like #000000) to `ListedColormap` for flat single-color rendering
+- **N-Mode Initial Canvas**: Fixed missing units on amplitude axis label (`'Amplitude'` → `'Amplitude [Gauss]'`)
+- **N-Mode Contour Levels Disable**: Added visual feedback (grayed background) when contour levels input is disabled in imshow mode
+- **MSE Time Trace ylim**: Fixed gamma axis bottom limit too low — initialization changed from `(0, 0)` to `(inf, -inf)` for proper auto-ranging
+- **TV/TV Startup tight_layout Warning**: Suppressed matplotlib tight_layout warnings by switching to explicit `subplots_adjust`
+
+### Removed
+- **IRVB IP Fault Masking**: Removed automatic IP fault time filtering from IRVB data loading — data now shows full time range without `t_ip_fault` cutoff
+
 ## [2.1.0] - 2026-02-24
 
 ### Added

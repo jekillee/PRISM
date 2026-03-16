@@ -182,7 +182,7 @@ class MSETimeTraceTab(TimeTraceBaseTab):
         self.ax1.clear()
         self.ax2.clear()
 
-        self.ax1.set_ylabel(r'$\gamma$ [rad]')
+        self.ax1.set_ylabel(r'$\gamma$ [deg]')
         self.ax2.set_xlabel('Time [s]')
 
         param = self._get_selected_param()
@@ -196,7 +196,8 @@ class MSETimeTraceTab(TimeTraceBaseTab):
         if not selected_entries:
             return
 
-        gamma_min, gamma_max, param_max, param_min = 0, 0, 0, 0
+        gamma_min, gamma_max = np.inf, -np.inf
+        param_min, param_max = np.inf, -np.inf
         colors = self._get_plot_colors(selected_entries)
 
         for i, entry in enumerate(selected_entries):
@@ -282,8 +283,8 @@ class MSETimeTraceTab(TimeTraceBaseTab):
 
         # Set limits and styling
         zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
-        self.ax1.axhline(0, color=zc, linestyle='--', gid='zero_ref')
-        if gamma_max > 0:
+        self.ax1.axhline(90, color=zc, linestyle='--', gid='zero_ref')
+        if gamma_max > -np.inf:
             gamma_margin = (gamma_max - gamma_min) * 0.1
             self.ax1.set_ylim(gamma_min - gamma_margin, gamma_max + gamma_margin)
 
@@ -301,7 +302,7 @@ class MSETimeTraceTab(TimeTraceBaseTab):
             # Write header
             f.write("# MSE Time Trace Data (q and j interpolated at TGAMMA position)\n")
             f.write("#%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s\n" % (
-                "Shot", "Time[s]", "R[m]", "gamma", "gamma_err", "q", "q_err", "j[MA/m2]", "j_err"
+                "Shot", "Time[s]", "R[m]", "gamma[deg]", "gamma_err[deg]", "q", "q_err", "j[MA/m2]", "j_err"
             ))
 
             for entry in selected_entries:

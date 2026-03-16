@@ -406,7 +406,7 @@ class IRVBTab:
         time_input_layout.addWidget(QLabel('Time [s]'))
 
         self.time_entry = QLineEdit('0.0')
-        self.time_entry.setFixedWidth(60)
+        self.time_entry.setFixedWidth(75)
         self.time_entry.returnPressed.connect(self._goto_time)
         time_input_layout.addWidget(self.time_entry)
 
@@ -923,10 +923,6 @@ class IRVBTab:
             self.irvb_data = loader.load_data(shot_number)
             self.shot_number = shot_number
 
-            # Get IP fault time and slice data
-            self._get_ip_fault_time()
-            self._slice_by_ip_fault()
-
             # Update frame controls
             self.total_frames = len(self.irvb_data.time)
             self.current_frame = 0
@@ -1096,8 +1092,7 @@ class IRVBTab:
             self._update_status("Failed to load EFIT", color='red')
             return
 
-        # Slice data by EFIT time range and update frame controls
-        self._update_status("Slicing data...", color='blue')
+        # Slice data to EFIT time range and update frame controls
         self._slice_by_efit_time()
         self._update_frame_controls()
 
@@ -1140,7 +1135,7 @@ class IRVBTab:
         # GridSpec layout
         gs = GridSpec(n_regions, 2, figure=self.figure,
                      width_ratios=[1.5, 1], wspace=0.10, hspace=0.0,
-                     left=0.10, right=0.95, top=0.95, bottom=0.10)
+                     left=0.10, right=0.93, top=0.92, bottom=0.10)
 
         # Create time trace axes (left column)
         self.ax_traces = []
@@ -1153,12 +1148,19 @@ class IRVBTab:
 
         # Create 2D profile axis (right column)
         self.ax_2d = self.figure.add_subplot(gs[:, 1])
+        self.ax_2d.set_label('2D Profile')
 
         # Set ax references for each time trace (for toolbar Axes access)
         n_regions = len(self.psi_boundaries) + 1
         boundaries = [0] + self.psi_boundaries + [np.inf]
         for i, ax in enumerate(self.ax_traces):
             setattr(self, f'ax_trace_{i}', ax)
+            psi_min = boundaries[i]
+            psi_max = boundaries[i + 1]
+            if psi_max == np.inf:
+                ax.set_label(f'P_rad (psi>{psi_min:.2f})')
+            else:
+                ax.set_label(f'P_rad (psi={psi_min:.2f}-{psi_max:.2f})')
 
         # Configure toolbar with all time traces (exclude 2D plot)
         if self.toolbar:
@@ -1220,9 +1222,13 @@ class IRVBTab:
             ax.plot(time, self.region_prad[i], color=color, linewidth=2)
 
             # Text annotation instead of legend (no line, text only)
+            import matplotlib as _mpl
+            _text_color = _mpl.rcParams.get('text.color', 'black')
+            _bg_color = _mpl.rcParams.get('axes.facecolor', 'white')
             ax.text(0.02, 0.95, label, transform=ax.transAxes,
                    fontsize=self.trace_legend_fontsize, verticalalignment='top',
-                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.5,
+                   color=_text_color,
+                   bbox=dict(boxstyle='round', facecolor=_bg_color, alpha=0.7,
                              edgecolor='gray', linewidth=0.5))
 
             # ylabel without psi range, fixed position

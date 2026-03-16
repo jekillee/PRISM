@@ -93,18 +93,21 @@ class TabFactory:
         """Get display name for tab"""
         if tab_type == 'spectrogram':
             return 'Spectrogram'
-        
+
         if tab_type == 'nmode':
             return 'n-mode'
-        
+
         if tab_type == 'tv':
             return 'TV'
-        
+
         if tab_type == 'irvb':
             return 'IRVB'
 
         if tab_type == 'tv_startup':
             return 'TV Startup'
+
+        if tab_type == 'neutron':
+            return 'Neutron'
 
         if diagnostic_name in TabFactory.TAB_NAMES:
             name = TabFactory.TAB_NAMES[diagnostic_name].get(tab_type)
@@ -117,7 +120,7 @@ class TabFactory:
     @staticmethod
     def should_create_tab(diagnostic_name, tab_type):
         """Check if tab should be created"""
-        if tab_type in ('spectrogram', 'nmode', 'tv', 'irvb', 'tv_startup'):
+        if tab_type in ('spectrogram', 'nmode', 'tv', 'irvb', 'tv_startup', 'neutron'):
             return True
 
         if tab_type == 'profile':
@@ -187,6 +190,17 @@ class TabFactory:
         if tab_type == 'tv_startup':
             from ui.tv_startup_tab import TVStartupTab
             tab = TVStartupTab(
+                parent=notebook,
+                app_config=app_config,
+                diagnostic_config=DIAGNOSTICS
+            )
+            tab.create_widgets()
+            return tab
+
+        # Special case: Neutron tab
+        if tab_type == 'neutron':
+            from ui.neutron_timetrace_tab import NeutronTimeTraceTab
+            tab = NeutronTimeTraceTab(
                 parent=notebook,
                 app_config=app_config,
                 diagnostic_config=DIAGNOSTICS

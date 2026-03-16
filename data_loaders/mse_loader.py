@@ -160,14 +160,19 @@ class MSELoader(BaseDiagnosticLoader):
             sgamma = np.clip(sgamma, 0, None)
             j_err = np.clip(j_err, 0, None)
             q_err = np.clip(q_err, 0, None)
-            
+
+            # Convert TGAMMA to gamma [deg]: arctan(tgamma) * 180/pi + 90
+            gamma_deg = np.arctan(tgamma) * (180.0 / np.pi) + 90.0
+            sgamma_deg = sgamma / (1.0 + tgamma**2) * (180.0 / np.pi)
+            sgamma_deg = np.clip(sgamma_deg, 0, None)
+
             # =================================================================
             # Package measurements
             # =================================================================
             measurements = {
                 'tgamma': {
-                    'data': tgamma,
-                    'error': sgamma,
+                    'data': gamma_deg,
+                    'error': sgamma_deg,
                     'good_mask': good_mask,
                     'R': rr,
                     'drr': drr

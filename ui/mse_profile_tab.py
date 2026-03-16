@@ -35,16 +35,23 @@ class MSEProfileTab(ProfileBaseTab):
     def create_widgets(self):
         """Create MSE profile tab widgets"""
         self.figure = Figure(self.app_config.FIGURE_SIZE)
-        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.93, bottom=0.10, wspace=0.20)
+        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.95, bottom=0.10, wspace=0.20)
 
         # Setup 1x2 plot with shared x-axis: TGAMMA (left), j or q (right)
         self.ax1 = self.figure.add_subplot(121)
         self.ax2 = self.figure.add_subplot(122, sharex=self.ax1)
 
-        self.ax1.set_xlabel('R [m]')
-        self.ax1.set_ylabel(r'$\gamma$ [rad]')
-        self.ax2.set_xlabel('R [m]')
-        self.ax2.set_ylabel('q')
+        self.ax1.set_xlabel('R [m]', fontsize=12)
+        self.ax1.set_ylabel(r'$\gamma$ [deg]', fontsize=12)
+        self.ax1.set_label(r'γ [deg]')
+        self.ax2.set_xlabel('R [m]', fontsize=12)
+        self.ax2.set_ylabel('q', fontsize=12)
+        self.ax2.set_label('q')
+
+        for ax in [self.ax1, self.ax2]:
+            ax.tick_params(labelsize=10)
+            import matplotlib as mpl
+            ax.grid(ls='--', lw=0.3, c=mpl.rcParams.get('grid.color', '#444444'))
 
         # Create canvas
         self.canvas = FigureCanvasQTAgg(self.figure)
@@ -284,7 +291,7 @@ class MSEProfileTab(ProfileBaseTab):
         self.ax2.clear()
 
         self.ax1.set_xlabel('R [m]')
-        self.ax1.set_ylabel(r'$\gamma$ [rad]')
+        self.ax1.set_ylabel(r'$\gamma$ [deg]')
         self.ax2.set_xlabel('R [m]')
 
         # Set y-label based on selected parameter
@@ -413,7 +420,7 @@ class MSEProfileTab(ProfileBaseTab):
 
         # Set limits
         zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
-        self.ax1.axhline(0, color=zc, linestyle='--', gid='zero_ref')
+        self.ax1.axhline(90, color=zc, linestyle='--', gid='zero_ref')
         gamma_margin = (gamma_max - gamma_min) * 0.1
         self.ax1.set_ylim(gamma_min - gamma_margin, gamma_max + gamma_margin)
 
@@ -574,7 +581,7 @@ class MSEProfileTab(ProfileBaseTab):
 
         self.ax1.set_xlabel(x_label)
         self.ax2.set_xlabel(x_label)
-        self.ax1.set_ylabel(r'$\gamma$ [rad]')
+        self.ax1.set_ylabel(r'$\gamma$ [deg]')
 
         if param == 'q':
             self.ax2.set_ylabel('q')
@@ -582,7 +589,7 @@ class MSEProfileTab(ProfileBaseTab):
             self.ax2.set_ylabel('j [MA/m$^2$]')
 
         zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
-        self.ax1.axhline(0, color=zc, linestyle='--', gid='zero_ref')
+        self.ax1.axhline(90, color=zc, linestyle='--', gid='zero_ref')
         gamma_margin = (gamma_max - gamma_min) * 0.1
         self.ax1.set_ylim(gamma_min - gamma_margin, gamma_max + gamma_margin)
 
@@ -619,7 +626,7 @@ class MSEProfileTab(ProfileBaseTab):
                 f.write(f"# EFIT Source: {self.computed_efit_tree}\n")
             f.write("#%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s\n" % (
                 "Shot", "Time[s]", "R[m]", "psi_N", "rho_pol", "rho_tor",
-                "gamma", "gamma_err", "drr[m]", "q", "q_err", "j[MA/m2]", "j_err"
+                "gamma[deg]", "gamma_err[deg]", "drr[m]", "q", "q_err", "j[MA/m2]", "j_err"
             ))
 
             for entry in selected_entries:

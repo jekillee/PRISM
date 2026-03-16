@@ -114,11 +114,12 @@ class TVTab:
         canvas_layout = QVBoxLayout(canvas_widget)
         canvas_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=True)
+        self.figure = Figure(self.app_config.FIGURE_SIZE, tight_layout=False)
         self.ax = self.figure.add_subplot(111)
         self.ax.set_xticks([])
         self.ax.set_yticks([])
         self.ax.set_title("No image loaded")
+        self.ax.set_label('TV Image')
         apply_dark_figure_style(self.figure)
 
         # Create canvas
@@ -136,9 +137,11 @@ class TVTab:
         scroll_area.setFixedWidth(CONTROL_PANEL_WIDTH)
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
 
         control_widget = QWidget()
         control_layout = QVBoxLayout(control_widget)
+        control_layout.setContentsMargins(9, 9, 9, 9)
 
         self._create_file_controls(control_layout)
         self._create_frame_controls(control_layout)
@@ -439,37 +442,35 @@ class TVTab:
 
         layout.addLayout(check_layout)
 
-        # Line style options
-        style_layout = QHBoxLayout()
-
-        # Color
-        style_layout.addWidget(QLabel('Color:'))
+        # Line style options (2 rows for compact layout)
+        style_row1 = QHBoxLayout()
+        style_row1.addWidget(QLabel('Color:'))
         self.line_color_combo = QComboBox()
         self.line_color_combo.addItems(['white', 'black', 'red', 'blue', 'yellow', 'green'])
         self.line_color_combo.setCurrentText('white')
-        self.line_color_combo.setFixedWidth(80)
         self.line_color_combo.currentIndexChanged.connect(lambda: self._update_line_display())
-        style_layout.addWidget(self.line_color_combo)
+        style_row1.addWidget(self.line_color_combo, 1)
 
-        # Linestyle
-        style_layout.addWidget(QLabel('Style:'))
-        self.line_style_combo = QComboBox()
-        self.line_style_combo.addItems(['dashed', 'solid', 'dotted'])
-        self.line_style_combo.setCurrentText('dashed')
-        self.line_style_combo.setFixedWidth(80)
-        self.line_style_combo.currentIndexChanged.connect(lambda: self._update_line_display())
-        style_layout.addWidget(self.line_style_combo)
-
-        # Width
-        style_layout.addWidget(QLabel('Width:'))
+        style_row1.addWidget(QLabel('Width:'))
         self.line_width_combo = QComboBox()
         self.line_width_combo.addItems(['1', '2', '3', '4', '5'])
         self.line_width_combo.setCurrentText('2')
-        self.line_width_combo.setFixedWidth(60)
+        self.line_width_combo.setFixedWidth(50)
         self.line_width_combo.currentIndexChanged.connect(lambda: self._update_line_display())
-        style_layout.addWidget(self.line_width_combo)
+        style_row1.addWidget(self.line_width_combo)
 
-        layout.addLayout(style_layout)
+        layout.addLayout(style_row1)
+
+        style_row2 = QHBoxLayout()
+        style_row2.addWidget(QLabel('Style:'))
+        self.line_style_combo = QComboBox()
+        self.line_style_combo.addItems(['dashed', 'solid', 'dotted'])
+        self.line_style_combo.setCurrentText('dashed')
+        self.line_style_combo.currentIndexChanged.connect(lambda: self._update_line_display())
+        style_row2.addWidget(self.line_style_combo, 1)
+        style_row2.addStretch()
+
+        layout.addLayout(style_row2)
 
         # Hint label
         hint_label = QLabel("(Left-click: add point, Right-click: finish)")
@@ -732,6 +733,7 @@ class TVTab:
         self.ax.set_xticks([])
         self.ax.set_yticks([])
         self.ax.set_title("No image loaded")
+        self.ax.set_label('TV Image')
 
         self.im = None
         self.ax1 = None
@@ -755,7 +757,9 @@ class TVTab:
         self.ax2.set_yticks([])
 
         self.ax1.set_title("TV01")
+        self.ax1.set_label('TV01')
         self.ax2.set_title("TV02")
+        self.ax2.set_label('TV02')
 
         self.im = None
         self.ax = None
@@ -1200,7 +1204,7 @@ class TVTab:
         # Always update filename display
         tv1_name = self.tv1_images[frame_idx] if frame_idx < len(self.tv1_images) else "N/A"
         tv2_name = self.tv2_images[tv2_frame] if tv2_frame is not None and tv2_frame < len(self.tv2_images) else "N/A"
-        self.filename_label.setText(f"TV01: {tv1_name} | TV02: {tv2_name}")
+        self.filename_label.setText(f"TV01: {tv1_name}\nTV02: {tv2_name}")
 
         if update_ui:
             self.frame_entry.setText(str(frame_idx + 1))

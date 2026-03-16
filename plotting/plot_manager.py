@@ -78,28 +78,44 @@ class PlotManager:
         self.config = config
         self.color_manager = ColorManager()
     
-    def setup_profile_plot(self, figure, y1_label, y2_label):
+    def setup_profile_plot(self, figure, y1_label, y2_label,
+                           label_fontsize=12, tick_fontsize=10):
         """Setup profile plot axes (side-by-side)"""
-        figure.subplots_adjust(left=0.10, right=0.97, top=0.93, bottom=0.10, wspace=0.20)
+        figure.subplots_adjust(left=0.10, right=0.97, top=0.95, bottom=0.10, wspace=0.20)
         ax1 = figure.add_subplot(121)
-        ax1.set_xlabel('x')
-        ax1.set_ylabel(y1_label)
+        ax1.set_xlabel('x', fontsize=label_fontsize)
+        ax1.set_ylabel(y1_label, fontsize=label_fontsize)
+        ax1.set_label(y1_label)
 
         ax2 = figure.add_subplot(122, sharex=ax1)
-        ax2.set_xlabel('x')
-        ax2.set_ylabel(y2_label)
+        ax2.set_xlabel('x', fontsize=label_fontsize)
+        ax2.set_ylabel(y2_label, fontsize=label_fontsize)
+        ax2.set_label(y2_label)
+
+        for ax in [ax1, ax2]:
+            ax.tick_params(labelsize=tick_fontsize)
+            import matplotlib as mpl
+            ax.grid(ls='--', lw=0.3, c=mpl.rcParams.get('grid.color', '#444444'))
 
         return ax1, ax2
 
-    def setup_timetrace_plot(self, figure, y1_label, y2_label):
+    def setup_timetrace_plot(self, figure, y1_label, y2_label,
+                             label_fontsize=12, tick_fontsize=10):
         """Setup time trace plot axes (stacked)"""
         figure.subplots_adjust(left=0.10, right=0.97, top=0.95, bottom=0.10, hspace=0.15)
         ax1 = figure.add_subplot(211)
-        ax1.set_ylabel(y1_label)
+        ax1.set_ylabel(y1_label, fontsize=label_fontsize)
+        ax1.set_label(y1_label)
 
         ax2 = figure.add_subplot(212, sharex=ax1)
-        ax2.set_xlabel('Time [s]')
-        ax2.set_ylabel(y2_label)
+        ax2.set_xlabel('Time [s]', fontsize=label_fontsize)
+        ax2.set_ylabel(y2_label, fontsize=label_fontsize)
+        ax2.set_label(y2_label)
+
+        for ax in [ax1, ax2]:
+            ax.tick_params(labelsize=tick_fontsize)
+            import matplotlib as mpl
+            ax.grid(ls='--', lw=0.3, c=mpl.rcParams.get('grid.color', '#444444'))
 
         # Add zero line for velocity-like parameters
         if 'v' in y2_label.lower():
