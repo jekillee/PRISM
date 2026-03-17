@@ -108,7 +108,7 @@ class SidebarNav(QWidget):
         shot_row.addWidget(self.global_shot_entry, stretch=1)
 
         self.apply_all_btn = QPushButton()
-        self.apply_all_btn.setIcon(self.style().standardIcon(QStyle.SP_DialogApplyButton))
+        self.apply_all_btn.setIcon(self.style().standardIcon(QStyle.SP_DialogOkButton))
         self.apply_all_btn.setFixedSize(24, 24)
         self.apply_all_btn.setToolTip("Apply shot to all tabs")
         shot_row.addWidget(self.apply_all_btn)

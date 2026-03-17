@@ -67,8 +67,8 @@ class NeutronTimeTraceTab:
         self.figure = Figure(figsize=(8, 10))
 
         self.ax_fission = self.figure.add_subplot(311)
-        self.ax_he3 = self.figure.add_subplot(312)
-        self.ax_diamond = self.figure.add_subplot(313)
+        self.ax_he3 = self.figure.add_subplot(312, sharex=self.ax_fission)
+        self.ax_diamond = self.figure.add_subplot(313, sharex=self.ax_fission)
 
         self.axes = {
             'fission': self.ax_fission,
@@ -232,6 +232,8 @@ class NeutronTimeTraceTab:
         # Keyboard shortcut
         del_shortcut = QShortcut(QKeySequence(Qt.Key_Delete), self.shots_listbox)
         del_shortcut.activated.connect(self._remove_shot)
+        bs_shortcut = QShortcut(QKeySequence(Qt.Key_Backspace), self.shots_listbox)
+        bs_shortcut.activated.connect(self._remove_shot)
 
         parent.layout().addWidget(group)
 

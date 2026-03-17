@@ -39,6 +39,7 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 | BES | Beam Emission Spectroscopy | Spectrogram |
 | TCI | Two-Color Interferometer | ne, Spectrogram |
 | Mirnov | Magnetic Probes | Spectrogram, n-mode |
+| Neutron | Fusion Neutron (near J-port) | Fission, He3, Diamond |
 | TV | Visible Camera (IVIS) | Image sequence |
 | IRVB | Infra-Red Video Bolometer | 2D Prad |
 
@@ -100,6 +101,7 @@ PRISM/
 │   ├── bes_loader.py            # BES loader
 │   ├── tci_loader.py            # TCI loader
 │   ├── irvb_loader.py           # IRVB loader
+│   ├── neutron_loader.py        # Neutron loader
 │   └── efit_loader.py           # EFIT loader
 ├── ui/
 │   ├── theme.py                 # Theme manager (dark/light QSS, palette, mpl)
@@ -121,6 +123,7 @@ PRISM/
 │   ├── tv_startup_tab.py        # TV Startup Comparison tab
 │   ├── tv_utils.py              # TV utility functions
 │   ├── irvb_tab.py              # IRVB viewer tab
+│   ├── neutron_timetrace_tab.py # Neutron time trace tab
 │   ├── icons/                   # SVG icons (logo, themed widgets)
 │   └── widgets/
 │       └── custom_toolbar.py    # Custom matplotlib toolbar

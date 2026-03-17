@@ -10,6 +10,7 @@ A modular viewer for KSTAR diagnostic data including:
 - Thomson Scattering
 - ECE (Electron Cyclotron Emission)
 - MSE (Motional Stark Effect)
+- Neutron (Fission Chamber, He3 Counter, Diamond Detector)
 - Spectrogram Analysis
 - TV Image Viewer
 - IRVB (Infra-Red Video Bolometer)

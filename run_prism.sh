@@ -48,8 +48,12 @@ export NO_AT_BRIDGE=1
 
 # Show help
 show_help() {
+    # Extract version from app_config.py
+    local version
+    version=$(grep -oP 'VERSION\s*=\s*"\K[^"]+' "$PRISM_HOME/config/app_config.py" 2>/dev/null || echo "unknown")
+
     echo ""
-    echo "PRISM - Plasma Research Integrated System for Multi-diagnostics"
+    echo "PRISM v${version} - Plasma Research Integrated System for Multi-diagnostics"
     echo ""
     echo "Usage: prism [option]"
     echo ""
@@ -58,11 +62,28 @@ show_help() {
     echo "  -s, --select  Open tab selector to launch a single viewer"
     echo "  -h, --help    Show this help message"
     echo ""
+    echo "Available Tabs:"
+    echo "  Profiles        Ti/vT (CES), ne/Te (Thomson+ECE), MSE (gamma/q/j)"
+    echo "  Time Traces     Ti/vT, ne/Te, MSE, Neutron (Fission/He3/Diamond)"
+    echo "  Spectral        Spectrogram (ECE/ECEI/BES/Mirnov), n-Mode Spectrum"
+    echo "  Imaging         TV Viewer, TV Startup, IRVB"
+    echo ""
+    echo "Keyboard Shortcuts:"
+    echo "  Delete/Backspace  Remove selected items from list"
+    echo "  Enter             Fetch data (in shot input field)"
+    echo ""
+    echo "Data Sources:"
+    echo "  MDS+    mdsr.kstar.kfe.re.kr:8005 (CES, Thomson, ECE, MSE, Neutron, ...)"
+    echo "  HTTP    172.17.112.125 (IRVB)"
+    echo "  File    TV images (.bmp, .png, .jpg)"
+    echo ""
+    echo "Settings: ~/.config/prism/settings.json"
+    echo ""
     echo "Examples:"
     echo "  prism          # Launch full PRISM"
     echo "  prism -s       # Choose a single viewer to launch"
     echo ""
-    echo "Author: Jekil Lee (jklee@kfe.re.kr)"
+    echo "Jekil Lee (jklee@kfe.re.kr)"
     echo ""
 }
 
