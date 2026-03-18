@@ -20,6 +20,13 @@ class QuietNavigationToolbar(NavigationToolbar2QT):
     # Override toolitems to remove the default save button
     toolitems = [t for t in NavigationToolbar2QT.toolitems if t[0] != 'Save']
 
+    def set_history_buttons(self):
+        """Override to suppress RuntimeError when QAction is already deleted"""
+        try:
+            super().set_history_buttons()
+        except RuntimeError:
+            pass
+
     def __init__(self, canvas, parent=None):
         super().__init__(canvas, parent)
         # Fix icon size consistency across themes

@@ -83,9 +83,11 @@ class DiagnosticData:
         data = param_dict['data']
 
         if 'error_upper' in param_dict and 'error_lower' in param_dict:
-            return data, param_dict['error_upper'], param_dict['error_lower']
+            return (data,
+                    np.maximum(param_dict['error_upper'], 0),
+                    np.maximum(param_dict['error_lower'], 0))
 
-        error = param_dict['error']
+        error = np.maximum(param_dict['error'], 0)
         return data, error, error
 
 
