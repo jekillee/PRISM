@@ -5,6 +5,18 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-03-18
+
+### Changed
+- **Apply All Button Icon**: Changed from `SP_DialogApplyButton` to `SP_DialogOkButton`
+- **Neutron Shared X-Axis**: Linked x-axes across 3 subplots with `sharex`
+- **Neutron Backspace Shortcut**: Added Backspace key shortcut for removing shots (in addition to Delete)
+- **Help Message**: Enhanced `prism -h` with Available Tabs, Keyboard Shortcuts, Data Sources, Settings path
+
+### Fixed
+- **Thomson Negative Errorbar Crash**: Fixed `'yerr' must not contain negative values` crash — negative error values now clipped to 0 (errorbar not drawn for those points)
+- **Toolbar QAction RuntimeError**: Suppressed `Internal C++ object already deleted` error on zoom/pan — PySide6/matplotlib compatibility issue
+
 ## [2.2.0] - 2026-03-16
 
 ### Added
@@ -53,8 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sidebar New Tab Highlight**: New tabs (Neutron) shown with accent color in sidebar
 
 ### Fixed
-- **Thomson Negative Errorbar Crash**: Fixed `'yerr' must not contain negative values` crash — negative error values now clipped to 0 (errorbar not drawn for those points)
-- **Toolbar QAction RuntimeError**: Suppressed `Internal C++ object already deleted` error on zoom/pan — PySide6/matplotlib compatibility issue
 - **N-Mode Imshow Colors**: Fixed black/wrong colors when using "Default" palette with imshow mode — changed from `LinearSegmentedColormap` (which created gradient artifacts for dark colors like #000000) to `ListedColormap` for flat single-color rendering
 - **N-Mode Initial Canvas**: Fixed missing units on amplitude axis label (`'Amplitude'` → `'Amplitude [Gauss]'`)
 - **N-Mode Contour Levels Disable**: Added visual feedback (grayed background) when contour levels input is disabled in imshow mode
