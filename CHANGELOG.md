@@ -5,6 +5,15 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-03-20
+
+### Changed
+- **Sidebar Version Display**: Show update date next to version — `v2.2.2 (2026-03-20)`, reduced margin between PRISM title and version
+- **Global Shot Placeholder**: Changed placeholder text from `Shot #` to `Enter Shot`
+
+### Fixed
+- **Ti/vT TimeTrace File Data Not Plotted**: Fixed CES file data (tgf) not rendering — `_parse_entry` returned `tgf01` as source but cache key used `tgf`, causing cache miss
+
 ## [2.2.1] - 2026-03-18
 
 ### Changed

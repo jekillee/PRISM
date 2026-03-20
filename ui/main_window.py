@@ -87,11 +87,11 @@ class SidebarNav(QWidget):
         title_layout.addStretch()
         layout.addWidget(title_row)
 
-        # Version (below title, tight margin)
-        ver_label = QLabel(f'v{VERSION}')
+        # Version + date (below title, tight margin)
+        ver_label = QLabel(f'v{VERSION} ({UPDATE_DATE})')
         ver_label.setAlignment(Qt.AlignCenter)
         ver_label.setContentsMargins(0, 0, 0, 0)
-        ver_label.setStyleSheet("color: #888; font-size: 11px; margin-top: -4px;")
+        ver_label.setStyleSheet("color: #888; font-size: 11px; margin-top: -8px;")
         layout.addWidget(ver_label)
 
         # Global shot input (single row: apply button + entry)
@@ -103,7 +103,7 @@ class SidebarNav(QWidget):
         self.global_shot_entry = QLineEdit()
         self.global_shot_entry.setAlignment(Qt.AlignCenter)
         self.global_shot_entry.setFixedHeight(24)
-        self.global_shot_entry.setPlaceholderText("Shot #")
+        self.global_shot_entry.setPlaceholderText("Enter Shot")
         self.global_shot_entry.setFocusPolicy(Qt.ClickFocus)
         shot_row.addWidget(self.global_shot_entry, stretch=1)
 

@@ -2,6 +2,7 @@
 Ti/vT Time Trace tab with CES and XICS integration
 """
 
+import re
 import numpy as np
 
 from PySide6.QtWidgets import (
@@ -246,7 +247,7 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
         shot_number = int(parts[0])
         radius = float(parts[1]) / 1e3  # mm to m
 
-        # Determine source from diag_label
+        # Determine source from diag_label (strip trailing digits)
         if diag_label.startswith('mod'):
             source = 'mod'
         elif diag_label.startswith('nn'):
@@ -254,8 +255,8 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
         elif diag_label == 'XICS':
             source = 'XICS'
         else:
-            # File data
-            source = diag_label
+            # File data: strip channel number (e.g., 'tgf01' → 'tgf')
+            source = re.sub(r'\d+$', '', diag_label)
 
         return shot_number, radius, source, diag_label
 
