@@ -25,7 +25,14 @@ Author: Jekil Lee (jklee@kfe.re.kr)
 
 import os
 import sys
+import site
 import warnings
+
+# Register jklee's site-packages properly (processes .pth files)
+# PYTHONNOUSERSITE=1 blocks all user site-packages, so we explicitly add jklee's
+_JKLEE_SITE = "/home/users/jklee/.local/lib/python3.8/site-packages"
+if os.path.isdir(_JKLEE_SITE):
+    site.addsitedir(_JKLEE_SITE)
 
 # Suppress numpy compiletime version mismatch warnings (system numpy may differ)
 warnings.filterwarnings("ignore", message=".*compiletime version.*", category=RuntimeWarning)
