@@ -27,6 +27,10 @@ import os
 import sys
 import warnings
 
+# Suppress numpy compiletime version mismatch warnings (system numpy may differ)
+warnings.filterwarnings("ignore", message=".*compiletime version.*", category=RuntimeWarning)
+warnings.filterwarnings("ignore", message=".*binary incompatibility.*", category=RuntimeWarning)
+
 # Suppress matplotlib tight_layout warnings (IRVB colorbar axes are incompatible)
 warnings.filterwarnings("ignore", message=".*tight_layout.*", category=UserWarning)
 

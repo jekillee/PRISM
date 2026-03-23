@@ -29,7 +29,11 @@ if [ ! -f "$PRISM_HOME/main.py" ]; then
     exit 1
 fi
 
-# Set PYTHONPATH to include PRISM directory and PySide6 site-packages
+# Isolate Python environment: ignore running user's ~/.local site-packages
+# to prevent version conflicts (e.g., old numpy from other users)
+export PYTHONNOUSERSITE=1
+
+# Set PYTHONPATH to include PRISM directory and jklee's site-packages
 PYSIDE6_SITE="/home/users/jklee/.local/lib/python3.8/site-packages"
 export PYTHONPATH="$PRISM_HOME:$PYSIDE6_SITE:$PYTHONPATH"
 
