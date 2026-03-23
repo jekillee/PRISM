@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.2.3] - 2026-03-23
 
 ### Fixed
-- **Multi-user Environment Crash**: Fixed `AttributeError: module 'numpy.typing' has no attribute 'NDArray'` when other users run PRISM — their `~/.local` site-packages (with old numpy/PIL) conflicted with jklee's packages. Added `PYTHONNOUSERSITE=1` to `run_prism.sh` to isolate the Python environment
-- **Numpy Version Mismatch Warnings**: Suppressed `compiletime version 3.6 does not match runtime version 3.8` RuntimeWarnings in `main.py`
+- **Multi-user Python Environment Isolation**: Prevented package version conflicts when other users run PRISM by setting `PYTHONNOUSERSITE=1` in launcher script
+- **Runtime Warnings**: Suppressed numpy version mismatch warnings on startup
 
 ## [2.2.2] - 2026-03-20
 
