@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.2.3] - 2026-03-23
 
 ### Fixed
-- **Multi-user Python Environment Isolation**: Prevented package version conflicts when other users run PRISM by setting `PYTHONNOUSERSITE=1` in launcher script
+- **Multi-user Python Environment Isolation**: Prevented package version conflicts when other users run PRISM by filtering other users' `~/.local` paths from `sys.path` at startup
 - **Runtime Warnings**: Suppressed numpy version mismatch warnings on startup
 
 ## [2.2.2] - 2026-03-20
