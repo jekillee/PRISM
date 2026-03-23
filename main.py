@@ -25,14 +25,16 @@ Author: Jekil Lee (jklee@kfe.re.kr)
 
 import os
 import sys
-import site
 import warnings
 
-# Register jklee's site-packages properly (processes .pth files)
-# PYTHONNOUSERSITE=1 blocks all user site-packages, so we explicitly add jklee's
+# Isolate Python environment for multi-user access:
+# Remove other users' ~/.local site-packages from sys.path to prevent
+# version conflicts, while keeping jklee's packages at highest priority
 _JKLEE_SITE = "/home/users/jklee/.local/lib/python3.8/site-packages"
-if os.path.isdir(_JKLEE_SITE):
-    site.addsitedir(_JKLEE_SITE)
+sys.path = [p for p in sys.path if '/.local/' not in p or _JKLEE_SITE in p]
+if _JKLEE_SITE in sys.path:
+    sys.path.remove(_JKLEE_SITE)
+sys.path.insert(0, _JKLEE_SITE)
 
 # Suppress numpy compiletime version mismatch warnings (system numpy may differ)
 warnings.filterwarnings("ignore", message=".*compiletime version.*", category=RuntimeWarning)
