@@ -191,6 +191,94 @@ class NeTeProfileTab(ProfileBaseTab):
                 return key
         return None
 
+    def _get_rshift_diagnostics(self):
+        """Thomson and ECE support R-shift"""
+        return ['Thomson', 'ECE']
+
+    def _get_fit_param_types(self):
+        """Return parameter types for Te/ne fitting"""
+        return ['Te', 'ne']
+
+    def _get_efit_profile_data(self, entry, interp_func):
+        """Get Te/ne profile data in EFIT coordinates for fitting"""
+        shot_number, time_point, source = self._parse_entry(entry)
+
+        if source == 'ECE':
+            # ECE only has Te, no ne - still allow fitting Te
+            cache_key = self._get_ece_cache_key(shot_number)
+            if cache_key is None:
+                return None
+
+            ece_data = self.ece_data_cache[cache_key]
+            time_idx = np.argmin(np.abs(ece_data.time - time_point))
+            ece_rshift = self._get_rshift('ECE')
+            x_data = interp_func(ece_data.radius + ece_rshift)
+
+            Te_data = ece_data.measurements['Te']['data']
+            Te_profile = Te_data[:, time_idx]
+            valid_mask = ece_data.measurements['Te']['valid_mask']
+
+            # Exclude disabled ECE channels
+            ece_keys = self._ece_channel_keys(ece_data)
+            ece_ch_mask = self._get_channel_mask(ece_keys)
+            combined_mask = valid_mask & ece_ch_mask
+
+            return {
+                'Te': {'x': x_data[combined_mask], 'y': Te_profile[combined_mask], 'err': None},
+            }
+
+        # Thomson data (TS or TS+ECE)
+        cache_key = f'{shot_number}_TS'
+        if cache_key not in self.data:
+            return None
+
+        data = self.data[cache_key]
+        time_idx = np.argmin(np.abs(data.time - time_point))
+        ts_rshift = self._get_rshift('Thomson')
+        x_data = interp_func(data.radius + ts_rshift)
+
+        Te_data, Te_err_upper, Te_err_lower = data.get_parameter_asymmetric('Te')
+        ne_data, ne_err_upper, ne_err_lower = data.get_parameter_asymmetric('ne')
+
+        Te_profile = Te_data[:, time_idx]
+        Te_err = (Te_err_upper[:, time_idx] + Te_err_lower[:, time_idx]) / 2.0
+        ne_profile = ne_data[:, time_idx]
+        ne_err = (ne_err_upper[:, time_idx] + ne_err_lower[:, time_idx]) / 2.0
+
+        # Exclude disabled Thomson channels
+        ts_keys = [f"TS_{j}" for j in range(len(data.radius))]
+        ts_mask = self._get_channel_mask(ts_keys)
+
+        result = {
+            'Te': {'x': x_data[ts_mask], 'y': Te_profile[ts_mask], 'err': Te_err[ts_mask]},
+            'ne': {'x': x_data[ts_mask], 'y': ne_profile[ts_mask], 'err': ne_err[ts_mask]},
+        }
+
+        # Include ECE data for TS+ECE mode
+        if source == 'TS+ECE':
+            ece_cache_key = self._get_ece_cache_key(shot_number)
+            if ece_cache_key is not None:
+                ece_data = self.ece_data_cache[ece_cache_key]
+                ece_time_idx = np.argmin(np.abs(ece_data.time - time_point))
+                ece_rshift = self._get_rshift('ECE')
+                ece_x_data = interp_func(ece_data.radius + ece_rshift)
+                ece_Te = ece_data.measurements['Te']['data'][:, ece_time_idx]
+                valid_mask = ece_data.measurements['Te']['valid_mask']
+
+                # Exclude disabled ECE channels
+                ece_keys = self._ece_channel_keys(ece_data)
+                ece_ch_mask = self._get_channel_mask(ece_keys)
+                combined_mask = valid_mask & ece_ch_mask
+
+                # Combine Thomson + ECE Te data
+                combined_x = np.concatenate([x_data[ts_mask], ece_x_data[combined_mask]])
+                combined_y = np.concatenate([Te_profile[ts_mask], ece_Te[combined_mask]])
+                combined_err = np.concatenate([Te_err[ts_mask], np.full(np.sum(combined_mask), np.nan)])
+
+                result['Te'] = {'x': combined_x, 'y': combined_y, 'err': combined_err}
+
+        return result
+
     def _get_channel_info(self):
         """Return channel info based on selected listbox entries."""
         info = []
@@ -245,6 +333,7 @@ class NeTeProfileTab(ProfileBaseTab):
         """Plot R profiles"""
         self.ax1.clear()
         self.ax2.clear()
+        self._clear_click_points()
 
         self.ax1.set_xlabel('R [m]')
         self.ax2.set_xlabel('R [m]')
@@ -333,6 +422,10 @@ class NeTeProfileTab(ProfileBaseTab):
                                              xytext=(0, 5), ha='center', fontsize=7, alpha=0.8,
                                              clip_on=True, annotation_clip=True)
 
+                    # Register for double-click toggle
+                    self._register_click_points(self.ax1, R_data, Te_profile, ts_keys)
+                    self._register_click_points(self.ax2, R_data, ne_profile, ts_keys)
+
                     # Plot ECE data only for "TS+ECE" mode
                     if source == 'TS+ECE':
                         ece_cache_key = self._get_ece_cache_key(shot_number)
@@ -378,6 +471,10 @@ class NeTeProfileTab(ProfileBaseTab):
                             valid_Te = ece_Te_profile[valid_mask]
                             valid_ch = [ece_channels[j] for j in range(len(valid_mask)) if valid_mask[j]]
                             self._add_channel_labels(self.ax1, valid_R, valid_Te, 'ECE', valid_ch)
+
+                            # Register ECE for double-click toggle
+                            valid_ece_keys = [ece_keys[j] for j in range(len(valid_mask)) if valid_mask[j]]
+                            self._register_click_points(self.ax1, valid_R, valid_Te, valid_ece_keys)
 
                 elif source == 'ECE':
                     # Plot ECE data (valid channels only)
@@ -431,6 +528,10 @@ class NeTeProfileTab(ProfileBaseTab):
                     valid_ch = [ece_channels[j] for j in range(len(valid_mask)) if valid_mask[j]]
                     self._add_channel_labels(self.ax1, valid_R, valid_Te, 'ECE', valid_ch)
 
+                    # Register ECE for double-click toggle
+                    valid_ece_keys = [ece_keys[j] for j in range(len(valid_mask)) if valid_mask[j]]
+                    self._register_click_points(self.ax1, valid_R, valid_Te, valid_ece_keys)
+
             except Exception as e:
                 print(f"[ne/Te] Error plotting {entry}: {str(e)}")
 
@@ -443,6 +544,10 @@ class NeTeProfileTab(ProfileBaseTab):
             self.ax2.set_xlim(self.app_config.R_LIMITS)
             ne_margin = ne_max * 0.1
             self.ax2.set_ylim(0, ne_max + ne_margin)
+
+        # Overlay fit curves if available
+        self._overlay_fit_curves(self.ax1, 'Te', selected_entries, colors)
+        self._overlay_fit_curves(self.ax2, 'ne', selected_entries, colors)
 
         self.plot_manager.apply_common_styling(
             self.ax1, self.ax2,
@@ -465,6 +570,7 @@ class NeTeProfileTab(ProfileBaseTab):
 
         self.ax1.clear()
         self.ax2.clear()
+        self._clear_click_points()
 
         selected_entries = [self.selected_listbox.item(i).text()
                            for i in range(self.selected_listbox.count())]
@@ -509,7 +615,8 @@ class NeTeProfileTab(ProfileBaseTab):
                     data = self.data[cache_key]
 
                     time_idx = np.argmin(np.abs(data.time - time_point))
-                    x_data = interp_func(data.radius)
+                    ts_rshift = self._get_rshift('Thomson')
+                    x_data = interp_func(data.radius + ts_rshift)
 
                     Te_data, Te_err_upper, Te_err_lower = data.get_parameter_asymmetric('Te')
                     ne_data, ne_err_upper, ne_err_lower = data.get_parameter_asymmetric('ne')
@@ -567,13 +674,18 @@ class NeTeProfileTab(ProfileBaseTab):
                                              xytext=(0, 5), ha='center', fontsize=7, alpha=0.8,
                                              clip_on=True, annotation_clip=True)
 
+                    # Register for double-click toggle
+                    self._register_click_points(self.ax1, x_data, Te_profile, ts_keys)
+                    self._register_click_points(self.ax2, x_data, ne_profile, ts_keys)
+
                     # Plot ECE data only for "TS+ECE" mode
                     if source == 'TS+ECE':
                         ece_cache_key = self._get_ece_cache_key(shot_number)
                         if ece_cache_key is not None:
                             ece_data = self.ece_data_cache[ece_cache_key]
                             ece_time_idx = np.argmin(np.abs(ece_data.time - time_point))
-                            ece_x_data = interp_func(ece_data.radius)
+                            ece_rshift = self._get_rshift('ECE')
+                            ece_x_data = interp_func(ece_data.radius + ece_rshift)
 
                             ece_Te_data = ece_data.measurements['Te']['data']
                             ece_Te_profile = ece_Te_data[:, ece_time_idx]
@@ -611,13 +723,18 @@ class NeTeProfileTab(ProfileBaseTab):
                             valid_ch = [ece_channels[j] for j in range(len(valid_mask)) if valid_mask[j]]
                             self._add_channel_labels(self.ax1, valid_x, valid_Te, 'ECE', valid_ch)
 
+                            # Register ECE for double-click toggle
+                            valid_ece_keys = [ece_keys[j] for j in range(len(valid_mask)) if valid_mask[j]]
+                            self._register_click_points(self.ax1, valid_x, valid_Te, valid_ece_keys)
+
                 elif source == 'ECE':
                     cache_key = self._get_ece_cache_key(shot_number)
 
                     if cache_key:
                         ece_data = self.ece_data_cache[cache_key]
                         time_idx = np.argmin(np.abs(ece_data.time - time_point))
-                        x_data = interp_func(ece_data.radius)
+                        ece_rshift = self._get_rshift('ECE')
+                        x_data = interp_func(ece_data.radius + ece_rshift)
 
                         Te_data = ece_data.measurements['Te']['data']
                         Te_profile = Te_data[:, time_idx]
@@ -655,8 +772,16 @@ class NeTeProfileTab(ProfileBaseTab):
                         valid_ch = [ece_channels[j] for j in range(len(valid_mask)) if valid_mask[j]]
                         self._add_channel_labels(self.ax1, valid_x, valid_Te, 'ECE', valid_ch)
 
+                        # Register ECE for double-click toggle
+                        valid_ece_keys = [ece_keys[j] for j in range(len(valid_mask)) if valid_mask[j]]
+                        self._register_click_points(self.ax1, valid_x, valid_Te, valid_ece_keys)
+
             except Exception as e:
                 print(f"[ne/Te] Error plotting {entry}: {str(e)}")
+
+        # Overlay fit curves
+        self._overlay_fit_curves(self.ax1, 'Te', selected_entries, colors)
+        self._overlay_fit_curves(self.ax2, 'ne', selected_entries, colors)
 
         self.ax1.set_xlabel(x_label)
         self.ax2.set_xlabel(x_label)

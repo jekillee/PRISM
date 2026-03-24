@@ -14,8 +14,10 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QLayout,
     QGroupBox, QCheckBox, QPushButton, QMessageBox, QLabel,
     QComboBox, QSpinBox, QDialog, QScrollArea, QDialogButtonBox, QFrame,
+    QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget,
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 
 from ui.base_tab import BaseTab
 from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style
@@ -37,6 +39,13 @@ class ProfileBaseTab(BaseTab):
         super().__init__(*args, **kwargs)
         self.secondary_data_cache: Dict[str, Any] = {}
         self._disabled_channels: set = set()  # Channel indices to plot in gray
+        self.fit_results: Dict[str, Dict[str, Any]] = {}  # {entry: {param_name: FitResult}}
+        self.fit_func_names: Dict[str, str] = {}  # {param_type: func_name}, populated in _create_fitting_controls
+        self.fit_func_combos: Dict[str, Any] = {}  # {param_type: QComboBox}
+        self.fit_user_params: Dict[str, Dict[str, Any]] = {}  # {param_name: {a1: (val, min, max, fixed), ...}}
+        self.fit_nonparam_options: Dict[str, Dict[str, Any]] = {}  # {param_type: {option: value}}
+        self._click_points: List[Tuple] = []  # [(x, y, channel_key, ax), ...]
+        self.r_shift_entries: Dict[str, Any] = {}  # {diag_name: QLineEdit}
 
     def create_widgets(self) -> None:
         """Create common profile tab layout"""
@@ -48,6 +57,7 @@ class ProfileBaseTab(BaseTab):
 
         # Create canvas
         self.canvas = FigureCanvasQTAgg(self.figure)
+        self.canvas.mpl_connect('button_press_event', self._on_canvas_dblclick)
         self.canvas.draw()
 
         # Left side: canvas + toolbar in a vertical layout
@@ -85,21 +95,25 @@ class ProfileBaseTab(BaseTab):
         # Create control panels
         self._create_shot_input(control_frame)
         self._create_selection_listboxes(control_frame)
+        self._create_efit_controls(control_frame, section_num=3)
         self._create_plot_controls(control_frame)
-        self._create_efit_controls(control_frame)
-        self._create_save_controls(control_frame, section_num=5)
+        self._create_fitting_controls(control_frame)
+        self._create_save_controls(control_frame, section_num=6)
         control_layout.addStretch()
 
     def _create_plot_controls(self, parent: QWidget) -> None:
-        """Create plot control buttons (common for all profile tabs)"""
-        group = QGroupBox("3. Plot")
+        """Create plot control buttons with x-axis radio selection"""
+        group = QGroupBox("4. Plot")
         group_layout = QVBoxLayout(group)
+
+        # X-axis radio buttons: R | ψₙ | ρₚₒₗ | ρₜₒᵣ
+        self._create_x_axis_radios(group_layout)
 
         # Plot + Option buttons in same row
         plot_row = QHBoxLayout()
 
         plot_button = QPushButton("Plot")
-        plot_button.clicked.connect(self.plot_data)
+        plot_button.clicked.connect(self._on_plot_clicked)
         plot_row.addWidget(plot_button, 3)
 
         style_btn = QPushButton("Option")
@@ -133,6 +147,7 @@ class ProfileBaseTab(BaseTab):
 
         self.show_channel_checkbox = QCheckBox("Show Nodes")
         self.show_channel_checkbox.setChecked(False)
+        self.show_channel_checkbox.stateChanged.connect(self._on_show_nodes_toggled)
         row2.addWidget(self.show_channel_checkbox)
 
         channels_btn = QPushButton("Select Channels")
@@ -143,6 +158,28 @@ class ProfileBaseTab(BaseTab):
         group_layout.addLayout(row2)
 
         parent.layout().addWidget(group)
+
+    def _on_plot_clicked(self) -> None:
+        """Unified plot handler: dispatches to R-space or flux-space plot"""
+        x_axis = self._get_selected_x_axis()
+        if x_axis == "R":
+            self.plot_data()
+        else:
+            self.plot_efit_profiles()
+
+    def _on_show_nodes_toggled(self, state) -> None:
+        """Toggle node labels immediately when checkbox is changed"""
+        if not (self.ax1.lines or self.ax1.collections):
+            return
+        if state:
+            self._on_plot_clicked()
+        else:
+            from matplotlib.text import Annotation
+            for ax in [self.ax1, self.ax2]:
+                for child in list(ax.get_children()):
+                    if isinstance(child, Annotation):
+                        child.remove()
+            self.canvas.draw_idle()
 
     def _get_channel_info(self) -> List[Tuple[str, str]]:
         """Return list of (key, label) for diagnostic channels.
@@ -166,7 +203,9 @@ class ProfileBaseTab(BaseTab):
         dialog.setMinimumWidth(300)
         dlg_layout = QVBoxLayout(dialog)
 
-        hint = QLabel("Uncheck channels to dim them (gray) on the plot:")
+        hint = QLabel("Uncheck channels to dim them (gray) on the plot. "
+                      "You can also double-click a data point on the plot to toggle. "
+                      "Unchecked channels are excluded from fitting.")
         hint.setWordWrap(True)
         dlg_layout.addWidget(hint)
 
@@ -309,7 +348,819 @@ class ProfileBaseTab(BaseTab):
             self.tick_fontsize = tick_spin.value()
             # Auto-apply if plot exists
             if self.ax1.lines or self.ax1.collections:
-                self.plot_data()
+                self._on_plot_clicked()
+
+    def _create_fitting_controls(self, parent: QWidget) -> None:
+        """Create fitting controls (section 5)"""
+        from PySide6.QtWidgets import QLineEdit, QGridLayout
+
+        group = QGroupBox("5. Fitting")
+        # 4 columns: label | entry1 | ~ | entry2
+        grid = QGridLayout(group)
+        grid.setColumnStretch(0, 0)  # label - fixed
+        grid.setColumnStretch(1, 1)  # entry1 - stretch
+        grid.setColumnStretch(2, 0)  # separator - fixed
+        grid.setColumnStretch(3, 1)  # entry2 - stretch
+
+        # Row 0+: Per-param-type function selectors
+        param_types = self._get_fit_param_types()
+        row = 0
+        for ptype in param_types:
+            self.fit_func_names.setdefault(ptype, 'mtanh')
+            grid.addWidget(QLabel(ptype), row, 0)
+            func_row = QHBoxLayout()
+            combo = QComboBox()
+            combo.addItems(['mtanh', 'ptanh', 'EPED', 'spline', 'RBF', 'GPR'])
+            combo.setCurrentText(self.fit_func_names[ptype])
+            combo.currentTextChanged.connect(
+                lambda text, pt=ptype: self._on_fit_func_changed(pt, text))
+            self.fit_func_combos[ptype] = combo
+            self._update_fit_func_tooltip_for(ptype)
+            func_row.addWidget(combo)
+            params_btn = QPushButton("Option")
+            params_btn.clicked.connect(
+                lambda checked=False, pt=ptype: self._show_fit_options_dialog(pt))
+            func_row.addWidget(params_btn)
+            grid.addLayout(func_row, row, 1, 1, 3)
+            row += 1
+
+        # X Range — aligned [min] ~ [max]
+        grid.addWidget(QLabel("X Range"), row, 0)
+        self.fit_xmin_entry = QLineEdit("0.0")
+        grid.addWidget(self.fit_xmin_entry, row, 1)
+        grid.addWidget(QLabel("~"), row, 2, Qt.AlignCenter)
+        self.fit_xmax_entry = QLineEdit("1.05")
+        grid.addWidget(self.fit_xmax_entry, row, 3)
+        row += 1
+
+        # R-shift entries per diagnostic (in mm), one per row
+        rshift_diags = self._get_rshift_diagnostics()
+        for i, diag_name in enumerate(rshift_diags):
+            label_text = "R-shift [mm]" if i == 0 else ""
+            grid.addWidget(QLabel(label_text), row, 0)
+            diag_label = QLabel(diag_name)
+            diag_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            grid.addWidget(diag_label, row, 1, 1, 2)  # span col1-2
+            entry = QLineEdit("0")
+            entry.setToolTip(f"R-shift for {diag_name} [mm]")
+            self.r_shift_entries[diag_name] = entry
+            grid.addWidget(entry, row, 3)  # col3 only, aligns with X Range max
+            row += 1
+
+        # Fit button (full width, at bottom)
+        fit_button = QPushButton("Fit")
+        fit_button.clicked.connect(self.perform_fitting)
+        grid.addWidget(fit_button, row, 0, 1, 4)
+
+        parent.layout().addWidget(group)
+
+    def _get_rshift_diagnostics(self) -> List[str]:
+        """Return list of diagnostic names that support R-shift.
+        Override in subclass. E.g., ['CES'] for TiVT, ['Thomson', 'ECE'] for NeTe."""
+        return []
+
+    def _get_rshift(self, diag_name: str) -> float:
+        """Get R-shift value for a diagnostic in meters (UI is in mm)"""
+        entry = self.r_shift_entries.get(diag_name)
+        if entry is None:
+            return 0.0
+        try:
+            return float(entry.text()) / 1000.0  # mm -> m
+        except ValueError:
+            return 0.0
+
+    def _update_fit_func_tooltip_for(self, ptype: str) -> None:
+        """Update tooltip on function combo for a specific param type"""
+        from core.fitting import FIT_FUNCTIONS
+        combo = self.fit_func_combos.get(ptype)
+        if combo is None:
+            return
+        func_name = combo.currentText()
+        info = FIT_FUNCTIONS.get(func_name, {})
+        desc = info.get('description', '')
+        combo.setToolTip(desc)
+
+    def _on_fit_func_changed(self, ptype: str, text: str) -> None:
+        """Handle fit function change for a specific param type"""
+        self.fit_func_names[ptype] = text
+        # Clear user params for this param type when function changes
+        self.fit_user_params.pop(ptype, None)
+        self._update_fit_func_tooltip_for(ptype)
+
+    def _get_fit_param_types(self) -> List[str]:
+        """Return parameter types for fitting (e.g., ['Ti', 'vT'] or ['Te', 'ne']).
+        Override in subclass."""
+        return []
+
+    def _render_formula_widget(self, dialog, formula_latex: str):
+        """Render LaTeX formula as a matplotlib widget for embedding in dialogs."""
+        if not formula_latex:
+            return None
+        try:
+            from matplotlib.figure import Figure
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+            text_color = dialog.palette().text().color().name()
+            formula_lines = formula_latex.split('\n')
+            n_lines = len(formula_lines)
+            fig_height = max(0.4 * n_lines, 0.6)
+            fig = Figure(figsize=(5, fig_height))
+            fig.patch.set_alpha(0.0)
+            for i, line in enumerate(formula_lines):
+                y_pos = 1.0 - (i + 0.5) / n_lines
+                fig.text(0.02, y_pos, line, fontsize=11,
+                         verticalalignment='center', color=text_color)
+            canvas = FigureCanvasQTAgg(fig)
+            canvas.setFixedHeight(int(fig_height * 72))
+            canvas.setStyleSheet("background: transparent;")
+            return canvas
+        except Exception:
+            return None
+
+    def _show_fit_options_dialog(self, ptype: str) -> None:
+        """Show Fit Options dialog with parameter table for a specific param type"""
+        from core.fitting import FIT_FUNCTIONS, get_default_params
+
+        func_name = self.fit_func_names.get(ptype, 'mtanh')
+
+        if func_name == 'RBF':
+            self._show_rbf_options_dialog(ptype)
+            return
+
+        # Non-parametric functions (spline, GPR): info-only dialog
+        if func_name in ('spline', 'GPR'):
+            func_info = FIT_FUNCTIONS.get(func_name, {})
+            dialog = QDialog(self.frame)
+            dialog.setWindowTitle(f"{ptype} — {func_name}")
+            dialog.setMinimumWidth(400)
+            dlg_layout = QVBoxLayout(dialog)
+
+            title_label = QLabel(func_name)
+            title_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+            dlg_layout.addWidget(title_label)
+
+            desc_label = QLabel(func_info.get('description', ''))
+            desc_label.setWordWrap(True)
+            dlg_layout.addWidget(desc_label)
+
+            formula_widget = self._render_formula_widget(dialog, func_info.get('formula_latex', ''))
+            if formula_widget:
+                dlg_layout.addWidget(formula_widget)
+
+            dlg_layout.addSpacing(10)
+            info_label = QLabel("No parameters to configure.")
+            info_label.setStyleSheet("color: gray;")
+            dlg_layout.addWidget(info_label)
+
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(dialog.close)
+            dlg_layout.addWidget(close_btn)
+            dialog.exec()
+            return
+
+        func_info = FIT_FUNCTIONS[func_name]
+        param_names = func_info['param_names']
+        param_descs = func_info.get('param_descriptions', {})
+        defaults = get_default_params(func_name, ptype)
+        user = self.fit_user_params.get(ptype, {})
+
+        dialog = QDialog(self.frame)
+        dialog.setWindowTitle(f"{ptype} — {func_name}")
+        dialog.setMinimumWidth(500)
+        dialog.setMinimumHeight(300)
+        dlg_layout = QVBoxLayout(dialog)
+
+        # Function info header
+        title_label = QLabel(func_name)
+        title_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        dlg_layout.addWidget(title_label)
+
+        desc_label = QLabel(func_info.get('description', ''))
+        desc_label.setWordWrap(True)
+        dlg_layout.addWidget(desc_label)
+
+        # Formula
+        formula_widget = self._render_formula_widget(dialog, func_info.get('formula_latex', ''))
+        if formula_widget:
+            dlg_layout.addWidget(formula_widget)
+
+        # Parameter table
+        table = QTableWidget(len(param_names), 5)
+        table.setHorizontalHeaderLabels(['Param', 'Value', 'Min', 'Max', 'Fix'])
+        table.setVerticalHeaderLabels(['' for _ in param_names])
+        table.verticalHeader().setVisible(False)
+        for col in range(1, 5):
+            table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        table.horizontalHeader().setStretchLastSection(False)
+        table.setFont(QFont('Courier', 9))
+
+        for row, pname in enumerate(param_names):
+            if pname in user:
+                val, lb, ub, fixed = user[pname]
+            elif pname in defaults:
+                val, lb, ub = defaults[pname]
+                fixed = False
+            else:
+                val, lb, ub, fixed = 1.0, -1e10, 1e10, False
+
+            # Param name + description
+            desc = param_descs.get(pname, '')
+            param_item = QTableWidgetItem(f"{pname}: {desc}" if desc else pname)
+            param_item.setFlags(Qt.ItemIsEnabled)  # read-only
+            table.setItem(row, 0, param_item)
+
+            table.setItem(row, 1, QTableWidgetItem(f"{val:.4g}"))
+
+            lb_str = "-inf" if lb == -np.inf else f"{lb:.4g}"
+            table.setItem(row, 2, QTableWidgetItem(lb_str))
+
+            ub_str = "inf" if ub == np.inf else f"{ub:.4g}"
+            table.setItem(row, 3, QTableWidgetItem(ub_str))
+
+            fixed_item = QTableWidgetItem()
+            fixed_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            fixed_item.setCheckState(Qt.Checked if fixed else Qt.Unchecked)
+            fixed_item.setTextAlignment(Qt.AlignCenter)
+            table.setItem(row, 4, fixed_item)
+
+        dlg_layout.addWidget(table)
+
+        # Buttons
+        btn_layout = QHBoxLayout()
+
+        restore_btn = QPushButton("Restore Defaults")
+        def restore_defaults():
+            for row, pname in enumerate(param_names):
+                if pname in defaults:
+                    val, lb, ub = defaults[pname]
+                else:
+                    val, lb, ub = 1.0, -1e10, 1e10
+                table.item(row, 1).setText(f"{val:.4g}")
+                lb_str = "-inf" if lb == -np.inf else f"{lb:.4g}"
+                table.item(row, 2).setText(lb_str)
+                ub_str = "inf" if ub == np.inf else f"{ub:.4g}"
+                table.item(row, 3).setText(ub_str)
+                table.item(row, 4).setCheckState(Qt.Unchecked)
+        restore_btn.clicked.connect(restore_defaults)
+        btn_layout.addWidget(restore_btn)
+
+        btn_layout.addStretch()
+
+        apply_btn = QPushButton("Apply")
+        def apply_params():
+            params = {}
+            for row, pname in enumerate(param_names):
+                try:
+                    val_text = table.item(row, 1).text()
+                    val = float(val_text)
+                    lb_text = table.item(row, 2).text()
+                    lb = -np.inf if lb_text.strip().lower() in ('-inf', '') else float(lb_text)
+                    ub_text = table.item(row, 3).text()
+                    ub = np.inf if ub_text.strip().lower() in ('inf', '') else float(ub_text)
+                    fixed = table.item(row, 4).checkState() == Qt.Checked
+                    params[pname] = (val, lb, ub, fixed)
+                except ValueError:
+                    QMessageBox.warning(dialog, "Invalid Value",
+                        f"Invalid value for {ptype}/{pname}")
+                    return
+            self.fit_user_params[ptype] = params
+        apply_btn.clicked.connect(apply_params)
+        btn_layout.addWidget(apply_btn)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.close)
+        btn_layout.addWidget(close_btn)
+
+        dlg_layout.addLayout(btn_layout)
+        dialog.exec()
+
+    def _show_rbf_options_dialog(self, ptype: str) -> None:
+        """Show RBF options dialog with n_bases setting"""
+        from core.fitting import FIT_FUNCTIONS
+
+        func_info = FIT_FUNCTIONS['RBF']
+        opts = self.fit_nonparam_options.get(ptype, {})
+        cur_n_bases = opts.get('n_bases', 5)
+
+        dialog = QDialog(self.frame)
+        dialog.setWindowTitle(f"{ptype} — RBF")
+        dialog.setMinimumWidth(400)
+        dlg_layout = QVBoxLayout(dialog)
+
+        # Title (bold)
+        title_label = QLabel("RBF")
+        title_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        dlg_layout.addWidget(title_label)
+
+        # Description
+        desc_label = QLabel(func_info.get('description', ''))
+        desc_label.setWordWrap(True)
+        dlg_layout.addWidget(desc_label)
+
+        # Formula
+        formula_widget = self._render_formula_widget(dialog, func_info.get('formula_latex', ''))
+        if formula_widget:
+            dlg_layout.addWidget(formula_widget)
+
+        dlg_layout.addSpacing(10)
+
+        # n_bases setting
+        from PySide6.QtWidgets import QSpinBox, QGridLayout
+        grid = QGridLayout()
+        grid.addWidget(QLabel("Number of bases:"), 0, 0)
+        n_bases_spin = QSpinBox()
+        n_bases_spin.setRange(0, 200)
+        n_bases_spin.setSpecialValueText("Auto (= data points)")
+        n_bases_spin.setValue(cur_n_bases)
+        n_bases_spin.setToolTip("0 = use all data points as centers.\n"
+                                "Fewer bases → smoother fit.\n"
+                                "More bases → more detailed fit.")
+        grid.addWidget(n_bases_spin, 0, 1)
+        dlg_layout.addLayout(grid)
+
+        # Buttons
+        btn_layout = QHBoxLayout()
+        apply_btn = QPushButton("Apply")
+        def apply_opts():
+            val = n_bases_spin.value()
+            if ptype not in self.fit_nonparam_options:
+                self.fit_nonparam_options[ptype] = {}
+            self.fit_nonparam_options[ptype]['n_bases'] = val
+        apply_btn.clicked.connect(apply_opts)
+        btn_layout.addWidget(apply_btn)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.close)
+        btn_layout.addWidget(close_btn)
+
+        dlg_layout.addLayout(btn_layout)
+        dialog.exec()
+
+    def perform_fitting(self) -> None:
+        """Perform profile fitting on current x-axis coordinate"""
+        x_axis = self._get_selected_x_axis()
+
+        if x_axis == "R":
+            QMessageBox.warning(self.frame, "Warning",
+                "Fitting is available only in flux coordinates (ψₙ, ρₚₒₗ, ρₜₒᵣ).\n"
+                "Please compute EFIT mapping and select a flux coordinate.")
+            return
+
+        if not self.efit_data or self.computed_efit_tree is None:
+            QMessageBox.warning(self.frame, "Warning",
+                "Please compute EFIT mapping first before fitting.")
+            return
+
+        from core.fitting import fit_profile
+
+        selected_entries = [self.selected_listbox.item(i).text()
+                           for i in range(self.selected_listbox.count())]
+        if not selected_entries:
+            return
+
+        param_types = self._get_fit_param_types()
+        self.fit_results.clear()
+
+        try:
+            x_fit_min = float(self.fit_xmin_entry.text())
+            x_fit_max = float(self.fit_xmax_entry.text())
+        except ValueError:
+            x_fit_min, x_fit_max = 0.0, 1.05
+        x_fit_range = (x_fit_min, x_fit_max)
+
+        success_count = 0
+        fail_count = 0
+
+        func_summary = ", ".join(f"{pt}={self.fit_func_names.get(pt, 'mtanh')}" for pt in param_types)
+        print(f"\n[Fitting] {func_summary} on {len(selected_entries)} entries (x={x_axis})")
+
+        for entry in selected_entries:
+            if entry not in self.efit_data:
+                continue
+
+            efit_entry = self.efit_data[entry]
+            efit_R = efit_entry['R']
+
+            if x_axis == "psi_N":
+                interp_func = interp1d(efit_R, efit_entry['psi_N'], fill_value='extrapolate')
+            elif x_axis == "rho_pol":
+                interp_func = interp1d(efit_R, efit_entry['rho_pol'], fill_value='extrapolate')
+            else:
+                interp_func = interp1d(efit_R, efit_entry['rho_tor'], fill_value='extrapolate')
+
+            # Get profile data from subclass
+            profile_data = self._get_efit_profile_data(entry, interp_func)
+            if profile_data is None:
+                continue
+
+            entry_results = {}
+            for ptype in param_types:
+                if ptype not in profile_data:
+                    continue
+
+                func_name = self.fit_func_names.get(ptype, 'mtanh')
+                x_data = profile_data[ptype]['x']
+                y_data = profile_data[ptype]['y']
+                sigma = profile_data[ptype].get('err', None)
+
+                user_params = self.fit_user_params.get(ptype, None)
+                nonparam_opts = self.fit_nonparam_options.get(ptype, {})
+
+                result = fit_profile(
+                    x_data, y_data,
+                    func_name=func_name,
+                    param_type=ptype,
+                    user_params=user_params,
+                    sigma=sigma,
+                    x_fit_range=x_fit_range,
+                    n_bases=nonparam_opts.get('n_bases', 5)
+                )
+
+                entry_results[ptype] = result
+
+                if result.success:
+                    success_count += 1
+                    print(f"[Fitting]   {entry} {ptype} ({func_name}): chi2={result.chi_squared:.4f}")
+                    # Parameter table for parametric functions
+                    if result.params and func_name in ('mtanh', 'ptanh', 'EPED'):
+                        from core.fitting import FIT_FUNCTIONS, get_default_params
+                        fi = FIT_FUNCTIONS.get(func_name, {})
+                        pnames = fi.get('param_names', [])
+                        defaults = get_default_params(func_name, ptype)
+                        up = self.fit_user_params.get(ptype, {})
+                        print(f"[Fitting]     {'Param':>5}  {'Value':>10}  {'Error':>10}  {'Min':>10}  {'Max':>10}  Fixed")
+                        print(f"[Fitting]     {'─'*5}  {'─'*10}  {'─'*10}  {'─'*10}  {'─'*10}  ─────")
+                        for pn in pnames:
+                            val = result.params.get(pn, 0.0)
+                            err = result.param_errors.get(pn, 0.0)
+                            if pn in up:
+                                _, lb, ub, fixed = up[pn]
+                            elif pn in defaults:
+                                _, lb, ub = defaults[pn]
+                                fixed = False
+                            else:
+                                lb, ub, fixed = -np.inf, np.inf, False
+                            lb_s = '-inf' if lb == -np.inf else f'{lb:.4g}'
+                            ub_s = 'inf' if ub == np.inf else f'{ub:.4g}'
+                            fx_s = 'Y' if fixed else ''
+                            print(f"[Fitting]     {pn:>5}  {val:10.4f}  {err:10.4f}  {lb_s:>10}  {ub_s:>10}  {fx_s:>5}")
+                    # Pedestal summary with units
+                    ped_map = self._PEDESTAL_PARAMS.get(func_name, {})
+                    if ped_map:
+                        unit = self._PARAM_UNITS.get(ptype, '')
+                        h_pn = ped_map.get('height')
+                        f_pn = ped_map.get('foot')
+                        if h_pn and h_pn in result.params:
+                            err = result.param_errors.get(h_pn, 0.0)
+                            print(f"[Fitting]     PED HEIGHT = {result.params[h_pn]:8.4f} +/- {err:.4f} [{unit}]")
+                        if f_pn and f_pn in result.params:
+                            err = result.param_errors.get(f_pn, 0.0)
+                            print(f"[Fitting]     PED FOOT   = {result.params[f_pn]:8.4f} +/- {err:.4f} [{unit}]")
+                        w_pn = ped_map.get('width')
+                        p_pn = ped_map.get('position')
+                        w_val = result.params.get(w_pn) if w_pn else None
+                        p_val = result.params.get(p_pn) if p_pn else None
+                        if w_val is not None:
+                            err = result.param_errors.get(w_pn, 0.0)
+                            w_line = f"[Fitting]     PED WIDTH  = {w_val:8.4f} +/- {err:.4f} [{x_axis}]"
+                            if p_val is not None:
+                                _, R_width = self._get_ped_R_info(entry, p_val, w_val, x_axis)
+                                if R_width is not None:
+                                    w_line += f" = {R_width*100:.2f} [cm]"
+                            print(w_line)
+                        if p_val is not None:
+                            err = result.param_errors.get(p_pn, 0.0)
+                            p_line = f"[Fitting]     PED LOC    = {p_val:8.4f} +/- {err:.4f} [{x_axis}]"
+                            R_pos, _ = self._get_ped_R_info(entry, p_val, w_val or 0, x_axis)
+                            if R_pos is not None:
+                                p_line += f" = {R_pos:.4f} [m]"
+                            print(p_line)
+                else:
+                    fail_count += 1
+                    print(f"[Fitting]   {entry} {ptype} ({func_name}): FAILED - {result.message}")
+
+            self.fit_results[entry] = entry_results
+
+        print(f"[Fitting] Done: {success_count} succeeded, {fail_count} failed")
+
+        # Re-plot with fit curves
+        self._on_plot_clicked()
+
+    def _get_efit_profile_data(self, entry: str, interp_func) -> Optional[Dict]:
+        """Get profile data for fitting in EFIT coordinates.
+
+        Must be implemented by subclasses.
+
+        Args:
+            entry: Listbox entry string
+            interp_func: R -> EFIT coordinate interpolation function
+
+        Returns:
+            Dict with structure:
+            {
+                'Ti': {'x': ndarray, 'y': ndarray, 'err': ndarray or None},
+                'vT': {'x': ndarray, 'y': ndarray, 'err': ndarray or None},
+            }
+            or None if data not available.
+        """
+        return None
+
+    def _overlay_fit_curves(self, ax, param_type: str, selected_entries: List[str],
+                           colors: List) -> None:
+        """Overlay fitted curves on the current EFIT plot.
+
+        Args:
+            ax: matplotlib axes to plot on
+            param_type: 'Ti', 'vT', 'Te', or 'ne'
+            selected_entries: list of entry strings
+            colors: list of colors matching entries
+        """
+        for i, entry in enumerate(selected_entries):
+            if entry not in self.fit_results:
+                continue
+            entry_results = self.fit_results[entry]
+            if param_type not in entry_results:
+                continue
+
+            result = entry_results[param_type]
+            if not result.success or len(result.x_fit) == 0:
+                continue
+
+            color = colors[i]
+            ax.plot(result.x_fit, result.y_fit, '-', color=color, linewidth=1.5,
+                    alpha=0.8, zorder=15)
+
+            # GPR uncertainty band
+            if result.y_fit_std is not None:
+                ax.fill_between(result.x_fit,
+                                result.y_fit - 2 * result.y_fit_std,
+                                result.y_fit + 2 * result.y_fit_std,
+                                color=color, alpha=0.15, zorder=14)
+
+    # ===== Fit preview overrides =====
+
+    def _get_fit_profile_lines(self, selected_entries):
+        """Get fitted profile data on psi_N grid with shot/time/coordinate columns"""
+        from core.fitting import FIT_FUNCTIONS
+
+        if not hasattr(self, 'fit_results') or not self.fit_results:
+            return ["# No fit results available"]
+
+        param_types = self._get_fit_param_types() if hasattr(self, '_get_fit_param_types') else []
+        func_summary = " | ".join(f"{pt}={self.fit_func_names.get(pt, '?')}" for pt in param_types)
+        lines = [f"# Fitted Profile Data ({func_summary})\n"]
+
+        # Header with shot/time columns
+        header_parts = ["shot", "time[ms]", "psi_N", "rho_pol", "rho_tor", "R[m]"]
+        for ptype in param_types:
+            header_parts.append(f"{ptype}_fit")
+        lines.append("#" + ",".join(f"{h:>12s}" for h in header_parts) + "\n")
+
+        # Fixed psi_N grid: 0 to 1, 101 points
+        psi_n_grid = np.linspace(0.0, 1.0, 101)
+
+        for entry in selected_entries:
+            if entry not in self.fit_results:
+                continue
+
+            # Parse shot and time
+            try:
+                shot, time_s = self._parse_entry_for_efit(entry)
+                time_ms = time_s * 1e3
+            except Exception:
+                shot, time_ms = 0, 0.0
+
+            entry_results = self.fit_results[entry]
+
+            # Compute coordinate mappings from EFIT data
+            R_vals = np.full_like(psi_n_grid, np.nan)
+            rho_pol_vals = np.full_like(psi_n_grid, np.nan)
+            rho_tor_vals = np.full_like(psi_n_grid, np.nan)
+
+            if entry in self.efit_data:
+                efit_entry = self.efit_data[entry]
+                efit_R = efit_entry['R']
+                efit_psi = efit_entry['psi_N']
+                try:
+                    psi_to_R = interp1d(efit_psi, efit_R, fill_value='extrapolate')
+                    R_vals = psi_to_R(psi_n_grid)
+                    rho_pol_interp = interp1d(efit_R, efit_entry['rho_pol'], fill_value='extrapolate')
+                    rho_tor_interp = interp1d(efit_R, efit_entry['rho_tor'], fill_value='extrapolate')
+                    rho_pol_vals = rho_pol_interp(R_vals)
+                    rho_tor_vals = rho_tor_interp(R_vals)
+                except Exception:
+                    pass
+
+            # Evaluate fit functions on psi_N grid (or current x_axis)
+            x_axis = self._get_selected_x_axis()
+            if x_axis == "psi_N":
+                eval_x = psi_n_grid
+            elif x_axis == "rho_pol":
+                eval_x = rho_pol_vals
+            else:
+                eval_x = rho_tor_vals
+
+            fit_vals = {}
+            for ptype in param_types:
+                if ptype not in entry_results or not entry_results[ptype].success:
+                    fit_vals[ptype] = np.full_like(psi_n_grid, np.nan)
+                    continue
+                result = entry_results[ptype]
+                func_name = result.func_name
+                func_info = FIT_FUNCTIONS.get(func_name)
+                if func_info and func_info['func'] is not None:
+                    func = func_info['func']
+                    param_vals = [result.params[pn] for pn in func_info['param_names']]
+                    try:
+                        fit_vals[ptype] = func(eval_x, *param_vals)
+                    except Exception:
+                        fit_vals[ptype] = np.full_like(psi_n_grid, np.nan)
+                else:
+                    # Spline: interpolate from stored x_fit/y_fit
+                    try:
+                        spl_interp = interp1d(result.x_fit, result.y_fit,
+                                              fill_value='extrapolate')
+                        fit_vals[ptype] = spl_interp(eval_x)
+                    except Exception:
+                        fit_vals[ptype] = np.full_like(psi_n_grid, np.nan)
+
+            for j in range(len(psi_n_grid)):
+                parts = [
+                    f"{shot:>12d}",
+                    f"{time_ms:12.1f}",
+                    f"{psi_n_grid[j]:12.6f}",
+                    f"{rho_pol_vals[j]:12.6f}",
+                    f"{rho_tor_vals[j]:12.6f}",
+                    f"{R_vals[j]:12.6f}",
+                ]
+                for ptype in param_types:
+                    parts.append(f"{fit_vals[ptype][j]:12.6f}")
+                lines.append(",".join(parts) + "\n")
+
+        return lines
+
+    # Pedestal parameter mapping: {func_name: {role: param_name}}
+    _PEDESTAL_PARAMS = {
+        'mtanh': {'width': 'a3', 'height': 'a2', 'position': 'a4', 'foot': 'a1'},
+        'ptanh': {'width': 'a6', 'height': 'a2', 'position': 'a7', 'foot': 'a1'},
+        'EPED':  {'width': 'a3', 'height': 'a2', 'foot': 'a1'},
+    }
+
+    # Unit labels per param type (matching GFIT convention)
+    _PARAM_UNITS = {
+        'Ti': 'keV', 'Te': 'keV',
+        'ne': '10^19/m3', 'vT': 'km/s',
+    }
+
+    def _get_ped_R_info(self, entry: str, position: float, width: float,
+                        x_axis: str = 'psi_N'):
+        """Convert pedestal position/width from x_axis coordinate to R [m].
+
+        Args:
+            entry: Data entry key
+            position: Pedestal position in x_axis coordinate
+            width: Pedestal width in x_axis coordinate
+            x_axis: Coordinate system ('psi_N', 'rho_pol', 'rho_tor')
+
+        Returns:
+            (R_pos, R_width) in meters, or (None, None) if EFIT data unavailable
+        """
+        if not self.efit_data or entry not in self.efit_data:
+            return None, None
+        efit_entry = self.efit_data[entry]
+        efit_R = efit_entry['R']
+        coord_key = x_axis if x_axis in efit_entry else 'psi_N'
+        efit_coord = efit_entry[coord_key]
+        try:
+            coord_to_R = interp1d(efit_coord, efit_R, fill_value='extrapolate')
+            R_pos = float(coord_to_R(position))
+            R_top = float(coord_to_R(position - 0.5 * width))
+            R_end = float(coord_to_R(position + 0.5 * width))
+            R_width = abs(R_top - R_end)
+            return R_pos, R_width
+        except Exception:
+            return None, None
+
+    def _get_fit_params_lines(self, selected_entries):
+        """Get fit parameters with function name per parameter type"""
+        if not hasattr(self, 'fit_results') or not self.fit_results:
+            return ["# No fit results available"]
+
+        x_axis = self._get_selected_x_axis() if hasattr(self, '_get_selected_x_axis') else 'psi_N'
+        lines = [f"# Fit Parameters\n"]
+        param_types = self._get_fit_param_types() if hasattr(self, '_get_fit_param_types') else []
+
+        for entry in selected_entries:
+            if entry not in self.fit_results:
+                continue
+            # Include shot number and time (no commas to avoid header misparse)
+            try:
+                shot, time_s = self._parse_entry_for_efit(entry)
+                lines.append(f"# {entry} | shot={shot} | time={time_s*1e3:.1f} ms\n")
+            except Exception:
+                lines.append(f"# {entry}\n")
+            entry_results = self.fit_results[entry]
+
+            for ptype in param_types:
+                if ptype not in entry_results:
+                    continue
+                result = entry_results[ptype]
+                ped_map = self._PEDESTAL_PARAMS.get(result.func_name, {})
+                status = 'OK' if result.success else 'FAILED'
+                lines.append(f"# {ptype} — function: {result.func_name} | chi2={result.chi_squared:.4f} | {status}\n")
+                if result.success:
+                    lines.append(f"#{'Param':>10s},{'Value':>12s},{'Error':>12s}\n")
+                    for pname, val in result.params.items():
+                        err = result.param_errors.get(pname, 0.0)
+                        lines.append(f" {pname:>10s},{val:12.6f},{err:12.6f}\n")
+                    # Pedestal summary with units
+                    if ped_map:
+                        unit = self._PARAM_UNITS.get(ptype, '')
+                        ped_lines = []
+                        h_pn = ped_map.get('height')
+                        f_pn = ped_map.get('foot')
+                        if h_pn and h_pn in result.params:
+                            ped_lines.append(f"#   PED HEIGHT = {result.params[h_pn]:.4f} [{unit}]")
+                        if f_pn and f_pn in result.params:
+                            ped_lines.append(f"#   PED FOOT   = {result.params[f_pn]:.4f} [{unit}]")
+                        w_pn = ped_map.get('width')
+                        p_pn = ped_map.get('position')
+                        w_val = result.params.get(w_pn) if w_pn else None
+                        p_val = result.params.get(p_pn) if p_pn else None
+                        if w_val is not None:
+                            w_str = f"#   PED WIDTH  = {w_val:.4f} [{x_axis}]"
+                            if p_val is not None:
+                                R_pos, R_width = self._get_ped_R_info(entry, p_val, w_val, x_axis)
+                                if R_width is not None:
+                                    w_str += f" = {R_width*100:.2f} [cm]"
+                            ped_lines.append(w_str)
+                        if p_val is not None:
+                            p_str = f"#   PED LOC    = {p_val:.4f} [{x_axis}]"
+                            R_pos, _ = self._get_ped_R_info(entry, p_val, w_val or 0, x_axis)
+                            if R_pos is not None:
+                                p_str += f" = {R_pos:.4f} [m]"
+                            ped_lines.append(p_str)
+                        for pl in ped_lines:
+                            lines.append(pl + "\n")
+
+        return lines
+
+    # ===== Canvas click-toggle for channel enable/disable =====
+
+    def _clear_click_points(self) -> None:
+        """Clear registered click points (call at start of each plot method)"""
+        self._click_points.clear()
+
+    def _register_click_points(self, ax, x_data, y_data, channel_keys: List[str]) -> None:
+        """Register data points for interactive channel toggle via double-click.
+
+        Args:
+            ax: matplotlib axes the points are plotted on
+            x_data: x coordinates (array-like)
+            y_data: y coordinates (array-like)
+            channel_keys: list of channel key strings (e.g., ["CES_0", "CES_1", ...])
+        """
+        x_arr = np.atleast_1d(x_data)
+        y_arr = np.atleast_1d(y_data)
+        for x, y, key in zip(x_arr, y_arr, channel_keys):
+            if np.isfinite(x) and np.isfinite(y):
+                self._click_points.append((float(x), float(y), key, ax))
+
+    def _on_canvas_dblclick(self, event) -> None:
+        """Toggle channel enabled/disabled on double-click near a data point"""
+        if not event.dblclick or event.inaxes not in [self.ax1, self.ax2]:
+            return
+        if not self._click_points:
+            return
+
+        ax = event.inaxes
+        click_disp = ax.transData.transform((event.xdata, event.ydata))
+
+        min_dist = float('inf')
+        nearest_key = None
+
+        for x, y, key, pt_ax in self._click_points:
+            if pt_ax is not ax:
+                continue
+            pt_disp = ax.transData.transform((x, y))
+            dist = ((click_disp[0] - pt_disp[0])**2 + (click_disp[1] - pt_disp[1])**2)**0.5
+            if dist < min_dist:
+                min_dist = dist
+                nearest_key = key
+
+        if min_dist > 15 or nearest_key is None:  # 15 pixel threshold
+            return
+
+        if nearest_key in self._disabled_channels:
+            self._disabled_channels.discard(nearest_key)
+            print(f"[Channel] Enabled: {nearest_key}")
+        else:
+            self._disabled_channels.add(nearest_key)
+            print(f"[Channel] Disabled: {nearest_key}")
+
+        # Re-plot current view (preserve EFIT/fit state)
+        if self.ax1.lines or self.ax1.collections:
+            self._on_plot_clicked()
 
     @abstractmethod
     def _create_shot_input(self, parent: QWidget) -> None:
@@ -450,7 +1301,7 @@ class ProfileBaseTab(BaseTab):
         if not selected_entries:
             return
 
-        x_axis = self.selected_x_axis.get()
+        x_axis = self._get_selected_x_axis()
 
         if x_axis == "psi_N":
             x_label = rf"$\psi_N$ ({efit_tree})"

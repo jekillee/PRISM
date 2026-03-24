@@ -5,6 +5,38 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-03-24
+
+### Added
+- **Profile Fitting**: Added profile fitting feature to Ti/vT and ne/Te profile tabs
+  - Fitting functions: mtanh (8-param), ptanh (7-param), EPED (6-param), spline, RBF, GPR
+  - RBF: Adjustable number of Gaussian bases (default 5); fewer = smoother, more = detailed
+  - GPR: Squared-exponential kernel with ±2σ uncertainty bands
+  - Option dialog with editable parameter table (Value, Min, Max, Fix) and LaTeX formula
+  - Bold function title and single-line description with word wrap in all fit dialogs
+  - Console output: parameter table with values, errors, and bounds after fitting
+  - Pedestal summary: HEIGHT, FOOT, WIDTH (with cm conversion), LOC (with R conversion)
+  - Fitted curves overlaid on profile plots (both R-space and flux-space)
+  - Fitting restricted to flux coordinates (ψₙ, ρₚₒₗ, ρₜₒᵣ); R-space shows warning
+  - Preview & Save extended with Fitted Profile and Fit Parameters views
+  - Fit function selection and RBF n_bases saved to user settings
+- **X-axis Selection**: Unified plot dispatch with R/ψₙ/ρₚₒₗ/ρₜₒᵣ radio buttons
+  - "X-axis" label left-aligned, radio buttons right-aligned with equal spacing
+  - Flux radios disabled until EFIT mapping is computed
+  - Single Plot button dispatches to R-space or flux-space plot
+  - Show Nodes checkbox toggles node labels immediately without re-plotting
+
+### Changed
+- **UI Restructuring (Profile Tabs)**: Reordered sections — EFIT Mapping (3) → Plot (4) → Fitting (5) → Save (6)
+  - Removed separate EFIT Plot button; Plot button now handles both R and flux coordinates
+  - All internal re-plot calls (style dialog, fitting, channel toggle) route through unified dispatcher
+- **MSE q/j Selection**: Changed from radio buttons to dropdown (QComboBox) in both profile and timetrace tabs
+- **Select Channels Dialog**: Single-line hint text; added note that unchecked channels are excluded from fitting
+- **Show Nodes**: Checkbox now toggles node annotations immediately (unchecking removes without re-plot)
+- **Fitting Descriptions**: Removed GFIT references from mtanh, ptanh, EPED descriptions
+- **Pedestal Coordinate**: Width/position conversion now uses actual fitting coordinate instead of hardcoded ψₙ
+- **Formula Color**: LaTeX formula in fit dialogs uses system text color instead of hardcoded gray
+
 ## [2.2.3] - 2026-03-23
 
 ### Fixed

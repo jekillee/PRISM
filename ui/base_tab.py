@@ -91,6 +91,23 @@ class BaseTab(ABC):
             self.legend_fontsize = tab_settings.get("legend_fontsize", 8)
         if hasattr(self, 'tick_fontsize'):
             self.tick_fontsize = tab_settings.get("tick_fontsize", 10)
+        # Restore fit functions (per param type)
+        if hasattr(self, 'fit_func_combos') and self.fit_func_combos:
+            saved_funcs = tab_settings.get("fit_funcs", {})
+            for ptype, combo in self.fit_func_combos.items():
+                func_name = saved_funcs.get(ptype, "mtanh")
+                combo.setCurrentText(func_name)
+                self.fit_func_names[ptype] = func_name
+        if hasattr(self, 'fit_nonparam_options'):
+            self.fit_nonparam_options = tab_settings.get("fit_nonparam_options", {})
+        if hasattr(self, 'fit_xmin_entry'):
+            self.fit_xmin_entry.setText(tab_settings.get("fit_xmin", "0.0"))
+            self.fit_xmax_entry.setText(tab_settings.get("fit_xmax", "1.05"))
+        # Restore R-shift entries
+        if hasattr(self, 'r_shift_entries'):
+            saved_rshifts = tab_settings.get("r_shifts", {})
+            for diag_name, entry in self.r_shift_entries.items():
+                entry.setText(str(saved_rshifts.get(diag_name, "0")))
 
     def save_settings(self):
         """Save current tab state to settings (called on app close)"""
@@ -108,6 +125,22 @@ class BaseTab(ABC):
             tab_settings["legend_fontsize"] = self.legend_fontsize
         if hasattr(self, 'tick_fontsize'):
             tab_settings["tick_fontsize"] = self.tick_fontsize
+        if hasattr(self, 'fit_func_combos') and self.fit_func_combos:
+            tab_settings["fit_funcs"] = {
+                ptype: combo.currentText()
+                for ptype, combo in self.fit_func_combos.items()
+            }
+        if hasattr(self, 'fit_nonparam_options') and self.fit_nonparam_options:
+            tab_settings["fit_nonparam_options"] = self.fit_nonparam_options
+        if hasattr(self, 'fit_xmin_entry'):
+            tab_settings["fit_xmin"] = self.fit_xmin_entry.text()
+            tab_settings["fit_xmax"] = self.fit_xmax_entry.text()
+        # Save R-shift entries
+        if hasattr(self, 'r_shift_entries') and self.r_shift_entries:
+            tab_settings["r_shifts"] = {
+                diag_name: entry.text()
+                for diag_name, entry in self.r_shift_entries.items()
+            }
         set_tab_settings(self._settings_key, tab_settings)
 
     @abstractmethod
@@ -190,11 +223,9 @@ class BaseTab(ABC):
 
         return outer_frame
 
-    def _create_efit_controls(self, parent):
-        """Create EFIT mapping controls (common for profile tabs)"""
-        self.selected_x_axis_value = "R"
-
-        frame = QGroupBox("4. EFIT Mapping (Optional)", parent)
+    def _create_efit_controls(self, parent, section_num=3):
+        """Create EFIT mapping controls (dropdown + Mapping button only)"""
+        frame = QGroupBox(f"{section_num}. EFIT Mapping (Optional)", parent)
         grid = QGridLayout(frame)
 
         # EFIT Tree label and dropdown
@@ -211,33 +242,6 @@ class BaseTab(ABC):
         mapping_button.clicked.connect(self.compute_efit)
         grid.addWidget(mapping_button, 0, 3)
 
-        # Radio buttons for x-axis selection
-        self.x_axis_button_group = QButtonGroup()
-
-        radio_psi_n = QRadioButton("\u03C8\u2099")     # ψₙ (psi_N)
-        radio_rho_pol = QRadioButton("\u03C1\u209A\u2092\u2097")   # ρₚₒₗ (rho_pol)
-        radio_rho_tor = QRadioButton("\u03C1\u209C\u2092\u1D63")   # ρₜₒᵣ (rho_tor)
-
-        self.x_axis_button_group.addButton(radio_psi_n)
-        self.x_axis_button_group.addButton(radio_rho_pol)
-        self.x_axis_button_group.addButton(radio_rho_tor)
-
-        # Store mapping from button to value string
-        radio_psi_n.setProperty("axis_value", "psi_N")
-        radio_rho_pol.setProperty("axis_value", "rho_pol")
-        radio_rho_tor.setProperty("axis_value", "rho_tor")
-
-        # Connect to update the stored value
-        self.x_axis_button_group.buttonClicked.connect(self._on_x_axis_changed)
-
-        grid.addWidget(radio_psi_n, 1, 0)
-        grid.addWidget(radio_rho_pol, 1, 1)
-        grid.addWidget(radio_rho_tor, 1, 2)
-
-        plot_button = QPushButton("Plot")
-        plot_button.clicked.connect(self.plot_efit_profiles)
-        grid.addWidget(plot_button, 1, 3)
-
         # Set equal column stretch
         for i in range(4):
             grid.setColumnStretch(i, 1)
@@ -249,12 +253,50 @@ class BaseTab(ABC):
 
         return frame
 
-    def _on_x_axis_changed(self, button):
-        """Handle x-axis radio button change"""
-        self.selected_x_axis_value = button.property("axis_value")
+    def _create_x_axis_radios(self, parent_layout):
+        """Create R/ψₙ/ρₚₒₗ/ρₜₒᵣ radio buttons for x-axis selection.
+        Flux radios are disabled until EFIT mapping is computed."""
+        self.x_axis_button_group = QButtonGroup()
+
+        radio_R = QRadioButton("R")
+        radio_psi_n = QRadioButton("\u03C8\u2099")       # ψₙ
+        radio_rho_pol = QRadioButton("\u03C1\u209A\u2092\u2097")  # ρₚₒₗ
+        radio_rho_tor = QRadioButton("\u03C1\u209C\u2092\u1D63")  # ρₜₒᵣ
+
+        radio_R.setProperty("axis_value", "R")
+        radio_psi_n.setProperty("axis_value", "psi_N")
+        radio_rho_pol.setProperty("axis_value", "rho_pol")
+        radio_rho_tor.setProperty("axis_value", "rho_tor")
+
+        self.x_axis_button_group.addButton(radio_R)
+        self.x_axis_button_group.addButton(radio_psi_n)
+        self.x_axis_button_group.addButton(radio_rho_pol)
+        self.x_axis_button_group.addButton(radio_rho_tor)
+
+        radio_R.setChecked(True)
+
+        # Disable flux radios until EFIT mapped
+        self._flux_radios = [radio_psi_n, radio_rho_pol, radio_rho_tor]
+        for r in self._flux_radios:
+            r.setEnabled(False)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("X-axis"))
+        row.addStretch(2)
+        for r in [radio_R, radio_psi_n, radio_rho_pol, radio_rho_tor]:
+            row.addWidget(r, 1)
+        parent_layout.addLayout(row)
+
+    def _enable_flux_radios(self, enabled: bool = True):
+        """Enable or disable flux coordinate radio buttons"""
+        if hasattr(self, '_flux_radios'):
+            for r in self._flux_radios:
+                r.setEnabled(enabled)
 
     def _get_selected_x_axis(self):
         """Get the currently selected x-axis value from the radio buttons"""
+        if not hasattr(self, 'x_axis_button_group'):
+            return "R"
         checked = self.x_axis_button_group.checkedButton()
         if checked is not None:
             return checked.property("axis_value")
@@ -405,6 +447,7 @@ class BaseTab(ABC):
             return
 
         self.computed_efit_tree = efit_tree
+        self._enable_flux_radios(True)
         print("      EFIT Mapping Completed!")
         print("=" * 50 + "\n")
 
@@ -452,19 +495,231 @@ class BaseTab(ABC):
             QMessageBox.warning(self.frame, "Warning", "No data selected to preview")
             return
 
+        # Check if fit results are available
+        has_fit = hasattr(self, 'fit_results') and bool(self.fit_results)
+
+        if has_fit:
+            self._show_preview_with_modes(selected_entries)
+        else:
+            try:
+                fd, tmp_path = tempfile.mkstemp(suffix='.txt')
+                os.close(fd)
+                self._write_data_to_file(tmp_path, selected_entries)
+
+                with open(tmp_path, 'r') as f:
+                    lines = f.readlines()
+                os.remove(tmp_path)
+
+                self._show_data_preview_dialog(lines)
+            except Exception as e:
+                QMessageBox.critical(self.frame, "Error", f"Failed to preview data: {str(e)}")
+
+    def _show_preview_with_modes(self, selected_entries):
+        """Show preview dialog with mode selector (Raw Data / Fitted Profile / Fit Parameters)"""
+        dialog = QDialog(self.frame)
+        dialog.setWindowTitle("Data Preview")
+        dialog.resize(800, 600)
+        dlg_layout = QVBoxLayout(dialog)
+
+        # Mode selector
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("View:"))
+        mode_combo = QComboBox()
+        mode_combo.addItems(["Raw Data", "Fitted Profile", "Fit Parameters"])
+        mode_row.addWidget(mode_combo)
+        mode_row.addStretch()
+        dlg_layout.addLayout(mode_row)
+
+        # Content area (stacked)
+        content_stack = QWidget()
+        content_layout = QVBoxLayout(content_stack)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        dlg_layout.addWidget(content_stack, stretch=1)
+
+        # Table widget that gets replaced on mode change
+        table_holder = [None]  # mutable reference
+
+        def update_view():
+            mode = mode_combo.currentText()
+            # Clear old content
+            for i in reversed(range(content_layout.count())):
+                w = content_layout.itemAt(i).widget()
+                if w:
+                    w.deleteLater()
+
+            if mode == "Raw Data":
+                lines = self._get_raw_data_lines(selected_entries)
+                widget = self._create_preview_table(lines)
+            elif mode == "Fitted Profile":
+                lines = self._get_fit_profile_lines(selected_entries)
+                widget = self._create_preview_table(lines)
+            else:
+                lines = self._get_fit_params_lines(selected_entries)
+                widget = self._create_text_preview(lines)
+
+            content_layout.addWidget(widget)
+            table_holder[0] = widget
+
+        mode_combo.currentTextChanged.connect(lambda: update_view())
+        update_view()
+
+        # Bottom buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        save_btn = QPushButton("Save as .csv")
+        save_btn.clicked.connect(lambda: (dialog.close(), self.save_data()))
+        btn_layout.addWidget(save_btn)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.close)
+        btn_layout.addWidget(close_btn)
+
+        dlg_layout.addLayout(btn_layout)
+        dialog.exec()
+
+    def _get_raw_data_lines(self, selected_entries):
+        """Get raw data as lines for preview"""
         try:
-            # Write to temp file using existing _write_data_to_file
             fd, tmp_path = tempfile.mkstemp(suffix='.txt')
             os.close(fd)
             self._write_data_to_file(tmp_path, selected_entries)
-
             with open(tmp_path, 'r') as f:
                 lines = f.readlines()
             os.remove(tmp_path)
+            return lines
+        except Exception:
+            return ["# No data available"]
 
-            self._show_data_preview_dialog(lines)
-        except Exception as e:
-            QMessageBox.critical(self.frame, "Error", f"Failed to preview data: {str(e)}")
+    def _get_fit_profile_lines(self, selected_entries):
+        """Get fitted profile data as lines for preview"""
+        if not hasattr(self, 'fit_results') or not self.fit_results:
+            return ["# No fit results available"]
+
+        lines = ["# Fitted Profile Data\n"]
+        param_types = self._get_fit_param_types() if hasattr(self, '_get_fit_param_types') else []
+
+        # Build header
+        header_parts = ["x"]
+        for ptype in param_types:
+            header_parts.append(f"{ptype}_fit")
+        lines.append("#" + ",".join(f"{h:>12s}" for h in header_parts) + "\n")
+
+        for entry in selected_entries:
+            if entry not in self.fit_results:
+                continue
+            lines.append(f"# {entry}\n")
+            entry_results = self.fit_results[entry]
+
+            # Find the first successful result to get x_fit
+            first_result = None
+            for ptype in param_types:
+                if ptype in entry_results and entry_results[ptype].success:
+                    first_result = entry_results[ptype]
+                    break
+
+            if first_result is None:
+                lines.append("# Fit failed\n")
+                continue
+
+            x_fit = first_result.x_fit
+            for j in range(len(x_fit)):
+                parts = [f"{x_fit[j]:12.6f}"]
+                for ptype in param_types:
+                    if ptype in entry_results and entry_results[ptype].success:
+                        parts.append(f"{entry_results[ptype].y_fit[j]:12.6f}")
+                    else:
+                        parts.append(f"{'NaN':>12s}")
+                lines.append(",".join(parts) + "\n")
+
+        return lines
+
+    def _get_fit_params_lines(self, selected_entries):
+        """Get fit parameters as lines for preview"""
+        if not hasattr(self, 'fit_results') or not self.fit_results:
+            return ["# No fit results available"]
+
+        lines = ["# Fit Parameters\n"]
+        param_types = self._get_fit_param_types() if hasattr(self, '_get_fit_param_types') else []
+
+        for entry in selected_entries:
+            if entry not in self.fit_results:
+                continue
+            lines.append(f"# {entry}\n")
+            entry_results = self.fit_results[entry]
+
+            for ptype in param_types:
+                if ptype not in entry_results:
+                    continue
+                result = entry_results[ptype]
+                lines.append(f"# {ptype} ({result.func_name}): chi2={result.chi_squared:.4f}, {'OK' if result.success else 'FAILED'}\n")
+                if result.success:
+                    lines.append(f"#{'Param':>10s},{'Value':>12s},{'Error':>12s}\n")
+                    for pname, val in result.params.items():
+                        err = result.param_errors.get(pname, 0.0)
+                        lines.append(f" {pname:>10s},{val:12.6f},{err:12.6f}\n")
+
+        return lines
+
+    def _create_text_preview(self, lines):
+        """Create a read-only text widget for structured text preview (e.g. Fit Parameters)"""
+        from PySide6.QtWidgets import QTextEdit
+        text_widget = QTextEdit()
+        text_widget.setReadOnly(True)
+        text_widget.setFont(QFont('Courier', 10))
+        text_widget.setPlainText("".join(lines))
+        return text_widget
+
+    def _create_preview_table(self, lines):
+        """Create a QTableWidget from text lines"""
+        headers = []
+        data_rows = []
+        title_line = ""
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith('#'):
+                content = stripped.lstrip('#').strip()
+                # Only treat the first comma-containing # line as header
+                if ',' in content and not headers:
+                    headers = [h.strip() for h in content.split(',')]
+                else:
+                    title_line = content
+            else:
+                cells = [c.strip() for c in stripped.split(',')]
+                data_rows.append(cells)
+
+        if not data_rows:
+            table = QTableWidget(1, 1)
+            table.setItem(0, 0, QTableWidgetItem("No data available"))
+            return table
+
+        n_cols = len(headers) if headers else len(data_rows[0])
+        n_rows = len(data_rows)
+
+        table = QTableWidget(n_rows, n_cols)
+        table.setFont(QFont('Courier', 9))
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+
+        if headers:
+            table.setHorizontalHeaderLabels(headers)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        table.verticalHeader().setDefaultSectionSize(24)
+
+        for r, row in enumerate(data_rows):
+            for c, val in enumerate(row):
+                if c < n_cols:
+                    table.setItem(r, c, QTableWidgetItem(val))
+
+        table.resizeColumnsToContents()
+        for c in range(n_cols):
+            if table.columnWidth(c) > 150:
+                table.setColumnWidth(c, 150)
+
+        return table
 
     def _show_data_preview_dialog(self, lines):
         """Show data in a spreadsheet-style dialog"""
@@ -479,7 +734,7 @@ class BaseTab(ABC):
                 continue
             if stripped.startswith('#'):
                 content = stripped.lstrip('#').strip()
-                if ',' in content:
+                if ',' in content and not headers:
                     headers = [h.strip() for h in content.split(',')]
                 else:
                     title_line = content

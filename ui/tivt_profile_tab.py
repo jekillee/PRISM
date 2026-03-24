@@ -248,6 +248,53 @@ class TiVTProfileTab(ProfileBaseTab):
             'vT_err': vT_err[0, time_idx]
         }
 
+    def _get_rshift_diagnostics(self):
+        """CES supports R-shift"""
+        return ['CES']
+
+    def _get_fit_param_types(self):
+        """Return parameter types for Ti/vT fitting"""
+        return ['Ti', 'vT']
+
+    def _get_efit_profile_data(self, entry, interp_func):
+        """Get Ti/vT profile data in EFIT coordinates for fitting"""
+        shot_number, time_point, source = self._parse_entry(entry)
+
+        if source == 'XICS':
+            return None  # Skip XICS-only entries for fitting
+
+        if source in ['mod', 'nn']:
+            cache_key = f'{shot_number}_{source}'
+        else:
+            cache_key = f'file_{shot_number}_{source}'
+
+        if cache_key not in self.data:
+            return None
+
+        data = self.data[cache_key]
+        time_idx = np.argmin(np.abs(data.time - time_point))
+
+        # Apply R-shift before EFIT coordinate mapping
+        ces_rshift = self._get_rshift('CES')
+        x_data = interp_func(data.radius + ces_rshift)
+
+        Ti_data, Ti_err = data.get_parameter('Ti')
+        vT_data, vT_err = data.get_parameter('vT')
+
+        Ti_profile = Ti_data[:, time_idx]
+        Ti_err_profile = Ti_err[:, time_idx]
+        vT_profile = vT_data[:, time_idx]
+        vT_err_profile = vT_err[:, time_idx]
+
+        # Exclude disabled channels
+        ch_keys = [f"CES_{j}" for j in range(len(data.radius))]
+        mask = self._get_channel_mask(ch_keys)
+
+        return {
+            'Ti': {'x': x_data[mask], 'y': Ti_profile[mask], 'err': Ti_err_profile[mask]},
+            'vT': {'x': x_data[mask], 'y': vT_profile[mask], 'err': vT_err_profile[mask]},
+        }
+
     def _get_marker_style(self, source):
         """Get marker style based on data source"""
         if source == 'mod':
@@ -289,6 +336,7 @@ class TiVTProfileTab(ProfileBaseTab):
         """Plot R profiles with CES and XICS data"""
         self.ax1.clear()
         self.ax2.clear()
+        self._clear_click_points()
 
         self.ax1.set_xlabel('R [m]')
         self.ax2.set_xlabel('R [m]')
@@ -401,6 +449,10 @@ class TiVTProfileTab(ProfileBaseTab):
                 self._add_channel_labels(self.ax1, R_data, Ti_profile, node_prefix, channels)
                 self._add_channel_labels(self.ax2, R_data, vT_profile, node_prefix.replace('TI', 'VT'), channels)
 
+                # Register for double-click toggle
+                self._register_click_points(self.ax1, R_data, Ti_profile, ch_keys)
+                self._register_click_points(self.ax2, R_data, vT_profile, ch_keys)
+
                 # Plot XICS data at the same time point
                 xics_point = self._get_xics_at_time(shot_number, time_point)
                 if xics_point is not None:
@@ -442,6 +494,10 @@ class TiVTProfileTab(ProfileBaseTab):
         zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
         self.ax2.axhline(y=0, c=zc, ls='--', gid='zero_ref')
 
+        # Overlay fit curves if available
+        self._overlay_fit_curves(self.ax1, 'Ti', selected_entries, colors)
+        self._overlay_fit_curves(self.ax2, 'vT', selected_entries, colors)
+
         self.plot_manager.apply_common_styling(
             self.ax1, self.ax2,
             legend_fontsize=self.legend_fontsize,
@@ -463,6 +519,7 @@ class TiVTProfileTab(ProfileBaseTab):
 
         self.ax1.clear()
         self.ax2.clear()
+        self._clear_click_points()
 
         selected_entries = [self.selected_listbox.item(i).text()
                            for i in range(self.selected_listbox.count())]
@@ -533,7 +590,8 @@ class TiVTProfileTab(ProfileBaseTab):
                 data = self.data[cache_key]
 
                 time_idx = np.argmin(np.abs(data.time - time_point))
-                x_data = interp_func(data.radius)
+                ces_rshift = self._get_rshift('CES')
+                x_data = interp_func(data.radius + ces_rshift)
 
                 Ti_data, Ti_err = data.get_parameter('Ti')
                 vT_data, vT_err = data.get_parameter('vT')
@@ -581,6 +639,10 @@ class TiVTProfileTab(ProfileBaseTab):
                 self._add_channel_labels(self.ax1, x_data, Ti_profile, source, channels)
                 self._add_channel_labels(self.ax2, x_data, vT_profile, source, channels)
 
+                # Register for double-click toggle
+                self._register_click_points(self.ax1, x_data, Ti_profile, ch_keys)
+                self._register_click_points(self.ax2, x_data, vT_profile, ch_keys)
+
                 # Plot XICS data at the same time point
                 xics_point = self._get_xics_at_time(shot_number, time_point)
                 if xics_point is not None:
@@ -609,6 +671,10 @@ class TiVTProfileTab(ProfileBaseTab):
 
             except Exception as e:
                 print(f"[Ti/vT] Error plotting {entry}: {str(e)}")
+
+        # Overlay fit curves
+        self._overlay_fit_curves(self.ax1, 'Ti', selected_entries, colors)
+        self._overlay_fit_curves(self.ax2, 'vT', selected_entries, colors)
 
         self.ax1.set_xlabel(x_label)
         self.ax2.set_xlabel(x_label)

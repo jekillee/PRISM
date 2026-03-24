@@ -82,8 +82,8 @@ class MSETimeTraceTab(TimeTraceBaseTab):
             pass
 
     def _get_selected_param(self):
-        """Get selected parameter from radio buttons"""
-        return 'q' if self.param_q_radio.isChecked() else 'j'
+        """Get selected parameter from dropdown"""
+        return self.param_combo.currentText()
 
     def _create_plot_controls(self, parent):
         """Create plot control buttons"""
@@ -92,12 +92,9 @@ class MSETimeTraceTab(TimeTraceBaseTab):
 
         row1 = QHBoxLayout()
 
-        self.param_q_radio = QRadioButton(' q')
-        self.param_q_radio.setChecked(True)
-        row1.addWidget(self.param_q_radio)
-
-        self.param_j_radio = QRadioButton(' j')
-        row1.addWidget(self.param_j_radio)
+        self.param_combo = QComboBox()
+        self.param_combo.addItems(['q', 'j'])
+        row1.addWidget(self.param_combo)
 
         plot_button = QPushButton('Plot')
         plot_button.clicked.connect(self.plot_data)

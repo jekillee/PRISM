@@ -55,6 +55,7 @@ class MSEProfileTab(ProfileBaseTab):
 
         # Create canvas
         self.canvas = FigureCanvasQTAgg(self.figure)
+        self.canvas.mpl_connect('button_press_event', self._on_canvas_dblclick)
         self.canvas.draw()
 
         # Left side: canvas + toolbar in a vertical layout
@@ -91,8 +92,8 @@ class MSEProfileTab(ProfileBaseTab):
 
         self._create_shot_input(control_frame)
         self._create_selection_listboxes(control_frame)
+        self._create_efit_controls(control_frame, section_num=3)
         self._create_plot_controls(control_frame)
-        self._create_efit_controls(control_frame)
         self._create_save_controls(control_frame, section_num=5)
         control_layout.addStretch()
 
@@ -151,26 +152,26 @@ class MSEProfileTab(ProfileBaseTab):
             pass
 
     def _get_selected_param(self):
-        """Get selected parameter from radio buttons"""
-        return 'q' if self.param_q_radio.isChecked() else 'j'
+        """Get selected parameter from dropdown"""
+        return self.param_combo.currentText()
 
     def _create_plot_controls(self, parent):
-        """Create plot control buttons"""
-        group = QGroupBox("3. Plot")
+        """Create plot control buttons with x-axis radios and q/j selection"""
+        group = QGroupBox("4. Plot")
         group_layout = QVBoxLayout(group)
 
-        # Row 1: q/j radio buttons + Plot button
+        # X-axis radio buttons: R | ψₙ | ρₚₒₗ | ρₜₒᵣ
+        self._create_x_axis_radios(group_layout)
+
+        # Row 1: q/j dropdown + Plot button
         row1 = QHBoxLayout()
 
-        self.param_q_radio = QRadioButton(' q')
-        self.param_q_radio.setChecked(True)
-        row1.addWidget(self.param_q_radio)
-
-        self.param_j_radio = QRadioButton(' j')
-        row1.addWidget(self.param_j_radio)
+        self.param_combo = QComboBox()
+        self.param_combo.addItems(['q', 'j'])
+        row1.addWidget(self.param_combo)
 
         plot_button = QPushButton("Plot")
-        plot_button.clicked.connect(self.plot_data)
+        plot_button.clicked.connect(self._on_plot_clicked)
         row1.addWidget(plot_button, 2)
 
         style_btn = QPushButton("Option")
@@ -204,6 +205,7 @@ class MSEProfileTab(ProfileBaseTab):
 
         self.show_channel_checkbox = QCheckBox("Show Nodes")
         self.show_channel_checkbox.setChecked(False)
+        self.show_channel_checkbox.stateChanged.connect(self._on_show_nodes_toggled)
         row2.addWidget(self.show_channel_checkbox)
 
         channels_btn = QPushButton("Select Channels")
@@ -289,6 +291,7 @@ class MSEProfileTab(ProfileBaseTab):
         """Plot R profiles"""
         self.ax1.clear()
         self.ax2.clear()
+        self._clear_click_points()
 
         self.ax1.set_xlabel('R [m]')
         self.ax1.set_ylabel(r'$\gamma$ [deg]')
@@ -412,6 +415,10 @@ class MSEProfileTab(ProfileBaseTab):
                 # Add channel labels at TGAMMA positions (node: TGAMMA01~25)
                 self._add_channel_labels(self.ax2, R_raw, param_at_tgamma, 'TGAMMA', raw_channels)
 
+                # Register for double-click toggle
+                self._register_click_points(self.ax1, R_raw, tgamma, ch_keys)
+                self._register_click_points(self.ax2, R_raw, param_at_tgamma, ch_keys)
+
                 param_max = max(param_max, np.nanmax(param_data))
                 param_min = min(param_min, np.nanmin(param_data))
 
@@ -451,6 +458,7 @@ class MSEProfileTab(ProfileBaseTab):
 
         self.ax1.clear()
         self.ax2.clear()
+        self._clear_click_points()
 
         selected_entries = [self.selected_listbox.item(i).text()
                            for i in range(self.selected_listbox.count())]
@@ -572,6 +580,10 @@ class MSEProfileTab(ProfileBaseTab):
 
                 # Add channel labels at TGAMMA positions
                 self._add_channel_labels(self.ax2, x_raw, param_at_tgamma, 'TGAMMA', raw_channels)
+
+                # Register for double-click toggle
+                self._register_click_points(self.ax1, x_raw, tgamma, ch_keys)
+                self._register_click_points(self.ax2, x_raw, param_at_tgamma, ch_keys)
 
                 param_max = max(param_max, np.nanmax(param_data))
                 param_min = min(param_min, np.nanmin(param_data))

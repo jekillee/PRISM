@@ -36,7 +36,8 @@ DEFAULT_SETTINGS = {
             "show_nodes": False,
             "label_fontsize": 12,
             "legend_fontsize": 8,
-            "tick_fontsize": 10
+            "tick_fontsize": 10,
+            "fit_funcs": {"Ti": "mtanh", "vT": "mtanh"}
         },
         "tivt_timetrace": {
             "shot": "",
@@ -54,7 +55,8 @@ DEFAULT_SETTINGS = {
             "show_nodes": False,
             "label_fontsize": 12,
             "legend_fontsize": 8,
-            "tick_fontsize": 10
+            "tick_fontsize": 10,
+            "fit_funcs": {"Te": "mtanh", "ne": "mtanh"}
         },
         "nete_timetrace": {
             "shot": "",
