@@ -29,9 +29,10 @@ if [ ! -f "$PRISM_HOME/main.py" ]; then
     exit 1
 fi
 
-# Set PYTHONPATH to include PRISM directory and jklee's site-packages
+# Set PYTHONPATH to PRISM directory and jklee's site-packages only
+# Discard any pre-existing PYTHONPATH (e.g., other users' Python 3.6 paths)
 PYSIDE6_SITE="/home/users/jklee/.local/lib/python3.8/site-packages"
-export PYTHONPATH="$PRISM_HOME:$PYSIDE6_SITE:$PYTHONPATH"
+export PYTHONPATH="$PRISM_HOME:$PYSIDE6_SITE"
 
 # Suppress WAYLAND_DISPLAY warning on Gnome (NoMachine)
 unset WAYLAND_DISPLAY
