@@ -36,6 +36,16 @@ if _JKLEE_SITE in sys.path:
     sys.path.remove(_JKLEE_SITE)
 sys.path.insert(0, _JKLEE_SITE)
 
+# Patch numpy.typing.NDArray if missing (old system numpy < 1.20)
+# Required by system Pillow's _typing module
+try:
+    import numpy.typing as _npt
+    if not hasattr(_npt, 'NDArray'):
+        import numpy as _np
+        _npt.NDArray = _np.ndarray
+except (ImportError, AttributeError):
+    pass
+
 # Suppress numpy compiletime version mismatch warnings (system numpy may differ)
 warnings.filterwarnings("ignore", message=".*compiletime version.*", category=RuntimeWarning)
 warnings.filterwarnings("ignore", message=".*binary incompatibility.*", category=RuntimeWarning)
