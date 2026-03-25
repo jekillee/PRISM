@@ -14,6 +14,9 @@ matplotlib>=3.5.0
 # Image processing (for TV tab)
 Pillow>=8.0.0
 
+# Profile fitting - GPR (optional, other fitting functions work without it)
+scikit-learn>=1.0.0
+
 # MDS+ connection (may require separate installation)
 # MDSplus>=7.0.0
 

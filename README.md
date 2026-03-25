@@ -143,6 +143,7 @@ PRISM/
 - PySide6 (Qt 6) - GUI framework
 - matplotlib - Plotting
 - numpy, scipy - Numerical computation
+- scikit-learn - GPR fitting (optional)
 - Pillow - Image processing (TV tab)
 - MDSplus - KSTAR data access (KFE internal)
 
