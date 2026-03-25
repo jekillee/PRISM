@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fitting Descriptions**: Removed GFIT references from mtanh, ptanh, EPED descriptions
 - **Pedestal Coordinate**: Width/position conversion now uses actual fitting coordinate instead of hardcoded ψₙ
 - **Formula Color**: LaTeX formula in fit dialogs uses system text color instead of hardcoded gray
+- **Formula Display**: mtanh definition shown as `where,` line; ptanh formula merged to single line; a1 placed first in both
+- **Channel Toggle**: Double-click message now shows channel label matching Select Channels dialog
+- **Channel Toggle Axis**: Double-click preserves axis limits; Plot button auto-scales y-axis to enabled channels only
+- **Flux Plot Shading**: Replaced vertical dashed lines at x=0,1 with gray shaded regions outside plasma (x≤0, x≥1)
+- **Flux X-axis Range**: Default x-axis range changed from [0, 1.05] to [-0.1, 1.1]
 
 ## [2.2.3] - 2026-03-23
 

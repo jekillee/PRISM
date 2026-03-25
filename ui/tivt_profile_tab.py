@@ -408,10 +408,16 @@ class TiVTProfileTab(ProfileBaseTab):
                 vT_profile = vT_data[:, time_idx]
                 vT_err_profile = vT_err[:, time_idx]
 
+                # Split enabled/disabled channels
+                ch_keys = [f"CES_{j}" for j in range(len(R_data))]
+                mask = self._get_channel_mask(ch_keys)
+
                 valid_idx = np.argmin(np.abs(R_data - self.app_config.R_EDGE))
-                ti_max = max(ti_max, np.nanpercentile(Ti_profile[:valid_idx], 98))
-                vt_min = min(vt_min, np.nanpercentile(vT_profile[:valid_idx], 2))
-                vt_max = max(vt_max, np.nanpercentile(vT_profile[:valid_idx], 98))
+                valid_mask = mask[:valid_idx]
+                if valid_mask.any():
+                    ti_max = max(ti_max, np.nanpercentile(Ti_profile[:valid_idx][valid_mask], 98))
+                    vt_min = min(vt_min, np.nanpercentile(vT_profile[:valid_idx][valid_mask], 2))
+                    vt_max = max(vt_max, np.nanpercentile(vT_profile[:valid_idx][valid_mask], 98))
 
                 label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms ({source})'
 
@@ -429,10 +435,6 @@ class TiVTProfileTab(ProfileBaseTab):
                 if style['markerfacecolor'] == 'none':
                     plot_kwargs['markerfacecolor'] = 'none'
                     plot_kwargs['markeredgewidth'] = style['markeredgewidth']
-
-                # Split enabled/disabled channels
-                ch_keys = [f"CES_{j}" for j in range(len(R_data))]
-                mask = self._get_channel_mask(ch_keys)
 
                 if mask.any():
                     self.ax1.errorbar(R_data[mask], Ti_profile[mask], Ti_err_profile[mask], **plot_kwargs)
@@ -601,9 +603,15 @@ class TiVTProfileTab(ProfileBaseTab):
                 vT_profile = vT_data[:, time_idx]
                 vT_err_profile = vT_err[:, time_idx]
 
+                # Split enabled/disabled channels
+                ch_keys = [f"CES_{j}" for j in range(len(x_data))]
+                mask = self._get_channel_mask(ch_keys)
+
                 lcfs_idx = np.argmin(np.abs(x_data - 1))
-                ti_max = max(ti_max, np.nanmax(Ti_profile[:lcfs_idx]))
-                vt_max = max(vt_max, np.nanmax(np.abs(vT_profile[:lcfs_idx])))
+                valid_mask = mask[:lcfs_idx]
+                if valid_mask.any():
+                    ti_max = max(ti_max, np.nanmax(Ti_profile[:lcfs_idx][valid_mask]))
+                    vt_max = max(vt_max, np.nanmax(np.abs(vT_profile[:lcfs_idx][valid_mask])))
 
                 label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms ({source})'
 
@@ -620,10 +628,6 @@ class TiVTProfileTab(ProfileBaseTab):
                 if style['markerfacecolor'] == 'none':
                     plot_kwargs['markerfacecolor'] = 'none'
                     plot_kwargs['markeredgewidth'] = style['markeredgewidth']
-
-                # Split enabled/disabled channels
-                ch_keys = [f"CES_{j}" for j in range(len(x_data))]
-                mask = self._get_channel_mask(ch_keys)
 
                 if mask.any():
                     self.ax1.errorbar(x_data[mask], Ti_profile[mask], Ti_err_profile[mask], **plot_kwargs)
@@ -681,16 +685,16 @@ class TiVTProfileTab(ProfileBaseTab):
         self.ax1.set_ylabel(self.param1['label'])
         self.ax2.set_ylabel(self.param2['label'])
 
-        self.ax1.set_xlim(0, 1.05)
-        self.ax2.set_xlim(0, 1.05)
+        self.ax1.set_xlim(-0.1, 1.1)
+        self.ax2.set_xlim(-0.1, 1.1)
         self.ax1.set_ylim(0, ti_max * 1.1)
         self.ax2.set_ylim(-vt_max * 0.1, vt_max * 1.1)
         zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
         self.ax2.axhline(y=0, c=zc, ls='--', gid='zero_ref')
 
         for ax in [self.ax1, self.ax2]:
-            ax.axvline(x=0, c='k', ls='--')
-            ax.axvline(x=1, c='k', ls='--')
+            ax.axvspan(-1, 0, color='gray', alpha=0.15, zorder=0)
+            ax.axvspan(1, 2, color='gray', alpha=0.15, zorder=0)
 
         self.plot_manager.apply_common_styling(
             self.ax1, self.ax2,

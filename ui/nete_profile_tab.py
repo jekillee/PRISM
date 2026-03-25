@@ -376,15 +376,17 @@ class NeTeProfileTab(ProfileBaseTab):
                     ne_err_upper_profile = ne_err_upper[:, time_idx]
                     ne_err_lower_profile = ne_err_lower[:, time_idx]
 
-                    valid_idx = np.argmin(np.abs(R_data - self.app_config.R_EDGE))
-                    te_max = max(te_max, np.nanmax(Te_profile[:valid_idx]))
-                    ne_max = max(ne_max, np.nanmax(ne_profile[:valid_idx]))
-
-                    label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (TS)'
-
                     # Split enabled/disabled Thomson channels
                     ts_keys = [f"TS_{j}" for j in range(len(R_data))]
                     ts_mask = self._get_channel_mask(ts_keys)
+
+                    valid_idx = np.argmin(np.abs(R_data - self.app_config.R_EDGE))
+                    vm = ts_mask[:valid_idx]
+                    if vm.any():
+                        te_max = max(te_max, np.nanmax(Te_profile[:valid_idx][vm]))
+                        ne_max = max(ne_max, np.nanmax(ne_profile[:valid_idx][vm]))
+
+                    label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (TS)'
 
                     if ts_mask.any():
                         self.ax1.errorbar(R_data[ts_mask], Te_profile[ts_mask],
@@ -440,15 +442,15 @@ class NeTeProfileTab(ProfileBaseTab):
 
                             valid_mask = ece_data.measurements['Te']['valid_mask']
 
-                            valid_in_range = valid_mask & (ece_R_data <= self.app_config.R_EDGE)
+                            # Split enabled/disabled ECE channels
+                            ece_keys = self._ece_channel_keys(ece_data)
+                            ece_ch_mask = self._get_channel_mask(ece_keys)
+
+                            valid_in_range = valid_mask & ece_ch_mask & (ece_R_data <= self.app_config.R_EDGE)
                             if np.any(valid_in_range):
                                 te_max = max(te_max, np.nanmax(ece_Te_profile[valid_in_range]))
 
                             ece_label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (ECE)'
-
-                            # Split enabled/disabled ECE channels
-                            ece_keys = self._ece_channel_keys(ece_data)
-                            ece_ch_mask = self._get_channel_mask(ece_keys)
                             # Combine with hardware valid mask
                             enabled = valid_mask & ece_ch_mask
                             disabled = valid_mask & (~ece_ch_mask)
@@ -497,15 +499,15 @@ class NeTeProfileTab(ProfileBaseTab):
 
                     valid_mask = ece_data.measurements['Te']['valid_mask']
 
-                    valid_in_range = valid_mask & (R_data <= self.app_config.R_EDGE)
+                    # Split enabled/disabled ECE channels
+                    ece_keys = self._ece_channel_keys(ece_data)
+                    ece_ch_mask = self._get_channel_mask(ece_keys)
+
+                    valid_in_range = valid_mask & ece_ch_mask & (R_data <= self.app_config.R_EDGE)
                     if np.any(valid_in_range):
                         te_max = max(te_max, np.nanmax(Te_profile[valid_in_range]))
 
                     label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (ECE)'
-
-                    # Split enabled/disabled ECE channels
-                    ece_keys = self._ece_channel_keys(ece_data)
-                    ece_ch_mask = self._get_channel_mask(ece_keys)
                     enabled = valid_mask & ece_ch_mask
                     disabled = valid_mask & (~ece_ch_mask)
 
@@ -628,15 +630,17 @@ class NeTeProfileTab(ProfileBaseTab):
                     ne_err_upper_profile = ne_err_upper[:, time_idx]
                     ne_err_lower_profile = ne_err_lower[:, time_idx]
 
-                    lcfs_idx = np.argmin(np.abs(x_data - 1))
-                    te_max = max(te_max, np.nanmax(Te_profile[:lcfs_idx]))
-                    ne_max = max(ne_max, np.nanmax(ne_profile[:lcfs_idx]))
-
-                    label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (TS)'
-
                     # Split enabled/disabled Thomson channels
                     ts_keys = [f"TS_{j}" for j in range(len(x_data))]
                     ts_mask = self._get_channel_mask(ts_keys)
+
+                    lcfs_idx = np.argmin(np.abs(x_data - 1))
+                    vm = ts_mask[:lcfs_idx]
+                    if vm.any():
+                        te_max = max(te_max, np.nanmax(Te_profile[:lcfs_idx][vm]))
+                        ne_max = max(ne_max, np.nanmax(ne_profile[:lcfs_idx][vm]))
+
+                    label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (TS)'
 
                     if ts_mask.any():
                         self.ax1.errorbar(x_data[ts_mask], Te_profile[ts_mask],
@@ -692,15 +696,15 @@ class NeTeProfileTab(ProfileBaseTab):
 
                             valid_mask = ece_data.measurements['Te']['valid_mask']
 
-                            in_range = (ece_x_data <= 1.0)
-                            if np.any(valid_mask & in_range):
-                                te_max = max(te_max, np.nanmax(ece_Te_profile[valid_mask & in_range]))
-
-                            ece_label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (ECE)'
-
                             # Split enabled/disabled ECE channels
                             ece_keys = self._ece_channel_keys(ece_data)
                             ece_ch_mask = self._get_channel_mask(ece_keys)
+
+                            in_range = (ece_x_data <= 1.0)
+                            if np.any(valid_mask & ece_ch_mask & in_range):
+                                te_max = max(te_max, np.nanmax(ece_Te_profile[valid_mask & ece_ch_mask & in_range]))
+
+                            ece_label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (ECE)'
                             enabled = valid_mask & ece_ch_mask
                             disabled = valid_mask & (~ece_ch_mask)
 
@@ -741,15 +745,15 @@ class NeTeProfileTab(ProfileBaseTab):
 
                         valid_mask = ece_data.measurements['Te']['valid_mask']
 
-                        in_range = (x_data <= 1.0)
-                        if np.any(valid_mask & in_range):
-                            te_max = max(te_max, np.nanmax(Te_profile[valid_mask & in_range]))
-
-                        label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (ECE)'
-
                         # Split enabled/disabled ECE channels
                         ece_keys = self._ece_channel_keys(ece_data)
                         ece_ch_mask = self._get_channel_mask(ece_keys)
+
+                        in_range = (x_data <= 1.0)
+                        if np.any(valid_mask & ece_ch_mask & in_range):
+                            te_max = max(te_max, np.nanmax(Te_profile[valid_mask & ece_ch_mask & in_range]))
+
+                        label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (ECE)'
                         enabled = valid_mask & ece_ch_mask
                         disabled = valid_mask & (~ece_ch_mask)
 
@@ -788,16 +792,16 @@ class NeTeProfileTab(ProfileBaseTab):
         self.ax1.set_ylabel(self.param1['label'])
         self.ax2.set_ylabel(self.param2['label'])
 
-        self.ax1.set_xlim(0, 1.05)
-        self.ax2.set_xlim(0, 1.05)
+        self.ax1.set_xlim(-0.1, 1.1)
+        self.ax2.set_xlim(-0.1, 1.1)
         self.ax1.set_ylim(0, te_max * 1.1)
 
         if has_thomson:
             self.ax2.set_ylim(0, ne_max * 1.1)
 
         for ax in [self.ax1, self.ax2]:
-            ax.axvline(x=0, c='k', ls='--')
-            ax.axvline(x=1, c='k', ls='--')
+            ax.axvspan(-1, 0, color='gray', alpha=0.15, zorder=0)
+            ax.axvspan(1, 2, color='gray', alpha=0.15, zorder=0)
 
         self.plot_manager.apply_common_styling(
             self.ax1, self.ax2,

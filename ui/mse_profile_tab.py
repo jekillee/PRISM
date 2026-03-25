@@ -612,11 +612,11 @@ class MSEProfileTab(ProfileBaseTab):
         self.ax2.set_ylim(0, 6)
 
         for ax in [self.ax1, self.ax2]:
-            ax.axvline(x=0, c='k', ls='--')
-            ax.axvline(x=1, c='k', ls='--')
+            ax.axvspan(-1, 0, color='gray', alpha=0.15, zorder=0)
+            ax.axvspan(1, 2, color='gray', alpha=0.15, zorder=0)
 
-        self.ax1.set_xlim(-0.5, 1.05)
-        self.ax2.set_xlim(0, 1.05)
+        self.ax1.set_xlim(-0.5, 1.1)
+        self.ax2.set_xlim(-0.1, 1.1)
 
         self.plot_manager.apply_common_styling(
             self.ax1, self.ax2,

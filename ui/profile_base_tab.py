@@ -1151,12 +1151,16 @@ class ProfileBaseTab(BaseTab):
         if min_dist > 15 or nearest_key is None:  # 15 pixel threshold
             return
 
+        # Resolve display label from channel info
+        label_map = dict(self._get_channel_info())
+        display = label_map.get(nearest_key, nearest_key)
+
         if nearest_key in self._disabled_channels:
             self._disabled_channels.discard(nearest_key)
-            print(f"[Channel] Enabled: {nearest_key}")
+            print(f"[Channel] Enabled: {display}")
         else:
             self._disabled_channels.add(nearest_key)
-            print(f"[Channel] Disabled: {nearest_key}")
+            print(f"[Channel] Disabled: {display}")
 
         # Re-plot current view, preserving axis limits
         if self.ax1.lines or self.ax1.collections:
@@ -1345,15 +1349,15 @@ class ProfileBaseTab(BaseTab):
         self.ax1.set_ylabel(self.param1['label'])
         self.ax2.set_ylabel(self.param2['label'])
 
-        self.ax1.set_xlim(0, 1.05)
-        self.ax2.set_xlim(0, 1.05)
+        self.ax1.set_xlim(-0.1, 1.1)
+        self.ax2.set_xlim(-0.1, 1.1)
         self.ax1.set_ylim(0, y1_max * 1.1)
         self._apply_y2_limits_efit(y2_max, y2_min)
 
-        # Add vertical lines at core and LCFS
+        # Shade outside plasma region (core & SOL)
         for ax in [self.ax1, self.ax2]:
-            ax.axvline(x=0, c='k', ls='--')
-            ax.axvline(x=1, c='k', ls='--')
+            ax.axvspan(-1, 0, color='gray', alpha=0.15, zorder=0)
+            ax.axvspan(1, 2, color='gray', alpha=0.15, zorder=0)
 
         self.plot_manager.apply_common_styling(
             self.ax1, self.ax2,

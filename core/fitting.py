@@ -128,7 +128,7 @@ FIT_FUNCTIONS = {
         'description': 'Modified tanh — 8 parameters. Pedestal + core shape with asymmetric tanh. Best for profiles with distinct pedestal and core peaking.',
         'param_descriptions': {
             'a1': 'Edge value (pedestal foot)',
-            'a2': 'Pedestal height',
+            'a2': 'Pedestal height (top)',
             'a3': 'Pedestal width',
             'a4': 'Pedestal position (symmetry point)',
             'a5': 'Slope parameter for mtanh',
@@ -137,8 +137,10 @@ FIT_FUNCTIONS = {
             'a8': 'Core exponent',
         },
         'formula_latex': (
-            r'$y = \frac{a_2 - a_1}{2}\left[\mathrm{mtanh}\!\left(\frac{a_4 - x}{a_3/2},\, a_5\right)'
-            r' + 1\right] + a_1 + (a_6 - y)\,\exp\!\left[-\left(\frac{|x|}{a_7 + 0.2}\right)^{a_8}\right]$'
+            r'$y = a_1 + \frac{a_2 - a_1}{2}\left[\mathrm{mtanh}\!\left(\frac{a_4 - x}{a_3/2},\, a_5\right)'
+            r' + 1\right] + (a_6 - y)\,\exp\!\left[-\left(\frac{|x|}{a_7}\right)^{a_8}\right]$'
+            '\n'
+            r'$\mathrm{where,}\ \ \mathrm{mtanh}(z,b) = \tanh(z) + \frac{bz(1+\tanh z)}{2}$'
         ),
     },
     'ptanh': {
@@ -155,9 +157,8 @@ FIT_FUNCTIONS = {
             'a7': 'Pedestal position',
         },
         'formula_latex': (
-            r'$y = (a_2 - a_1)(1 + a_3 x + a_4 x^2 + a_5 x^3)$'
-            '\n'
-            r'$\quad \times\, \frac{1}{2}\left[1 - \tanh\!\left(\frac{x - a_7}{a_6}\cdot 2\right)\right] + a_1$'
+            r'$y = a_1 + (a_2 - a_1)(1 + a_3 x + a_4 x^2 + a_5 x^3)'
+            r'\times\frac{1}{2}\left[1 - \tanh\!\left(\frac{x - a_7}{a_6}\cdot 2\right)\right]$'
         ),
     },
     'EPED': {
