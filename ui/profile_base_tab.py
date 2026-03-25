@@ -1158,9 +1158,14 @@ class ProfileBaseTab(BaseTab):
             self._disabled_channels.add(nearest_key)
             print(f"[Channel] Disabled: {nearest_key}")
 
-        # Re-plot current view (preserve EFIT/fit state)
+        # Re-plot current view, preserving axis limits
         if self.ax1.lines or self.ax1.collections:
+            xlim1, ylim1 = self.ax1.get_xlim(), self.ax1.get_ylim()
+            xlim2, ylim2 = self.ax2.get_xlim(), self.ax2.get_ylim()
             self._on_plot_clicked()
+            self.ax1.set_xlim(xlim1); self.ax1.set_ylim(ylim1)
+            self.ax2.set_xlim(xlim2); self.ax2.set_ylim(ylim2)
+            self.canvas.draw_idle()
 
     @abstractmethod
     def _create_shot_input(self, parent: QWidget) -> None:

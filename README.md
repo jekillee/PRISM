@@ -11,7 +11,7 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 ## Features
 
 - **Modular Architecture**: Easily extensible for new diagnostics
-- **Sidebar Navigation**: Categorized tree view with lazy-loaded tabs
+- **Sidebar Navigation**: Categorized tree view with on-demand tabs
 - **Profile & Time Trace Views**: For each diagnostic system
 - **EFIT Mapping**: Support for multiple EFIT trees (efitrt1, efitrt2, efit01, efit02, efit04)
 - **Multiple Data Sources**: MDS+ and file-based data
@@ -22,9 +22,11 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 - **TV Image Viewer**: Sequential image viewer for visible camera data with line drawing
 - **TV Startup Comparison**: Compare plasma startup sequences across multiple shots
 - **IRVB Viewer**: 2D radiation profile with EFIT overlay and regional Prad analysis
+- **Profile Fitting**: mtanh, ptanh, EPED, spline, RBF, GPR with pedestal analysis
+- **X-axis Selection**: R/ψN/ρpol/ρtor radio buttons in profile plot section
+- **Interactive Channel Toggle**: Double-click data points to exclude/include channels from fitting
 - **Dark/Light Theme**: Runtime theme switching with persistence
 - **Data Preview & Save**: Spreadsheet-style preview before exporting data
-- **Per-Channel Visibility**: Show/hide individual channels in profile plots
 
 ## Supported Diagnostics
 
@@ -89,7 +91,8 @@ PRISM/
 │   └── mirnov_config.json       # Mirnov coil configurations by year
 ├── core/
 │   ├── data_structures.py       # Data classes
-│   └── file_parser.py           # File parser
+│   ├── file_parser.py           # File parser
+│   └── fitting.py               # Profile fitting functions
 ├── data_loaders/
 │   ├── base_loader.py           # Base loader class
 │   ├── ces_loader.py            # CES loader
