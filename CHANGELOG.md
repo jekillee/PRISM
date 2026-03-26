@@ -5,6 +5,21 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-03-26
+
+### Fixed
+- **Clipboard Copy**: Multi-cell selection in Preview & Save spreadsheet now copies all selected cells (Ctrl+C)
+- **ne/Te Profile Preview**: Raw Data tab now shows all columns instead of only 2 (header parsing fix)
+- **ne/Te Time Trace Preview**: Same header parsing fix applied to time trace preview
+- **MSE gamma Y-axis**: Fixed y-axis clipping by using nanmin/nanmax instead of nanpercentile for enabled channels
+- **Formula Display**: Fixed mtanh formula — separated pedestal (`y_ped`) and core terms to avoid `y` on both sides; removed incorrect `(x < 1-a3)` condition from EPED formula
+
+### Added
+- **Fitted Profile Source Column**: Added source column (CES/Thomson/ECE) to Fitted Profile preview in Ti/vT and ne/Te tabs
+
+### Changed
+- **Fitting X-axis Auto-expand**: Plot x-axis automatically expands when fitting X Range exceeds default limits (±0.1 margin)
+
 ## [2.3.0] - 2026-03-24
 
 ### Added

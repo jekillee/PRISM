@@ -792,8 +792,18 @@ class NeTeProfileTab(ProfileBaseTab):
         self.ax1.set_ylabel(self.param1['label'])
         self.ax2.set_ylabel(self.param2['label'])
 
-        self.ax1.set_xlim(-0.1, 1.1)
-        self.ax2.set_xlim(-0.1, 1.1)
+        x_left, x_right = -0.1, 1.1
+        try:
+            fit_left = float(self.fit_xmin_entry.text()) - 0.1
+            fit_right = float(self.fit_xmax_entry.text()) + 0.1
+            if fit_left < x_left:
+                x_left = fit_left
+            if fit_right > x_right:
+                x_right = fit_right
+        except (ValueError, AttributeError):
+            pass
+        self.ax1.set_xlim(x_left, x_right)
+        self.ax2.set_xlim(x_left, x_right)
         self.ax1.set_ylim(0, te_max * 1.1)
 
         if has_thomson:

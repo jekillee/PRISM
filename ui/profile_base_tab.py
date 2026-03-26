@@ -910,8 +910,8 @@ class ProfileBaseTab(BaseTab):
         func_summary = " | ".join(f"{pt}={self.fit_func_names.get(pt, '?')}" for pt in param_types)
         lines = [f"# Fitted Profile Data ({func_summary})\n"]
 
-        # Header with shot/time columns
-        header_parts = ["shot", "time[ms]", "psi_N", "rho_pol", "rho_tor", "R[m]"]
+        # Header with shot/time/source columns
+        header_parts = ["shot", "time[ms]", "source", "psi_N", "rho_pol", "rho_tor", "R[m]"]
         for ptype in param_types:
             header_parts.append(f"{ptype}_fit")
         lines.append("#" + ",".join(f"{h:>12s}" for h in header_parts) + "\n")
@@ -923,12 +923,16 @@ class ProfileBaseTab(BaseTab):
             if entry not in self.fit_results:
                 continue
 
-            # Parse shot and time
+            # Parse shot, time, source
             try:
                 shot, time_s = self._parse_entry_for_efit(entry)
                 time_ms = time_s * 1e3
             except Exception:
                 shot, time_ms = 0, 0.0
+            try:
+                _, _, source = self._parse_entry(entry)
+            except Exception:
+                source = ''
 
             entry_results = self.fit_results[entry]
 
@@ -988,6 +992,7 @@ class ProfileBaseTab(BaseTab):
                 parts = [
                     f"{shot:>12d}",
                     f"{time_ms:12.1f}",
+                    f"{source:>12s}",
                     f"{psi_n_grid[j]:12.6f}",
                     f"{rho_pol_vals[j]:12.6f}",
                     f"{rho_tor_vals[j]:12.6f}",
@@ -1349,8 +1354,19 @@ class ProfileBaseTab(BaseTab):
         self.ax1.set_ylabel(self.param1['label'])
         self.ax2.set_ylabel(self.param2['label'])
 
-        self.ax1.set_xlim(-0.1, 1.1)
-        self.ax2.set_xlim(-0.1, 1.1)
+        # Expand x-axis if fitting range exceeds default limits
+        x_left, x_right = -0.1, 1.1
+        try:
+            fit_left = float(self.fit_xmin_entry.text()) - 0.1
+            fit_right = float(self.fit_xmax_entry.text()) + 0.1
+            if fit_left < x_left:
+                x_left = fit_left
+            if fit_right > x_right:
+                x_right = fit_right
+        except (ValueError, AttributeError):
+            pass
+        self.ax1.set_xlim(x_left, x_right)
+        self.ax2.set_xlim(x_left, x_right)
         self.ax1.set_ylim(0, y1_max * 1.1)
         self._apply_y2_limits_efit(y2_max, y2_min)
 

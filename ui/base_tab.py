@@ -676,18 +676,21 @@ class BaseTab(ABC):
         data_rows = []
         title_line = ""
 
+        last_comment_with_comma = None
         for line in lines:
             stripped = line.strip()
             if not stripped:
                 continue
             if stripped.startswith('#'):
                 content = stripped.lstrip('#').strip()
-                # Only treat the first comma-containing # line as header
-                if ',' in content and not headers:
-                    headers = [h.strip() for h in content.split(',')]
+                if ',' in content:
+                    last_comment_with_comma = content
                 else:
                     title_line = content
             else:
+                # Use the last comma-containing comment as header
+                if not headers and last_comment_with_comma:
+                    headers = [h.strip() for h in last_comment_with_comma.split(',')]
                 cells = [c.strip() for c in stripped.split(',')]
                 data_rows.append(cells)
 
@@ -719,6 +722,22 @@ class BaseTab(ABC):
             if table.columnWidth(c) > 150:
                 table.setColumnWidth(c, 150)
 
+        # Enable Ctrl+C to copy selected cells
+        from PySide6.QtGui import QShortcut, QKeySequence
+        def _copy_selection():
+            sel = table.selectedRanges()
+            if not sel:
+                return
+            rows = range(sel[0].topRow(), sel[0].bottomRow() + 1)
+            cols = range(sel[0].leftColumn(), sel[0].rightColumn() + 1)
+            text = '\n'.join(
+                '\t'.join((table.item(r, c).text() if table.item(r, c) else '')
+                          for c in cols)
+                for r in rows)
+            QApplication.clipboard().setText(text)
+        shortcut = QShortcut(QKeySequence.Copy, table)
+        shortcut.activated.connect(_copy_selection)
+
         return table
 
     def _show_data_preview_dialog(self, lines):
@@ -727,6 +746,7 @@ class BaseTab(ABC):
         headers = []
         data_rows = []
         title_line = ""
+        last_comment_with_comma = None
 
         for line in lines:
             stripped = line.strip()
@@ -734,11 +754,13 @@ class BaseTab(ABC):
                 continue
             if stripped.startswith('#'):
                 content = stripped.lstrip('#').strip()
-                if ',' in content and not headers:
-                    headers = [h.strip() for h in content.split(',')]
+                if ',' in content:
+                    last_comment_with_comma = content
                 else:
                     title_line = content
             else:
+                if not headers and last_comment_with_comma:
+                    headers = [h.strip() for h in last_comment_with_comma.split(',')]
                 cells = [c.strip() for c in stripped.split(',')]
                 data_rows.append(cells)
 

@@ -367,8 +367,9 @@ class MSEProfileTab(ProfileBaseTab):
                 raw_channels = [j+1 for j in range(len(good_mask)) if good_mask[j]]
                 self._add_channel_labels(self.ax1, R_raw, tgamma, 'TGAMMA', raw_channels)
 
-                gamma_min = min(gamma_min, np.nanpercentile(tgamma, 2))
-                gamma_max = max(gamma_max, np.nanpercentile(tgamma, 98))
+                if ch_mask.any():
+                    gamma_min = min(gamma_min, np.nanmin(tgamma[ch_mask]))
+                    gamma_max = max(gamma_max, np.nanmax(tgamma[ch_mask]))
 
                 # =============================================================
                 # Plot j or q vs R (right plot)
@@ -476,7 +477,8 @@ class MSEProfileTab(ProfileBaseTab):
 
         param = self._get_selected_param()
 
-        gamma_max, gamma_min, param_max, param_min = 0, 0, 0, 0
+        gamma_max, gamma_min = -np.inf, np.inf
+        param_max, param_min = 0, 0
         colors = self._get_plot_colors(selected_entries)
 
         for i, entry in enumerate(selected_entries):
@@ -536,8 +538,9 @@ class MSEProfileTab(ProfileBaseTab):
                 raw_channels = [j+1 for j in range(len(good_mask)) if good_mask[j]]
                 self._add_channel_labels(self.ax1, x_raw, tgamma, 'TGAMMA', raw_channels)
 
-                gamma_min = min(gamma_min, np.nanpercentile(tgamma, 2))
-                gamma_max = max(gamma_max, np.nanpercentile(tgamma, 98))
+                if ch_mask.any():
+                    gamma_min = min(gamma_min, np.nanmin(tgamma[ch_mask]))
+                    gamma_max = max(gamma_max, np.nanmax(tgamma[ch_mask]))
 
                 # j or q
                 # - Solid line: pmse profile (20 points)

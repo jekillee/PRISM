@@ -137,10 +137,11 @@ FIT_FUNCTIONS = {
             'a8': 'Core exponent',
         },
         'formula_latex': (
-            r'$y = a_1 + \frac{a_2 - a_1}{2}\left[\mathrm{mtanh}\!\left(\frac{a_4 - x}{a_3/2},\, a_5\right)'
-            r' + 1\right] + (a_6 - y)\,\exp\!\left[-\left(\frac{|x|}{a_7}\right)^{a_8}\right]$'
+            r'$y_{\mathrm{ped}} = a_1 + \frac{a_2 - a_1}{2}\left[\mathrm{mtanh}\!\left(\frac{a_4 - x}{a_3/2},\, a_5\right) + 1\right]$'
             '\n'
-            r'$\mathrm{where,}\ \ \mathrm{mtanh}(z,b) = \tanh(z) + \frac{bz(1+\tanh z)}{2}$'
+            r'$y = y_{\mathrm{ped}} + (a_6 - y_{\mathrm{ped}})\,\exp\!\left[-\left(\frac{|x|}{a_7}\right)^{a_8}\right]$'
+            '\n'
+            r'$\mathrm{where,}\ \ \mathrm{mtanh}(u, v) = \tanh(u) + \frac{v\,u\,(1+\tanh u)}{2}$'
         ),
     },
     'ptanh': {
@@ -174,9 +175,8 @@ FIT_FUNCTIONS = {
             'a6': 'Core exponent 2',
         },
         'formula_latex': (
-            r'$y = a_1 + a_2\left[\tanh(1) - \tanh\!\left(\frac{x - 1 + a_3/2}{a_3}\cdot 2\right)\right]$'
-            '\n'
-            r'$\quad + a_4\left(1 - \left(\frac{|x|}{1 - a_3}\right)^{a_5}\right)^{a_6}\ \ (x < 1 - a_3)$'
+            r'$y = a_1 + a_2\left[\tanh(1) - \tanh\!\left(\frac{x - 1 + a_3/2}{a_3}\cdot 2\right)\right]'
+            r' + a_4\left(1 - \left(\frac{|x|}{1 - a_3}\right)^{a_5}\right)^{a_6}$'
         ),
     },
     'spline': {
