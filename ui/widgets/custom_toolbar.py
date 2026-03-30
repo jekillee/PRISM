@@ -47,8 +47,9 @@ class QuietNavigationToolbar(NavigationToolbar2QT):
         self.destroyed.connect(lambda: ThemeManager.off_theme_changed(self._update_theme_icon))
 
     def set_message(self, s):
-        """Suppress coordinate display messages"""
-        pass
+        """Display coordinate info in the toolbar status area"""
+        if hasattr(self, 'locLabel'):
+            self.locLabel.setText(s)
 
     def _colorize_icon(self, icon, color):
         """Create a colorized version of an icon"""

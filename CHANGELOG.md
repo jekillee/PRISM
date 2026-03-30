@@ -5,6 +5,26 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.2] - 2026-03-30
+
+### Fixed
+- **Profile Plot Stale Data**: Fixed bug where adding/removing selected data after EFIT mapping or fitting would still plot the old selection. Now EFIT mapping, fit results, and flux x-axis are automatically reset when the selected data list changes.
+- **TCI Validation HFS Fix**: Fixed incorrect synthetic line-averaged density for inner channels (especially TCI01). HFS psi_N sign convention (negative) caused ne=0 along half the beam path. Now uses abs(psi_N) for symmetric ne evaluation.
+- **Fitting Option Dialog**: Apply button now closes the dialog after applying parameters
+- **Fix Checkbox Visibility**: Fix checkboxes in Fitting Option dialog are now visible in dark theme (replaced QTableWidgetItem checkbox with QCheckBox widget)
+
+### Added
+- **TCI Validation**: ne/Te profile tab now has a TCI Validation toggle in Fitting section. After fitting ne, computes synthetic line-averaged density along each TCI chord (TCI01~05) from the fitted ne profile and compares with measured TCI values in the terminal. Setting is saved to user preferences.
+- **Toggle Switch Widget**: iOS-style animated toggle switch replaces checkboxes for Show Nodes and TCI Validation for a cleaner, more consistent UI
+- **ECE TF Coil Current Log**: ECE loader now prints TF coil current (kA) during data loading
+- **Preview Copy to Clipboard**: Added "Copy to Clipboard" button in Preview & Save dialog for all modes (Raw Data, Fitted Profile, Fit Parameters)
+- **Toolbar Coordinate Display**: Restored mouse coordinate display in navigation toolbar (was suppressed)
+
+### Changed
+- **Fitting Section Disabled Until EFIT**: "5. Fitting" section is disabled until EFIT mapping is computed, with label indicating requirement
+- **Show Nodes Toggle**: Replaced QCheckBox with animated toggle switch in profile tabs (ne/Te, Ti/vT, MSE)
+- **Preview Save by Mode**: Save button in Preview & Save dialog now saves the currently viewed mode (Raw Data / Fitted Profile / Fit Parameters) instead of always saving raw data. Fit Parameters saves as .txt instead of .csv. File extension is auto-appended if missing.
+
 ## [2.3.1] - 2026-03-26
 
 ### Fixed

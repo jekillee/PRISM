@@ -8,7 +8,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
 from PySide6.QtWidgets import (
-    QMessageBox, QLineEdit, QComboBox, QPushButton, QCheckBox,
+    QMessageBox, QLineEdit, QComboBox, QPushButton,
     QWidget, QHBoxLayout, QVBoxLayout, QGroupBox, QGridLayout, QLabel,
     QSplitter, QStyle, QScrollArea, QRadioButton, QFrame,
     QSpinBox, QDialog, QDialogButtonBox,
@@ -200,13 +200,17 @@ class MSEProfileTab(ProfileBaseTab):
         self.legend_fontsize = 8
         self.tick_fontsize = 10
 
-        # Show Nodes + Select Channels
+        # Show Nodes toggle + Select Channels button
+        from ui.widgets.toggle_switch import ToggleSwitch
+
         row2 = QHBoxLayout()
 
-        self.show_channel_checkbox = QCheckBox("Show Nodes")
-        self.show_channel_checkbox.setChecked(False)
-        self.show_channel_checkbox.stateChanged.connect(self._on_show_nodes_toggled)
+        self.show_channel_checkbox = ToggleSwitch()
+        self.show_channel_checkbox.toggled.connect(self._on_show_nodes_toggled)
         row2.addWidget(self.show_channel_checkbox)
+        row2.addWidget(QLabel("Show Nodes"))
+
+        row2.addStretch()
 
         channels_btn = QPushButton("Select Channels")
         channels_btn.setToolTip("Select which channels to enable or dim")

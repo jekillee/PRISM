@@ -18,10 +18,11 @@ class TCILoader(BaseDiagnosticLoader):
         '1kHz': 0.001
     }
 
-    def load_data(self, shot_number, analysis_type=None, sampling_rate=None):
+    def load_data(self, shot_number, analysis_type=None, sampling_rate=None, quiet=False):
         """Load TCI data from MDS+
-        
+
         sampling_rate: sampling period in seconds (None=original, 0.01=100Hz, 0.001=1kHz)
+        quiet: suppress console output (e.g. when called for TCI validation)
         """
         mds = self._connect_mds(shot_number)
         
@@ -49,7 +50,8 @@ class TCILoader(BaseDiagnosticLoader):
                         time_data = time
                         
                 except Exception as e:
-                    print(f"[TCI] Channel {ch} not available: {str(e)}")
+                    if not quiet:
+                        print(f"[TCI] Channel {ch} not available: {str(e)}")
             
             if not channels or time_data is None:
                 raise ValueError("No TCI channels available")
@@ -76,7 +78,8 @@ class TCILoader(BaseDiagnosticLoader):
                 valid_time_mask = self.get_valid_time_mask(time_data, ip_fault_time)
                 time_data = time_data[valid_time_mask]
                 ne_data = ne_data[:, valid_time_mask]
-                print(f"[TCI]   Data masked to IP fault time + {IP_FAULT_OFFSET}s: {ip_fault_time + IP_FAULT_OFFSET:.3f} s")
+                if not quiet:
+                    print(f"[TCI]   Data masked to IP fault time + {IP_FAULT_OFFSET}s: {ip_fault_time + IP_FAULT_OFFSET:.3f} s")
             
             measurements = {
                 'ne': {

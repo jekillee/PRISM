@@ -80,10 +80,10 @@ class BaseTab(ABC):
             idx = self.color_mode_combo.findText(saved_color)
             if idx >= 0:
                 self.color_mode_combo.setCurrentIndex(idx)
-        # Restore show nodes checkbox
+        # Restore show nodes toggle
         if hasattr(self, 'show_channel_checkbox'):
             saved_show = tab_settings.get("show_nodes", False)
-            self.show_channel_checkbox.setChecked(saved_show)
+            self.show_channel_checkbox.setChecked(saved_show, animate=False)
         # Restore font sizes
         if hasattr(self, 'label_fontsize'):
             self.label_fontsize = tab_settings.get("label_fontsize", 12)
@@ -141,6 +141,8 @@ class BaseTab(ABC):
                 diag_name: entry.text()
                 for diag_name, entry in self.r_shift_entries.items()
             }
+        if hasattr(self, 'tci_validate_toggle'):
+            tab_settings["tci_validation"] = self.tci_validate_toggle.isChecked()
         set_tab_settings(self._settings_key, tab_settings)
 
     @abstractmethod
@@ -371,14 +373,43 @@ class BaseTab(ABC):
         """Add selected items to the selected list"""
         existing_items = [self.selected_listbox.item(i).text()
                          for i in range(self.selected_listbox.count())]
+        added = False
         for item in self.available_listbox.selectedItems():
             if item.text() not in existing_items:
                 self.selected_listbox.addItem(item.text())
+                added = True
+        if added:
+            self._invalidate_efit_and_fit()
 
     def remove_selected_items(self):
         """Remove selected items from the selected list"""
-        for item in reversed(self.selected_listbox.selectedItems()):
+        items_to_remove = self.selected_listbox.selectedItems()
+        if not items_to_remove:
+            return
+        for item in reversed(items_to_remove):
             self.selected_listbox.takeItem(self.selected_listbox.row(item))
+        self._invalidate_efit_and_fit()
+
+    def _invalidate_efit_and_fit(self):
+        """Reset EFIT mapping, fit results, and x-axis when selected data changes"""
+        self.efit_data.clear()
+        self.computed_efit_tree = None
+        self._enable_flux_radios(False)
+        self._enable_fitting_group(False)
+        # Reset x-axis radio to R
+        if hasattr(self, 'x_axis_button_group'):
+            for btn in self.x_axis_button_group.buttons():
+                if btn.property("axis_value") == "R":
+                    btn.setChecked(True)
+                    break
+        # Clear fit results if present
+        if hasattr(self, 'fit_results'):
+            self.fit_results.clear()
+
+    def _enable_fitting_group(self, enabled: bool = True):
+        """Enable or disable the fitting controls group"""
+        if hasattr(self, '_fitting_group'):
+            self._fitting_group.setEnabled(enabled)
 
     def compute_efit(self):
         """Compute EFIT equilibrium data (common logic)"""
@@ -448,6 +479,7 @@ class BaseTab(ABC):
 
         self.computed_efit_tree = efit_tree
         self._enable_flux_radios(True)
+        self._enable_fitting_group(True)
         print("      EFIT Mapping Completed!")
         print("=" * 50 + "\n")
 
@@ -479,6 +511,10 @@ class BaseTab(ABC):
 
         if not file_path:
             return
+
+        # Auto-append .csv if no extension
+        if not os.path.splitext(file_path)[1]:
+            file_path += '.csv'
 
         try:
             self._write_data_to_file(file_path, selected_entries)
@@ -568,8 +604,68 @@ class BaseTab(ABC):
         btn_layout.addStretch()
 
         save_btn = QPushButton("Save as .csv")
-        save_btn.clicked.connect(lambda: (dialog.close(), self.save_data()))
+
+        def _update_save_label(mode_text):
+            if mode_text == "Fit Parameters":
+                save_btn.setText("Save as .txt")
+            else:
+                save_btn.setText("Save as .csv")
+
+        mode_combo.currentTextChanged.connect(_update_save_label)
+
+        def _save_current_mode():
+            mode = mode_combo.currentText()
+            if mode == "Fit Parameters":
+                ext_filter = "Text files (*.txt);;All files (*.*)"
+                default_ext = ".txt"
+            else:
+                ext_filter = "CSV files (*.csv);;Text files (*.txt);;All files (*.*)"
+                default_ext = ".csv"
+
+            file_path, _ = QFileDialog.getSaveFileName(
+                dialog, "Save Data", os.path.expanduser("~"), ext_filter)
+            if not file_path:
+                return
+
+            # Auto-append extension if missing
+            if not os.path.splitext(file_path)[1]:
+                file_path += default_ext
+
+            try:
+                if mode == "Raw Data":
+                    self._write_data_to_file(file_path, selected_entries)
+                elif mode == "Fitted Profile":
+                    lines = self._get_fit_profile_lines(selected_entries)
+                    with open(file_path, 'w') as f:
+                        f.writelines(lines)
+                else:  # Fit Parameters
+                    lines = self._get_fit_params_lines(selected_entries)
+                    with open(file_path, 'w') as f:
+                        f.writelines(lines)
+
+                print(f"[{self.TAB_NAME}] Data saved to {file_path}")
+                QMessageBox.information(dialog, "Success", f"Data saved to {file_path}")
+            except Exception as e:
+                QMessageBox.critical(dialog, "Error", f"Failed to save data: {str(e)}")
+
+        save_btn.clicked.connect(_save_current_mode)
         btn_layout.addWidget(save_btn)
+
+        copy_btn = QPushButton("Copy to Clipboard")
+        def _copy_current_mode():
+            mode = mode_combo.currentText()
+            if mode == "Raw Data":
+                lines = self._get_raw_data_lines(selected_entries)
+            elif mode == "Fitted Profile":
+                lines = self._get_fit_profile_lines(selected_entries)
+            else:
+                lines = self._get_fit_params_lines(selected_entries)
+            QApplication.clipboard().setText("".join(lines))
+            copy_btn.setText("Copied!")
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1500, lambda: copy_btn.setText("Copy to Clipboard"))
+        copy_btn.clicked.connect(_copy_current_mode)
+        btn_layout.addWidget(copy_btn)
 
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(dialog.close)
@@ -813,6 +909,17 @@ class BaseTab(ABC):
         save_btn = QPushButton("Save as .csv")
         save_btn.clicked.connect(lambda: (dialog.close(), self.save_data()))
         btn_layout.addWidget(save_btn)
+
+        copy_btn = QPushButton("Copy to Clipboard")
+        def _copy_all():
+            text = '\t'.join(headers) + '\n' if headers else ''
+            text += '\n'.join('\t'.join(row) for row in data_rows)
+            QApplication.clipboard().setText(text)
+            copy_btn.setText("Copied!")
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1500, lambda: copy_btn.setText("Copy to Clipboard"))
+        copy_btn.clicked.connect(_copy_all)
+        btn_layout.addWidget(copy_btn)
 
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(dialog.close)

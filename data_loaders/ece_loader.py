@@ -119,7 +119,8 @@ class ECELoader(BaseDiagnosticLoader):
             
             # Get TF coil current
             I_TF = np.mean(mds.get('\\PCITFMSRD').data()) / 1e3  # [kA]
-            
+            print(f"[ECE]   TF coil current: {I_TF:.2f} kA")
+
             # Get ECE channel frequencies
             ch_all = np.arange(1, 77)
             freq = []

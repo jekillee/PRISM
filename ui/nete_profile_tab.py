@@ -19,10 +19,21 @@ class NeTeProfileTab(ProfileBaseTab):
 
     TAB_NAME = "ne/Te"
 
+    # TCI tangent radii [m] and round-trip path lengths [m] (from KSTAR TCI spec)
+    TCI_CHANNELS = {
+        'TCI01': {'Rmid': 1.34, 'path_rt': 7.23},
+        'TCI02': {'Rmid': 1.78, 'path_rt': 5.51},
+        'TCI03': {'Rmid': 1.91, 'path_rt': 4.76},
+        'TCI04': {'Rmid': 2.04, 'path_rt': 3.80},
+        'TCI05': {'Rmid': 2.16, 'path_rt': 2.52},
+    }
+    TCI_REND = 2.25  # Typical R of LCFS [m] (MDS+ path length is based on this value)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ece_loader = None
         self.ece_data_cache = {}
+        self.tci_loader = None
 
     def _get_secondary_loader(self):
         """Get ECE loader for secondary diagnostic overlay"""
@@ -930,3 +941,167 @@ class NeTeProfileTab(ProfileBaseTab):
                                 self._format_value(rho_tor[i]),
                                 Te_profile[i], 'NaN', 'NaN', 'NaN', 'NaN', 'NaN', 'ECE'
                             ))
+
+    # ===== TCI Validation =====
+
+    def _add_extra_fitting_controls(self, grid, row):
+        """Add TCI validation toggle switch to fitting section"""
+        from ui.widgets.toggle_switch import ToggleSwitch
+        from config.user_settings import get_tab_settings
+
+        tci_row = QHBoxLayout()
+
+        self.tci_validate_toggle = ToggleSwitch()
+        self.tci_validate_toggle.setToolTip(
+            "After fitting, compare synthetic line-averaged ne\n"
+            "from fitted profile with measured TCI01~05 values")
+
+        # Restore from settings
+        saved = get_tab_settings(self._settings_key).get("tci_validation", False)
+        self.tci_validate_toggle.setChecked(saved, animate=False)
+
+        tci_row.addWidget(self.tci_validate_toggle)
+        tci_row.addWidget(QLabel("TCI Validation"))
+        tci_row.addStretch()
+
+        grid.addLayout(tci_row, row, 0, 1, 4)
+        return row + 1
+
+    def _get_tci_loader(self):
+        """Lazy initialization of TCI loader"""
+        if self.tci_loader is None:
+            from data_loaders.tci_loader import TCILoader
+            from config.diagnostic_config import DIAGNOSTICS
+            self.tci_loader = TCILoader(self.app_config, DIAGNOSTICS.get('TCI', {}))
+        return self.tci_loader
+
+    def _post_fitting(self, selected_entries, x_axis):
+        """Run TCI validation after fitting if checkbox is checked"""
+        if not hasattr(self, 'tci_validate_toggle') or not self.tci_validate_toggle.isChecked():
+            return
+        if 'ne' not in self.fit_results.get(selected_entries[0], {}):
+            print("[TCI] Skipped: no ne fit results available")
+            return
+
+        self._validate_tci(selected_entries, x_axis)
+
+    def _validate_tci(self, selected_entries, x_axis):
+        """Compare fitted ne profile with TCI line-integrated density"""
+        print("\n" + "=" * 60)
+        print("[TCI] Line-Integrated Density Validation")
+        print("-" * 60)
+
+        for entry in selected_entries:
+            if entry not in self.fit_results or 'ne' not in self.fit_results[entry]:
+                continue
+
+            ne_result = self.fit_results[entry]['ne']
+            if not ne_result.success:
+                print(f"[TCI] {entry}: ne fit failed, skipping")
+                continue
+
+            shot_number, time_point, source = self._parse_entry(entry)
+
+            if entry not in self.efit_data:
+                print(f"[TCI] {entry}: no EFIT data, skipping")
+                continue
+
+            efit_entry = self.efit_data[entry]
+            efit_R = efit_entry['R']
+
+            # Build interpolation: R -> flux coordinate at midplane
+            if x_axis == "psi_N":
+                coord_at_R = interp1d(efit_R, efit_entry['psi_N'],
+                                      fill_value='extrapolate', bounds_error=False)
+            elif x_axis == "rho_pol":
+                coord_at_R = interp1d(efit_R, efit_entry['rho_pol'],
+                                      fill_value='extrapolate', bounds_error=False)
+            else:
+                coord_at_R = interp1d(efit_R, efit_entry['rho_tor'],
+                                      fill_value='extrapolate', bounds_error=False)
+
+            # Build ne(flux_coord) from fit result
+            ne_fit_interp = interp1d(ne_result.x_fit, ne_result.y_fit,
+                                     fill_value=0.0, bounds_error=False)
+
+            # Load TCI data for this shot
+            try:
+                tci_loader = self._get_tci_loader()
+                tci_data = tci_loader.load_data(shot_number, quiet=True)
+            except Exception as e:
+                print(f"[TCI] Failed to load TCI data for #{shot_number}: {e}")
+                continue
+
+            # Find nearest TCI time index
+            tci_time_idx = np.argmin(np.abs(tci_data.time - time_point))
+            if np.abs(tci_data.time[tci_time_idx] - time_point) > 0.05:
+                print(f"[TCI] {entry}: no TCI data within ±50ms")
+                continue
+
+            ne_tci_measured = tci_data.measurements['ne']['data']  # (5, n_time)
+
+            print(f"[TCI] #{shot_number} {time_point*1e3:.0f}ms ({x_axis}, {ne_result.func_name})")
+            print(f"[TCI]   {'Channel':>8s}  {'<ne>_fit':>12s}  {'<ne>_TCI':>12s}  {'fit/TCI ratio':>14s}")
+            print(f"[TCI]   {'─'*8}  {'─'*12}  {'─'*12}  {'─'*14}")
+
+            for ch_idx, (ch_name, ch_info) in enumerate(self.TCI_CHANNELS.items()):
+                rmid = ch_info['Rmid']
+
+                # Compute synthetic line-averaged ne along tangential chord
+                synth_ne_avg = self._compute_line_averaged_ne(
+                    rmid, coord_at_R, ne_fit_interp)
+
+                # Measured TCI value: \ne_tci is line-averaged density [1e19 m^-3]
+                meas_ne_avg = ne_tci_measured[ch_idx, tci_time_idx]
+
+                if meas_ne_avg != 0 and not np.isnan(meas_ne_avg):
+                    ratio = synth_ne_avg / meas_ne_avg
+                    print(f"[TCI]   {ch_name:>8s}  {synth_ne_avg:12.4f}  {meas_ne_avg:12.4f}  {ratio:14.3f}")
+                else:
+                    print(f"[TCI]   {ch_name:>8s}  {synth_ne_avg:12.4f}  {'N/A':>12s}  {'N/A':>14s}")
+
+        print("=" * 60 + "\n")
+
+    def _compute_line_averaged_ne(self, rmid, coord_at_R, ne_fit_interp, n_points=500):
+        """Compute line-averaged ne along a tangential TCI chord.
+
+        TCI geometry: horizontal tangential beam with closest approach at R=rmid.
+        Along the beam path at distance s from tangent point: R(s) = sqrt(rmid^2 + s^2)
+        Integration is symmetric, so we compute one side and multiply by 2.
+        Line-averaged: <ne> = ∫ne·ds / L_chord (round-trip factor cancels out).
+
+        Args:
+            rmid: Tangent radius [m]
+            coord_at_R: Interpolation function R -> flux coordinate
+            ne_fit_interp: Interpolation function flux_coord -> ne [1e19 m^-3]
+            n_points: Number of integration points per half-chord
+
+        Returns:
+            Line-averaged ne [1e19 m^-3]
+        """
+        rend = self.TCI_REND
+        if rmid >= rend:
+            return 0.0
+
+        # Half-chord length
+        L_half = np.sqrt(rend**2 - rmid**2)
+
+        # Path parameter s: distance from tangent point
+        s = np.linspace(0, L_half, n_points)
+
+        # R along the chord
+        R_along = np.sqrt(rmid**2 + s**2)
+
+        # Map R to flux coordinate, then evaluate ne
+        # Use abs() because EFIT convention makes HFS psi_N negative,
+        # but ne profile is symmetric about the magnetic axis
+        flux_along = np.abs(coord_at_R(R_along))
+        ne_along = ne_fit_interp(flux_along)
+
+        # Clip negative values
+        ne_along = np.maximum(ne_along, 0.0)
+
+        # Line-averaged = ∫ne·ds / L_half (symmetric, 2× cancels)
+        ne_line_avg = np.trapz(ne_along, x=s) / L_half
+
+        return ne_line_avg

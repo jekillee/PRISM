@@ -56,7 +56,8 @@ DEFAULT_SETTINGS = {
             "label_fontsize": 12,
             "legend_fontsize": 8,
             "tick_fontsize": 10,
-            "fit_funcs": {"Te": "mtanh", "ne": "mtanh"}
+            "fit_funcs": {"Te": "mtanh", "ne": "mtanh"},
+            "tci_validation": False
         },
         "nete_timetrace": {
             "shot": "",

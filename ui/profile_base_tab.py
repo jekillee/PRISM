@@ -142,13 +142,17 @@ class ProfileBaseTab(BaseTab):
         self.legend_fontsize = 8
         self.tick_fontsize = 10
 
-        # Show Nodes | Select Channels
+        # Show Nodes toggle + Select Channels button
+        from ui.widgets.toggle_switch import ToggleSwitch
+
         row2 = QHBoxLayout()
 
-        self.show_channel_checkbox = QCheckBox("Show Nodes")
-        self.show_channel_checkbox.setChecked(False)
-        self.show_channel_checkbox.stateChanged.connect(self._on_show_nodes_toggled)
+        self.show_channel_checkbox = ToggleSwitch()
+        self.show_channel_checkbox.toggled.connect(self._on_show_nodes_toggled)
         row2.addWidget(self.show_channel_checkbox)
+        row2.addWidget(QLabel("Show Nodes"))
+
+        row2.addStretch()
 
         channels_btn = QPushButton("Select Channels")
         channels_btn.setToolTip("Select which channels to enable or dim")
@@ -354,7 +358,9 @@ class ProfileBaseTab(BaseTab):
         """Create fitting controls (section 5)"""
         from PySide6.QtWidgets import QLineEdit, QGridLayout
 
-        group = QGroupBox("5. Fitting")
+        group = QGroupBox("5. Fitting (EFIT Mapping Required)")
+        group.setEnabled(False)
+        self._fitting_group = group
         # 4 columns: label | entry1 | ~ | entry2
         grid = QGridLayout(group)
         grid.setColumnStretch(0, 0)  # label - fixed
@@ -407,12 +413,20 @@ class ProfileBaseTab(BaseTab):
             grid.addWidget(entry, row, 3)  # col3 only, aligns with X Range max
             row += 1
 
+        # Subclass hook for extra controls (e.g. TCI validation checkbox)
+        row = self._add_extra_fitting_controls(grid, row)
+
         # Fit button (full width, at bottom)
         fit_button = QPushButton("Fit")
         fit_button.clicked.connect(self.perform_fitting)
         grid.addWidget(fit_button, row, 0, 1, 4)
 
         parent.layout().addWidget(group)
+
+    def _add_extra_fitting_controls(self, grid, row: int) -> int:
+        """Hook for subclasses to add extra controls to the fitting section.
+        Returns the next available row number."""
+        return row
 
     def _get_rshift_diagnostics(self) -> List[str]:
         """Return list of diagnostic names that support R-shift.
@@ -577,11 +591,14 @@ class ProfileBaseTab(BaseTab):
             ub_str = "inf" if ub == np.inf else f"{ub:.4g}"
             table.setItem(row, 3, QTableWidgetItem(ub_str))
 
-            fixed_item = QTableWidgetItem()
-            fixed_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
-            fixed_item.setCheckState(Qt.Checked if fixed else Qt.Unchecked)
-            fixed_item.setTextAlignment(Qt.AlignCenter)
-            table.setItem(row, 4, fixed_item)
+            fix_cb = QCheckBox()
+            fix_cb.setChecked(fixed)
+            fix_container = QWidget()
+            fix_layout = QHBoxLayout(fix_container)
+            fix_layout.addWidget(fix_cb)
+            fix_layout.setAlignment(Qt.AlignCenter)
+            fix_layout.setContentsMargins(0, 0, 0, 0)
+            table.setCellWidget(row, 4, fix_container)
 
         dlg_layout.addWidget(table)
 
@@ -600,7 +617,7 @@ class ProfileBaseTab(BaseTab):
                 table.item(row, 2).setText(lb_str)
                 ub_str = "inf" if ub == np.inf else f"{ub:.4g}"
                 table.item(row, 3).setText(ub_str)
-                table.item(row, 4).setCheckState(Qt.Unchecked)
+                table.cellWidget(row, 4).findChild(QCheckBox).setChecked(False)
         restore_btn.clicked.connect(restore_defaults)
         btn_layout.addWidget(restore_btn)
 
@@ -617,13 +634,14 @@ class ProfileBaseTab(BaseTab):
                     lb = -np.inf if lb_text.strip().lower() in ('-inf', '') else float(lb_text)
                     ub_text = table.item(row, 3).text()
                     ub = np.inf if ub_text.strip().lower() in ('inf', '') else float(ub_text)
-                    fixed = table.item(row, 4).checkState() == Qt.Checked
+                    fixed = table.cellWidget(row, 4).findChild(QCheckBox).isChecked()
                     params[pname] = (val, lb, ub, fixed)
                 except ValueError:
                     QMessageBox.warning(dialog, "Invalid Value",
                         f"Invalid value for {ptype}/{pname}")
                     return
             self.fit_user_params[ptype] = params
+            dialog.accept()
         apply_btn.clicked.connect(apply_params)
         btn_layout.addWidget(apply_btn)
 
@@ -686,6 +704,7 @@ class ProfileBaseTab(BaseTab):
             if ptype not in self.fit_nonparam_options:
                 self.fit_nonparam_options[ptype] = {}
             self.fit_nonparam_options[ptype]['n_bases'] = val
+            dialog.accept()
         apply_btn.clicked.connect(apply_opts)
         btn_layout.addWidget(apply_btn)
 
@@ -843,8 +862,15 @@ class ProfileBaseTab(BaseTab):
 
         print(f"[Fitting] Done: {success_count} succeeded, {fail_count} failed")
 
+        # Post-fitting hook (e.g. TCI validation in ne/Te tab)
+        self._post_fitting(selected_entries, x_axis)
+
         # Re-plot with fit curves
         self._on_plot_clicked()
+
+    def _post_fitting(self, selected_entries: List[str], x_axis: str) -> None:
+        """Hook called after fitting completes. Override in subclass."""
+        pass
 
     def _get_efit_profile_data(self, entry: str, interp_func) -> Optional[Dict]:
         """Get profile data for fitting in EFIT coordinates.
