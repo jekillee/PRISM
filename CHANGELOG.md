@@ -5,6 +5,11 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.3] - 2026-04-07
+
+### Changed
+- **Thomson 2024 R Positions**: Updated 2024 campaign channel R positions confirmed by Dr. Jongha Lee (2026-04-07)
+
 ## [2.3.2] - 2026-03-30
 
 ### Fixed
