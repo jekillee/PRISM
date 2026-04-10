@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 """
-PRISM v2.0
+PRISM v2.3
 Main entry point
 
 Plasma Research Integrated System for Multi-diagnostics
@@ -14,11 +14,14 @@ A modular viewer for KSTAR diagnostic data including:
 - Spectrogram Analysis
 - TV Image Viewer
 - IRVB (Infra-Red Video Bolometer)
+- BiProfile (Bayesian Inference Profile Fitting)
 
 Usage:
     python main.py              # Full PRISM (all tabs with sidebar)
     python main.py --select     # Tab selector (choose one viewer)
     python main.py -s           # Tab selector (short form)
+    python main.py --bi         # BiProfile viewer
+    python main.py bi           # BiProfile viewer (short form)
 
 Author: Jekil Lee (jklee@kfe.re.kr)
 """
@@ -67,6 +70,9 @@ os.environ.setdefault('QT_QUICK_BACKEND', 'software')
 if 'WAYLAND_DISPLAY' in os.environ:
     del os.environ['WAYLAND_DISPLAY']
 
+# Suppress MDSplus debug messages (buffer_free, etc.)
+os.environ.setdefault('MDSPLUS_DEBUG', '0')
+
 from PySide6.QtWidgets import QApplication
 from ui.theme import ThemeManager
 
@@ -96,6 +102,8 @@ def main():
 
     if arg in ('-s', '--select'):
         window = PRISMApp(mode='select')
+    elif arg in ('-b', '--bi', 'bi'):
+        window = PRISMApp(mode='bi')
     else:
         window = PRISMApp(mode='')
 

@@ -41,6 +41,8 @@ _TAB_TYPE_TO_CATEGORY = {
     'tv_startup': "Imaging",
     'irvb': "Imaging",
     'neutron': "Time Traces",
+    'bi_profile': "Profiles",
+    'bi_timetrace': "Time Traces",
 }
 
 
@@ -63,9 +65,10 @@ class SidebarNav(QWidget):
     """Sidebar with categorized tree navigation"""
     tabSelected = Signal(int)
 
-    def __init__(self, tab_configs):
+    def __init__(self, tab_configs, mode=''):
         super().__init__()
         self.tab_configs = tab_configs
+        self.mode = mode
         self.setFixedWidth(140)
 
         layout = QVBoxLayout(self)
@@ -130,6 +133,10 @@ class SidebarNav(QWidget):
 
     def _build_tree(self):
         """Build categorized tree from tab configs"""
+        if self.mode == 'bi':
+            self._build_bi_tree()
+            return
+
         for cat_name, items in _categorize_tabs(self.tab_configs):
             cat_item = QTreeWidgetItem(self.tree)
             cat_item.setText(0, f"  {cat_name}")
@@ -149,6 +156,35 @@ class SidebarNav(QWidget):
 
             cat_item.setExpanded(True)
 
+    def _build_bi_tree(self):
+        """Build BiProfile sidebar: BiProfile > Profiles / Time Traces > Ti,vT / ne,Te"""
+        bi_item = QTreeWidgetItem(self.tree)
+        bi_item.setText(0, "  BiProfile")
+        bi_item.setFlags(Qt.ItemIsEnabled)
+        font = bi_item.font(0)
+        font.setBold(True)
+        font.setPointSize(10)
+        bi_item.setFont(0, font)
+        bi_item.setForeground(0, QColor("#888888"))
+
+        for cat_name, items in _categorize_tabs(self.tab_configs):
+            cat_item = QTreeWidgetItem(bi_item)
+            cat_item.setText(0, f"    {cat_name}")
+            cat_item.setFlags(Qt.ItemIsEnabled)
+            cat_font = cat_item.font(0)
+            cat_font.setBold(True)
+            cat_item.setFont(0, cat_font)
+            cat_item.setForeground(0, QColor("#888888"))
+
+            for tab_index, tab_name, tab_type in items:
+                child = QTreeWidgetItem(cat_item)
+                child.setText(0, f"      {tab_name}")
+                child.setData(0, Qt.UserRole, tab_index)
+
+            cat_item.setExpanded(True)
+
+        bi_item.setExpanded(True)
+
     def _on_click(self, item, _col):
         tab_index = item.data(0, Qt.UserRole)
         if tab_index is not None:
@@ -166,6 +202,14 @@ class SidebarNav(QWidget):
 
     def select_first(self):
         """Select the first tab item"""
+        if self.mode == 'bi':
+            # 3-level: BiProfile > category > tab
+            bi = self.tree.topLevelItem(0)
+            if bi and bi.childCount() > 0:
+                cat = bi.child(0)
+                if cat and cat.childCount() > 0:
+                    self.tree.setCurrentItem(cat.child(0))
+            return
         first_cat = self.tree.topLevelItem(0)
         if first_cat and first_cat.childCount() > 0:
             first_child = first_cat.child(0)
@@ -177,6 +221,7 @@ class PRISMApp(QMainWindow):
 
     mode='':       Full PRISM with sidebar
     mode='select': Tab selector screen (button grid)
+    mode='bi':     BiProfile viewer (Bayesian inference profiles)
     """
 
     def __init__(self, mode=''):
@@ -198,7 +243,10 @@ class PRISMApp(QMainWindow):
         self.tab_cache = {}
         self.tab_widgets = {}
 
-        self._build_tab_configs()
+        if self.mode == 'bi':
+            self._build_bi_tab_configs()
+        else:
+            self._build_tab_configs()
 
         if self.mode == 'select':
             # Tab selector mode
@@ -207,6 +255,14 @@ class PRISMApp(QMainWindow):
             self._create_selector_ui()
             self.setFixedWidth(360)
             self.adjustSize()
+        elif self.mode == 'bi':
+            # BiProfile viewer mode
+            self._bi_shot_data = {}
+            self.setWindowTitle(f'PRISM v{VERSION} - BiProfile Viewer')
+            self.resize(1500, 700)
+            self._create_widgets()
+            ThemeManager.on_theme_changed(self._on_theme_changed)
+            QTimer.singleShot(0, self._deferred_startup_bi)
         else:
             # Full PRISM mode
             self.setWindowTitle(f'PRISM v{VERSION} - Plasma Research Integrated System for Multi-diagnostics')
@@ -230,6 +286,99 @@ class PRISMApp(QMainWindow):
         if self.tab_configs:
             self.sidebar.select_first()
             self._switch_tab(0)
+
+    def _deferred_startup_bi(self):
+        """BiProfile mode startup"""
+        if self.tab_configs:
+            self.sidebar.select_first()
+            self._switch_tab(0)
+
+    # ------------------------------------------------------------------
+    # BiProfile mode
+    # ------------------------------------------------------------------
+
+    def _build_bi_tab_configs(self):
+        """Build tab configs for BiProfile mode"""
+        self.tab_configs = [
+            {'diagnostic': None, 'tab_type': 'bi_profile',
+             'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
+            {'diagnostic': None, 'tab_type': 'bi_profile',
+             'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
+            {'diagnostic': None, 'tab_type': 'bi_timetrace',
+             'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
+            {'diagnostic': None, 'tab_type': 'bi_timetrace',
+             'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
+        ]
+
+    def fetch_biprofile_shot(self, shot):
+        """Load all biprofile data for a shot (parallel). Cached.
+
+        Two-phase: BIPROFILE + DIAG_PARAMS + CES + Thomson in parallel,
+        then EFIT using tree from BIPROFILE metadata.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from data_loaders.biprofile_loader import (
+            load_biprofile, load_diag_params,
+            load_efit_psin, load_ces_raw, load_thomson_raw,
+        )
+
+        self.statusBar().showMessage(f"Loading #{shot}...")
+        self.progress.setRange(0, 0)
+        self.progress.show()
+        QApplication.processEvents()
+
+        bi_data = {}
+        diag = None
+        ces = None
+        thomson = None
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {}
+            for param in ['Ti', 'vT', 'Te', 'ne']:
+                futures[executor.submit(load_biprofile, shot, param)] = param
+            futures[executor.submit(load_diag_params, shot)] = 'DIAG_PARAMS'
+            futures[executor.submit(load_ces_raw, shot)] = 'CES'
+            futures[executor.submit(load_thomson_raw, shot)] = 'Thomson'
+
+            for future in as_completed(futures):
+                key = futures[future]
+                try:
+                    result = future.result()
+                    if key == 'DIAG_PARAMS':
+                        diag = result
+                    elif key == 'CES':
+                        ces = result
+                    elif key == 'Thomson':
+                        thomson = result
+                    else:
+                        bi_data[key] = result
+                except Exception as e:
+                    print(f"[Loader] BiProfile {key} failed: {e}")
+
+        if not bi_data:
+            self.progress.hide()
+            self.statusBar().showMessage(f"#{shot}: No data loaded")
+            return None
+
+        # Phase 2: EFIT
+        efit = None
+        efit_tree = 'EFIT01'
+        for param_data in bi_data.values():
+            if param_data.get('efit_used'):
+                efit_tree = param_data['efit_used']
+                break
+        try:
+            efit = load_efit_psin(shot, efit_tree)
+        except Exception as e:
+            print(f"[EFIT] {efit_tree} failed: {e}")
+
+        self.progress.hide()
+        self._bi_shot_data[shot] = {
+            'bi': bi_data, 'diag': diag,
+            'efit': efit, 'ces': ces, 'thomson': thomson,
+        }
+        loaded = list(bi_data.keys())
+        self.statusBar().showMessage(f"#{shot}: {', '.join(loaded)} loaded")
+        return self._bi_shot_data[shot]
 
     @property
     def efit_loader(self):
@@ -384,7 +533,7 @@ class PRISMApp(QMainWindow):
         top_layout.setSpacing(0)
 
         # Sidebar
-        self.sidebar = SidebarNav(self.tab_configs)
+        self.sidebar = SidebarNav(self.tab_configs, mode=self.mode)
         self.sidebar.tabSelected.connect(self._switch_tab)
         self.sidebar.apply_all_btn.clicked.connect(self._apply_shot_to_all_tabs)
 
@@ -482,14 +631,18 @@ class PRISMApp(QMainWindow):
 
         config = self.tab_configs[tab_index]
 
-        tab = TabFactory.create_tab(
-            None,
-            self.config,
-            config['diagnostic'],
-            config['tab_type'],
-            self.efit_loader,
-            self.plot_manager
-        )
+        # BiProfile tabs (custom, not via TabFactory)
+        if config['tab_type'] in ('bi_profile', 'bi_timetrace'):
+            tab = self._create_bi_tab(config)
+        else:
+            tab = TabFactory.create_tab(
+                None,
+                self.config,
+                config['diagnostic'],
+                config['tab_type'],
+                self.efit_loader,
+                self.plot_manager
+            )
 
         if tab is not None:
             self.tab_cache[tab_index] = tab
@@ -498,10 +651,26 @@ class PRISMApp(QMainWindow):
 
         return tab
 
+    def _create_bi_tab(self, config):
+        """Create a BiProfile tab instance"""
+        if config['tab_type'] == 'bi_profile':
+            from ui.biprofile_profile_tab import BiProfileTab
+            return BiProfileTab(self, config['bi_params'])
+        else:
+            from ui.biprofile_timetrace_tab import BiTimeTraceTab
+            return BiTimeTraceTab(self, config['bi_params'])
+
     def _update_toolbar(self, tab_index):
         """Update toolbar for the current tab"""
-        # Remove existing toolbar
+        # Disconnect and remove existing toolbar
         if self.toolbar is not None:
+            # Disconnect matplotlib callbacks before destroying
+            if hasattr(self.toolbar, '_id_press'):
+                self.toolbar.canvas.mpl_disconnect(self.toolbar._id_press)
+            if hasattr(self.toolbar, '_id_release'):
+                self.toolbar.canvas.mpl_disconnect(self.toolbar._id_release)
+            if hasattr(self.toolbar, '_id_drag'):
+                self.toolbar.canvas.mpl_disconnect(self.toolbar._id_drag)
             self.toolbar.setParent(None)
             self.toolbar.deleteLater()
             self.toolbar = None

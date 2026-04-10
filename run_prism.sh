@@ -61,6 +61,7 @@ show_help() {
     echo "Options:"
     echo "  (none)        Launch full PRISM with all tabs"
     echo "  -s, --select  Open tab selector to launch a single viewer"
+    echo "  -b, --bi, bi  Launch BiProfile viewer (Bayesian inference profiles)"
     echo "  -h, --help    Show this help message"
     echo ""
     echo "Available Tabs:"
@@ -68,6 +69,7 @@ show_help() {
     echo "  Time Traces     Ti/vT, ne/Te, MSE, Neutron (Fission/He3/Diamond)"
     echo "  Spectral        Spectrogram (ECE/ECEI/BES/Mirnov), n-Mode Spectrum"
     echo "  Imaging         TV Viewer, TV Startup, IRVB"
+    echo "  BiProfile       Ti/vT, ne/Te Profiles & Time Traces (prism bi)"
     echo ""
     echo "Keyboard Shortcuts:"
     echo "  Delete/Backspace  Remove selected items from list"
@@ -97,6 +99,10 @@ case "$1" in
     -s|--select)
         cd "$PRISM_HOME"
         $PYTHON_PATH main.py --select
+        ;;
+    -b|--bi|bi)
+        cd "$PRISM_HOME"
+        $PYTHON_PATH main.py --bi 2>/dev/null
         ;;
     "")
         cd "$PRISM_HOME"

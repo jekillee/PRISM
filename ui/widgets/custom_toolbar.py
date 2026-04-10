@@ -48,8 +48,11 @@ class QuietNavigationToolbar(NavigationToolbar2QT):
 
     def set_message(self, s):
         """Display coordinate info in the toolbar status area"""
-        if hasattr(self, 'locLabel'):
-            self.locLabel.setText(s)
+        try:
+            if hasattr(self, 'locLabel') and self.locLabel is not None:
+                self.locLabel.setText(s)
+        except RuntimeError:
+            pass  # C++ object already deleted
 
     def _colorize_icon(self, icon, color):
         """Create a colorized version of an icon"""
