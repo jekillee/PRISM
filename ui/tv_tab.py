@@ -325,8 +325,8 @@ class TVTab:
         frame_input_layout.addWidget(self.frame_total_entry)
 
         go_btn = QPushButton()
-        go_btn.setIcon(get_icon(QStyle.SP_MediaPlay))
-        go_btn.setFixedWidth(32)
+        go_btn.setIcon(self.frame.style().standardIcon(QStyle.SP_DialogOkButton))
+        go_btn.setFixedSize(24, 24)
         go_btn.setToolTip("Go to frame")
         go_btn.clicked.connect(self._goto_frame)
         frame_input_layout.addWidget(go_btn)
@@ -344,8 +344,8 @@ class TVTab:
         time_input_layout.addWidget(self.time_entry)
 
         go_time_btn = QPushButton()
-        go_time_btn.setIcon(get_icon(QStyle.SP_MediaPlay))
-        go_time_btn.setFixedWidth(32)
+        go_time_btn.setIcon(self.frame.style().standardIcon(QStyle.SP_DialogOkButton))
+        go_time_btn.setFixedSize(24, 24)
         go_time_btn.setToolTip("Go to time")
         go_time_btn.clicked.connect(self._goto_time)
         time_input_layout.addStretch()

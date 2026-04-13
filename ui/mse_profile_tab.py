@@ -221,6 +221,13 @@ class MSEProfileTab(ProfileBaseTab):
 
         parent.layout().addWidget(group)
 
+    def _get_preview_info(self):
+        if not hasattr(self, '_last_preview_data'):
+            return None
+        data, shot, source = self._last_preview_data
+        return (data, shot, source,
+                'tgamma', 'q', self.param1['label'], self.param2['label'])
+
     def load_shot_data(self):
         """Load MSE shot data from MDS+"""
         try:
@@ -237,6 +244,11 @@ class MSEProfileTab(ProfileBaseTab):
             for tp in data.time_prof:
                 item_str = f'{shot_number:06d}_{tp*1e3:06.0f} (MSE)'
                 self.available_listbox.addItem(item_str)
+
+            self._last_preview_data = (data, shot_number, 'MSE')
+            if hasattr(self, 'browse_button'):
+                self.browse_button.setEnabled(True)
+                self.browse_button.setText(f"#{shot_number} Preview")
 
             print(f"[MSE] Data loaded: {len(data.time_prof)} timepoints")
             print(f"[MSE]   NB source: {data.nb_source}")

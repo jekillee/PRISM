@@ -346,7 +346,7 @@ class NeutronTimeTraceTab:
         btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
         dlg_layout.addWidget(btn_box)
 
-        if dialog.exec() == QDialog.Accepted:
+        def _apply():
             self.color_mode_combo.setCurrentText(color_combo.currentText())
             self.label_fontsize = label_spin.value()
             self.legend_fontsize = legend_spin.value()
@@ -354,6 +354,9 @@ class NeutronTimeTraceTab:
             # Auto-apply if plot exists
             if any(ax.lines for ax in self.axes.values()):
                 self.plot_data()
+        dialog.accepted.connect(_apply)
+        self._style_dialog = dialog
+        dialog.show()
 
     # ------------------------------------------------------------------
     # 4. Save Data
@@ -625,7 +628,8 @@ class NeutronTimeTraceTab:
         btn_layout.addWidget(close_btn)
 
         layout.addLayout(btn_layout)
-        dialog.exec()
+        self._preview_dialog = dialog
+        dialog.show()
 
     def _save_data_dialog(self):
         """Save data via file dialog"""

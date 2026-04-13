@@ -74,6 +74,19 @@ class BaseTab(ABC):
         saved_shot = tab_settings.get("shot", "")
         if saved_shot and hasattr(self, 'shot_entry'):
             self.shot_entry.setText(str(saved_shot))
+        # Restore diagnostic/analysis combo
+        if hasattr(self, 'analysis_type_combo'):
+            saved = tab_settings.get("analysis_type", "")
+            if saved:
+                self.analysis_type_combo.setCurrentText(saved)
+        if hasattr(self, 'analysis_combo'):
+            saved = tab_settings.get("analysis_type", "")
+            if saved:
+                self.analysis_combo.setCurrentText(saved)
+        if hasattr(self, 'diag_combo'):
+            saved = tab_settings.get("diag_selection", "")
+            if saved:
+                self.diag_combo.setCurrentText(saved)
         # Restore color mode
         if hasattr(self, 'color_mode_combo'):
             saved_color = tab_settings.get("color_mode", "Fixed(tab10)")
@@ -103,6 +116,13 @@ class BaseTab(ABC):
         if hasattr(self, 'fit_xmin_entry'):
             self.fit_xmin_entry.setText(tab_settings.get("fit_xmin", "0.0"))
             self.fit_xmax_entry.setText(tab_settings.get("fit_xmax", "1.05"))
+        if hasattr(self, 'fit_dt_entry'):
+            self.fit_dt_entry.setText(tab_settings.get("fit_dt", "0"))
+        if hasattr(self, 'dt_toggle'):
+            saved_dt_on = tab_settings.get("dt_enabled", False)
+            self.dt_toggle.setChecked(saved_dt_on, animate=False)
+            self._dt_enabled = saved_dt_on
+            self.fit_dt_entry.setEnabled(saved_dt_on)
         # Restore R-shift entries
         if hasattr(self, 'r_shift_entries'):
             saved_rshifts = tab_settings.get("r_shifts", {})
@@ -115,6 +135,12 @@ class BaseTab(ABC):
         tab_settings = get_tab_settings(self._settings_key)
         if hasattr(self, 'shot_entry'):
             tab_settings["shot"] = self.shot_entry.text()
+        if hasattr(self, 'analysis_type_combo'):
+            tab_settings["analysis_type"] = self.analysis_type_combo.currentText()
+        if hasattr(self, 'analysis_combo'):
+            tab_settings["analysis_type"] = self.analysis_combo.currentText()
+        if hasattr(self, 'diag_combo'):
+            tab_settings["diag_selection"] = self.diag_combo.currentText()
         if hasattr(self, 'color_mode_combo'):
             tab_settings["color_mode"] = self.color_mode_combo.currentText()
         if hasattr(self, 'show_channel_checkbox'):
@@ -135,6 +161,10 @@ class BaseTab(ABC):
         if hasattr(self, 'fit_xmin_entry'):
             tab_settings["fit_xmin"] = self.fit_xmin_entry.text()
             tab_settings["fit_xmax"] = self.fit_xmax_entry.text()
+        if hasattr(self, 'fit_dt_entry'):
+            tab_settings["fit_dt"] = self.fit_dt_entry.text()
+        if hasattr(self, '_dt_enabled'):
+            tab_settings["dt_enabled"] = self._dt_enabled
         # Save R-shift entries
         if hasattr(self, 'r_shift_entries') and self.r_shift_entries:
             tab_settings["r_shifts"] = {
@@ -166,6 +196,13 @@ class BaseTab(ABC):
         """Create selection listboxes (common for all tabs)"""
         outer_frame = QGroupBox("2. Select Data", parent)
         outer_layout = QVBoxLayout(outer_frame)
+
+        # Browse button (profile tabs only) — top of section
+        if self.tab_type == 'profile':
+            self.browse_button = QPushButton("Fetch a shot to browse")
+            self.browse_button.setEnabled(False)
+            self.browse_button.clicked.connect(self._open_preview)
+            outer_layout.addWidget(self.browse_button)
 
         # Main content layout: available list | buttons | selected list
         content_layout = QHBoxLayout()
@@ -367,6 +404,35 @@ class BaseTab(ABC):
             if isinstance(child, Annotation):
                 child.remove()
 
+    # ===== Preview =====
+
+    def _open_preview(self):
+        """Open browse dialog for the most recently loaded shot data."""
+        info = self._get_preview_info()
+        if info is None:
+            QMessageBox.information(self.frame, "Browse",
+                                    "No data loaded. Fetch a shot first.")
+            return
+
+        from ui.widgets.preview_dialog import ProfileBrowseDialog
+
+        # info is 7 or 8 elements (8th is optional extra_data like ECE)
+        extra_data = info[7] if len(info) > 7 else None
+        data, shot, source, p1_name, p2_name, p1_label, p2_label = info[:7]
+        dlg = ProfileBrowseDialog(
+            self.frame, data, shot, source,
+            p1_name, p2_name, p1_label, p2_label,
+            selected_listbox=self.selected_listbox,
+            extra_data=extra_data)
+        dlg.finished.connect(lambda: (
+            self._invalidate_efit_and_fit() if dlg.added_count > 0 else None))
+        dlg.show()  # non-modal: parent window remains interactive
+
+    def _get_preview_info(self):
+        """Return (data, shot, source, p1_name, p2_name, p1_label, p2_label)
+        or None if no data available. Override in subclasses."""
+        return None
+
     # ===== Common action methods =====
 
     def add_selected_items(self):
@@ -531,10 +597,11 @@ class BaseTab(ABC):
             QMessageBox.warning(self.frame, "Warning", "No data selected to preview")
             return
 
-        # Check if fit results are available
+        # Check if fit results or dt averaging are available
         has_fit = hasattr(self, 'fit_results') and bool(self.fit_results)
+        has_dt = getattr(self, '_dt_enabled', False) and self._get_dt_seconds() > 0
 
-        if has_fit:
+        if has_fit or has_dt:
             self._show_preview_with_modes(selected_entries)
         else:
             try:
@@ -551,17 +618,25 @@ class BaseTab(ABC):
                 QMessageBox.critical(self.frame, "Error", f"Failed to preview data: {str(e)}")
 
     def _show_preview_with_modes(self, selected_entries):
-        """Show preview dialog with mode selector (Raw Data / Fitted Profile / Fit Parameters)"""
+        """Show preview dialog with mode selector (Raw Data / Averaged / Fitted / Params)"""
         dialog = QDialog(self.frame)
         dialog.setWindowTitle("Data Preview")
         dialog.resize(800, 600)
         dlg_layout = QVBoxLayout(dialog)
 
-        # Mode selector
+        # Mode selector — include "Averaged Data" only when dt toggle is on
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("View:"))
         mode_combo = QComboBox()
-        mode_combo.addItems(["Raw Data", "Fitted Profile", "Fit Parameters"])
+        has_fit_results = hasattr(self, 'fit_results') and bool(self.fit_results)
+        has_avg = getattr(self, '_dt_enabled', False) and self._get_dt_seconds() > 0
+
+        modes = ["Raw Data"]
+        if has_avg:
+            modes.append("Averaged Data")
+        if has_fit_results:
+            modes.extend(["Fitted Profile", "Fit Parameters"])
+        mode_combo.addItems(modes)
         mode_row.addWidget(mode_combo)
         mode_row.addStretch()
         dlg_layout.addLayout(mode_row)
@@ -586,6 +661,9 @@ class BaseTab(ABC):
             if mode == "Raw Data":
                 lines = self._get_raw_data_lines(selected_entries)
                 widget = self._create_preview_table(lines)
+            elif mode == "Averaged Data":
+                lines = self._get_averaged_data_lines(selected_entries)
+                widget = self._create_preview_table(lines)
             elif mode == "Fitted Profile":
                 lines = self._get_fit_profile_lines(selected_entries)
                 widget = self._create_preview_table(lines)
@@ -606,10 +684,7 @@ class BaseTab(ABC):
         save_btn = QPushButton("Save as .csv")
 
         def _update_save_label(mode_text):
-            if mode_text == "Fit Parameters":
-                save_btn.setText("Save as .txt")
-            else:
-                save_btn.setText("Save as .csv")
+            save_btn.setText("Save as .txt" if mode_text == "Fit Parameters" else "Save as .csv")
 
         mode_combo.currentTextChanged.connect(_update_save_label)
 
@@ -634,6 +709,10 @@ class BaseTab(ABC):
             try:
                 if mode == "Raw Data":
                     self._write_data_to_file(file_path, selected_entries)
+                elif mode == "Averaged Data":
+                    lines = self._get_averaged_data_lines(selected_entries)
+                    with open(file_path, 'w') as f:
+                        f.writelines(lines)
                 elif mode == "Fitted Profile":
                     lines = self._get_fit_profile_lines(selected_entries)
                     with open(file_path, 'w') as f:
@@ -656,6 +735,8 @@ class BaseTab(ABC):
             mode = mode_combo.currentText()
             if mode == "Raw Data":
                 lines = self._get_raw_data_lines(selected_entries)
+            elif mode == "Averaged Data":
+                lines = self._get_averaged_data_lines(selected_entries)
             elif mode == "Fitted Profile":
                 lines = self._get_fit_profile_lines(selected_entries)
             else:
@@ -672,10 +753,47 @@ class BaseTab(ABC):
         btn_layout.addWidget(close_btn)
 
         dlg_layout.addLayout(btn_layout)
-        dialog.exec()
+        self._preview_dialog = dialog
+        dialog.show()
 
     def _get_raw_data_lines(self, selected_entries):
-        """Get raw data as lines for preview"""
+        """Get raw data as lines for preview.
+        When dt is active, expands each entry to all individual time slices in [t-dt, t+dt].
+        """
+        dt_s = self._get_dt_seconds() if getattr(self, '_dt_enabled', False) else 0.0
+
+        if dt_s > 0:
+            # Expand entries: for each selected time, find all raw times in [t-dt, t+dt]
+            expanded = self._expand_entries_for_dt(selected_entries, dt_s)
+        else:
+            expanded = selected_entries
+
+        # Write with dt disabled (raw individual slices)
+        saved_dt = getattr(self, '_dt_enabled', False)
+        self._dt_enabled = False
+        try:
+            fd, tmp_path = tempfile.mkstemp(suffix='.txt')
+            os.close(fd)
+            self._write_data_to_file(tmp_path, expanded)
+            with open(tmp_path, 'r') as f:
+                lines = f.readlines()
+            os.remove(tmp_path)
+            return lines
+        except Exception:
+            return ["# No data available"]
+        finally:
+            self._dt_enabled = saved_dt
+
+    def _expand_entries_for_dt(self, selected_entries, dt_s):
+        """Expand each entry to all time slices within [t-dt, t+dt].
+        Override in subclass for diagnostic-specific entry format."""
+        return selected_entries
+
+    def _get_averaged_data_lines(self, selected_entries):
+        """Get time-averaged data as lines for preview.
+        Uses _write_data_to_file which already applies dt averaging when toggle is on."""
+        # _write_data_to_file already respects _get_dt_seconds()
+        # So we just call it — it will produce averaged output when dt > 0
         try:
             fd, tmp_path = tempfile.mkstemp(suffix='.txt')
             os.close(fd)
@@ -685,7 +803,7 @@ class BaseTab(ABC):
             os.remove(tmp_path)
             return lines
         except Exception:
-            return ["# No data available"]
+            return ["# No averaged data available"]
 
     def _get_fit_profile_lines(self, selected_entries):
         """Get fitted profile data as lines for preview"""
@@ -926,7 +1044,8 @@ class BaseTab(ABC):
         btn_layout.addWidget(close_btn)
 
         layout.addLayout(btn_layout)
-        dialog.exec()
+        self._example_script_dialog = dialog
+        dialog.show()
 
     @abstractmethod
     def _write_data_to_file(self, file_path, selected_entries):

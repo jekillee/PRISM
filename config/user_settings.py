@@ -300,7 +300,7 @@ def show_update_popup(parent):
     popup = QDialog(parent)
     popup.setWindowTitle("What's New")
     popup.resize(600, 550)
-    popup.setWindowModality(Qt.WindowModal)
+    popup.setWindowModality(Qt.NonModal)
 
     # Main layout
     layout = QVBoxLayout(popup)
@@ -385,60 +385,77 @@ def show_update_popup(parent):
     # Handle window close button (X) via finished signal
     popup.finished.connect(lambda result: on_close() if result == 0 else None)
 
-    popup.exec()
+    parent._update_popup = popup  # prevent GC
+    popup.show()
 
 
 def _render_markdown(content):
     """Render markdown content to HTML string (GitHub style)"""
     lines = content.split('\n')
     html_parts = []
-    in_list = False
+    in_list = 0  # nesting level: 0=none, 1=top, 2=sub
 
     for line in lines:
-        # Skip empty lines but add spacing
-        if not line.strip():
-            if in_list:
+        stripped = line.strip()
+
+        # Skip empty lines
+        if not stripped:
+            while in_list > 0:
                 html_parts.append('</ul>')
-                in_list = False
-            html_parts.append('<br>')
+                in_list -= 1
             continue
 
         # Version headers [1.1.1] - 2026-01-08
-        if re.match(r'^\[\d+\.\d+\.\d+\] - \d{4}-\d{2}-\d{2}', line.strip()):
-            if in_list:
+        if re.match(r'^\[\d+\.\d+\.\d+\] - \d{4}-\d{2}-\d{2}', stripped):
+            while in_list > 0:
                 html_parts.append('</ul>')
-                in_list = False
-            html_parts.append(f'<h2 style="color: #0d6efd; margin-top: 15px; margin-bottom: 5px;">{_escape_html(line.strip())}</h2>')
+                in_list -= 1
+            html_parts.append(f'<h2 style="color: #0d6efd; margin-top: 15px; margin-bottom: 5px;">{_escape_html(stripped)}</h2>')
             continue
 
         # Headers (### Added -> Added)
-        if line.startswith('###'):
-            if in_list:
+        if stripped.startswith('###'):
+            while in_list > 0:
                 html_parts.append('</ul>')
-                in_list = False
-            header_text = line.replace('###', '').strip()
+                in_list -= 1
+            header_text = stripped.replace('###', '').strip()
             html_parts.append(f'<h3 style="margin-top: 10px; margin-bottom: 5px;">{_escape_html(header_text)}</h3>')
             continue
 
-        # Bullet items
-        if line.strip().startswith('-'):
-            if not in_list:
+        # Sub-bullet (indented: "  - text")
+        if line.startswith('  -') or line.startswith('    -'):
+            if in_list == 0:
                 html_parts.append('<ul style="margin: 2px 0;">')
-                in_list = True
-            item_text = line.strip()[1:].strip()
-            item_text = _format_inline(item_text)
-            html_parts.append(f'<li>{item_text}</li>')
+                in_list = 1
+            if in_list == 1:
+                html_parts.append('<ul style="margin: 1px 0 1px 15px;">')
+                in_list = 2
+            item_text = stripped[1:].strip()
+            html_parts.append(f'<li style="margin: 1px 0;">{_format_inline(item_text)}</li>')
             continue
 
-        # Regular text with inline formatting
-        if in_list:
+        # Top-level bullet
+        if stripped.startswith('-'):
+            if in_list == 2:
+                html_parts.append('</ul>')
+                in_list = 1
+            if in_list == 0:
+                html_parts.append('<ul style="margin: 2px 0;">')
+                in_list = 1
+            item_text = stripped[1:].strip()
+            html_parts.append(f'<li style="margin: 2px 0;">{_format_inline(item_text)}</li>')
+            continue
+
+        # Regular text
+        while in_list > 0:
             html_parts.append('</ul>')
-            in_list = False
+            in_list -= 1
         formatted = _format_inline(_escape_html(line))
         html_parts.append(f'<p style="margin: 2px 0;">{formatted}</p>')
 
-    if in_list:
+    while in_list > 0:
         html_parts.append('</ul>')
+        in_list -= 1
 
     return '\n'.join(html_parts)
 

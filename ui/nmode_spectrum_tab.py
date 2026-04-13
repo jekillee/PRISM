@@ -1169,7 +1169,8 @@ class NModeSpectrumTab:
         btn_layout.addWidget(close_btn)
 
         dialog_layout.addWidget(btn_widget)
-        popup.exec()
+        self._example_script_popup = popup
+        popup.show()
 
     def _save_data(self):
         """Save n-mode spectrum data to NPZ file"""
@@ -1366,7 +1367,7 @@ class NModeSpectrumTab:
         btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
         dlg_layout.addWidget(btn_box)
 
-        if dialog.exec() == QDialog.Accepted:
+        def _apply():
             self.color_mode = color_combo.currentText()
             self.label_fontsize = label_spin.value()
             self.title_fontsize = title_spin.value()
@@ -1377,6 +1378,9 @@ class NModeSpectrumTab:
             # Auto-replot if data exists
             if self.fft_result is not None and self.mode_result is not None:
                 self._update_plot()
+        dialog.accepted.connect(_apply)
+        self._style_dialog = dialog
+        dialog.show()
 
     def _get_mode_colors(self, nmodes):
         """Get colors for mode numbers using selected color mode"""

@@ -252,7 +252,7 @@ class TimeTraceBaseTab(BaseTab):
         btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
         dlg_layout.addWidget(btn_box)
 
-        if dialog.exec() == QDialog.Accepted:
+        def _apply():
             self.color_mode_combo.setCurrentText(color_combo.currentText())
             self.label_fontsize = label_spin.value()
             self.legend_fontsize = legend_spin.value()
@@ -260,6 +260,9 @@ class TimeTraceBaseTab(BaseTab):
             # Auto-apply if plot exists
             if self.ax1.lines:
                 self.plot_data()
+        dialog.accepted.connect(_apply)
+        self._style_dialog = dialog
+        dialog.show()
 
     def _finalize_plot(self) -> None:
         """Apply common styling and update canvas after plotting

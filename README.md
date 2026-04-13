@@ -27,6 +27,9 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 - **Interactive Channel Toggle**: Double-click data points to exclude/include channels from fitting
 - **Dark/Light Theme**: Runtime theme switching with persistence
 - **Data Preview & Save**: Spreadsheet-style preview before exporting data
+- **Profile Browse**: Slider-based data browsing with playback before selecting time points
+- **Time Averaging**: dt-based profile averaging for fitting and visualization
+- **Collapsible Sidebar**: Expand/collapse category groups with state persistence
 
 ## Supported Diagnostics
 
@@ -57,9 +60,9 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 
 ## Installation
 
-### For nkstar Users (KFE Internal)
+### For nkstar / ukstar Users (KFE Internal)
 
-PRISM is pre-installed and available system-wide. No installation required.
+PRISM is pre-installed on both servers. No installation required.
 
 ```bash
 # Full PRISM
@@ -67,7 +70,15 @@ prism
 
 # Select a viewer
 prism -s
+
+# BiProfile viewer
+prism bi
 ```
+
+| Server | PRISM Path | Python | Note |
+|--------|-----------|--------|------|
+| nkstar | `/home/users/jklee/PRISM` | 3.8 (`/usr/bin/python38`) | All tabs |
+| ukstar | `/UKSTAR_HOME/jklee/PRISM` | 3.8 (`/usr/bin/python3.8`) | TV/IRVB excluded |
 
 ### For External Users
 
@@ -134,7 +145,10 @@ PRISM/
 │   ├── biprofile_timetrace_tab.py # BiProfile time trace tab
 │   ├── icons/                   # SVG icons (logo, themed widgets)
 │   └── widgets/
-│       └── custom_toolbar.py    # Custom matplotlib toolbar
+│       ├── custom_toolbar.py    # Custom matplotlib toolbar
+│       ├── toggle_switch.py    # iOS-style animated toggle
+│       ├── preview_dialog.py   # Profile Browse dialog
+│       └── biprofile_browse_dialog.py  # BiProfile Browse dialog
 ├── plotting/
 │   └── plot_manager.py          # Plot management
 ├── requirements.txt             # Python dependencies

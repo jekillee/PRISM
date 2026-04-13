@@ -33,7 +33,14 @@ import warnings
 # Isolate Python environment for multi-user access:
 # Remove other users' ~/.local site-packages from sys.path to prevent
 # version conflicts, while keeping jklee's packages at highest priority
-_JKLEE_SITE = "/home/users/jklee/.local/lib/python3.8/site-packages"
+import socket as _socket
+_hostname = _socket.gethostname()
+if _hostname.startswith('nkstar'):
+    _JKLEE_SITE = "/home/users/jklee/.local/lib/python3.8/site-packages"
+elif _hostname.startswith('ukstar'):
+    _JKLEE_SITE = "/UKSTAR_HOME/jklee/.local/lib/python3.8/site-packages"
+else:
+    _JKLEE_SITE = os.path.expanduser("~/.local/lib/python3.8/site-packages")
 sys.path = [p for p in sys.path if '/.local/' not in p or _JKLEE_SITE in p]
 if _JKLEE_SITE in sys.path:
     sys.path.remove(_JKLEE_SITE)

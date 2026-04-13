@@ -5,6 +5,27 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-04-13
+
+### Added
+- **Profile Browse Dialog**: Slider-based data browsing before Select Data in all Profile tabs (Ti/vT, ne/Te, MSE). Browse button opens non-modal dialog with playback, frame/time navigation, Fix Axes toggle, and Add to Selected
+- **Time Averaging (dt)**: Toggle + dt input in Fitting section. Averages profiles over [t-dt, t+dt] for fitting and plotting. Marker distinction: filled (raw) vs filled+black edge (averaged). Validation for invalid/negative/too-small dt values
+- **Preview & Save Averaged Data**: New "Averaged Data" tab in Preview & Save when dt is active, alongside Raw Data showing all individual time slices in the dt window
+- **ECE Parallel Loading**: Channel-level parallel MDS+ loading (1 worker per channel). ~3-5x speedup across all BT values
+- **BiProfile Select Data**: BiProfile tabs now use Available/Selected listbox workflow with Browse dialog, matching PRISM Profiles pattern. Colormap selection in Plot Options
+- **Sidebar Collapse/Expand**: Click category headers (▼/▶) to collapse/expand. State saved to user settings
+- **Dropdown Settings Persistence**: CES analysis type, Thomson diagnostic selection saved/restored across sessions
+
+### Changed
+- **ukstar Support**: Auto-detect nkstar/ukstar via hostname. Single `run_prism.sh` and `main.py` for both servers (Python 3.8). TV/TV Startup/IRVB tabs hidden on ukstar (nkstar-local resources)
+- **Sidebar**: "Spectral Analysis" renamed to "Spectral". Neutron accent color removed
+- **Non-modal Dialogs**: All popup dialogs (Plot Options, Preview & Save, Channel Selector, Fitting Options, Example Script, What's New) converted to non-modal for independent window interaction
+- **R-shift in Export**: Preview & Save Raw Data now includes R-shift correction
+- **Disabled Widget Styling**: QLineEdit:disabled and QComboBox:disabled now visually distinct in both dark and light themes
+
+### Fixed
+- **Toolbar RuntimeError**: Fixed crash when hovering canvas after tab switching (disconnects matplotlib callbacks before toolbar destruction)
+
 ## [2.3.4] - 2026-04-10
 
 ### Added

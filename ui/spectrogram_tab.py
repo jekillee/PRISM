@@ -417,7 +417,7 @@ class SpectrogramTab:
         btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
         dlg_layout.addWidget(btn_box)
 
-        if dialog.exec() == QDialog.Accepted:
+        def _apply():
             self.selected_colormap = cmap_combo.currentText()
             self.label_fontsize = label_spin.value()
             self.title_fontsize = title_spin.value()
@@ -425,6 +425,9 @@ class SpectrogramTab:
             # Auto-replot if spectrogram exists
             if self.im is not None:
                 self._plot_spectrogram()
+        dialog.accepted.connect(_apply)
+        self._style_dialog = dialog
+        dialog.show()
 
     def _create_color_controls(self, parent):
         """Create color range control section"""
@@ -532,7 +535,8 @@ class SpectrogramTab:
         btn_layout.addWidget(close_btn)
 
         dialog_layout.addWidget(btn_widget)
-        popup.exec()
+        self._example_script_popup = popup
+        popup.show()
 
     def _save_data(self):
         """Save spectrogram data to NPZ file (only selected time/freq range)"""

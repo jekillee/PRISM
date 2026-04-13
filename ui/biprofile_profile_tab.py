@@ -1,6 +1,6 @@
 """
-BiProfile Profile tab - browse Bayesian inference fitted profiles with time slider.
-Overlays raw CES/Thomson data with USE-based coloring. Matches PRISM v2.3.4 styling.
+BiProfile Profile tab - Available/Selected workflow with Preview dialog.
+Plots multiple fitted profiles (one per selected time) with raw CES/Thomson overlay.
 """
 
 import numpy as np
@@ -10,42 +10,39 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QScrollArea, QLayout,
     QGroupBox, QGridLayout, QLabel, QLineEdit, QPushButton, QFrame,
-    QSlider, QApplication, QMessageBox, QStyle, QSpinBox,
-    QDialog, QDialogButtonBox, QColorDialog,
+    QListWidget, QAbstractItemView,
+    QApplication, QMessageBox, QStyle, QSpinBox,
+    QDialog, QDialogButtonBox,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QShortcut, QKeySequence
 
-from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style
+from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_icon
 from ui.theme import ThemeManager
 
 UNITS = {'Ti': 'keV', 'vT': 'km/s', 'Te': 'keV', 'ne': r'$10^{19}$/m$^3$'}
 UNITS_QT = {'Ti': 'keV', 'vT': 'km/s', 'Te': 'keV', 'ne': '1e19/m3'}
 LABELS = {'Ti': r'T$_i$', 'vT': r'v$_T$', 'Te': r'T$_e$', 'ne': r'n$_e$'}
 _ZERO_BOTTOM = {'Ti', 'Te', 'ne'}
-
-# Default color per tab: same color for both params in a tab
 _DEFAULT_COLOR = '#1f77b4'
+
+COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+          '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
 
 
 class BiProfileTab:
-    """Profile tab with PRISM-matching styling. One color per tab."""
+    """BiProfile Profile tab: Available/Selected + Preview + multi-profile Plot."""
 
     def __init__(self, main_window, params):
         self.main = main_window
         self.params = params
         self._current_shot = None
         self._current_data = None
-        self._axes = []
-        self._artists = []
-        self._legend_entries = {}  # {col: [(handle, label), ...]}
 
-        self.plot_color = _DEFAULT_COLOR
         self.label_fontsize = 12
         self.legend_fontsize = 8
         self.tick_fontsize = 10
-        self._fixed_ylim = {}  # {col: (ymin, ymax)} computed on fetch
-        self._fix_ylim = False  # toggle: True=fixed, False=dynamic
+        self._apply_scale = False
 
         self.frame = QWidget()
         self.canvas = None
@@ -84,9 +81,11 @@ class BiProfileTab:
         main_layout.addWidget(splitter)
 
         self._create_shot_input(control_frame)
+        self._create_select_data(control_frame)
         self._create_plot_controls(control_frame)
-        self._create_time_browser(control_frame)
         control_layout.addStretch()
+
+    # ---- 1. Load Data ----
 
     def _create_shot_input(self, parent):
         group = QGroupBox(f"1. Load {', '.join(self.params)} Data")
@@ -113,23 +112,77 @@ class BiProfileTab:
         self.fetch_button.setFixedWidth(70)
         self.fetch_button.clicked.connect(self._fetch)
         grid.addWidget(self.fetch_button, 0, 3)
+
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        grid.addWidget(self.status_label, 1, 0, 1, 4)
+
         parent.layout().addWidget(group)
+
+    # ---- 2. Select Data ----
+
+    def _create_select_data(self, parent):
+        group = QGroupBox("2. Select Data")
+        layout = QVBoxLayout(group)
+
+        # Preview button
+        self.browse_button = QPushButton("Fetch a shot to preview")
+        self.browse_button.setEnabled(False)
+        self.browse_button.clicked.connect(self._open_browse)
+        layout.addWidget(self.browse_button)
+
+        # Available / Selected lists
+        lists_row = QHBoxLayout()
+
+        avail_col = QVBoxLayout()
+        avail_col.addWidget(QLabel("Time [ms]"))
+        self.available_listbox = QListWidget()
+        self.available_listbox.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.available_listbox.setFixedHeight(150)
+        avail_col.addWidget(self.available_listbox)
+        lists_row.addLayout(avail_col, stretch=1)
+
+        btn_col = QVBoxLayout()
+        btn_col.addStretch()
+        add_btn = QPushButton()
+        add_btn.setIcon(get_icon(QStyle.SP_ArrowForward))
+        add_btn.setFixedWidth(30)
+        add_btn.clicked.connect(self._add_items)
+        btn_col.addWidget(add_btn)
+        rm_btn = QPushButton()
+        rm_btn.setIcon(get_icon(QStyle.SP_ArrowBack))
+        rm_btn.setFixedWidth(30)
+        rm_btn.clicked.connect(self._remove_items)
+        btn_col.addWidget(rm_btn)
+        btn_col.addStretch()
+        lists_row.addLayout(btn_col)
+
+        sel_col = QVBoxLayout()
+        sel_col.addWidget(QLabel("Selected"))
+        self.selected_listbox = QListWidget()
+        self.selected_listbox.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.selected_listbox.setFixedHeight(150)
+        sel_col.addWidget(self.selected_listbox)
+        lists_row.addLayout(sel_col, stretch=1)
+
+        layout.addLayout(lists_row)
+
+        QShortcut(QKeySequence(Qt.Key_Delete), self.selected_listbox
+                  ).activated.connect(self._remove_items)
+
+        parent.layout().addWidget(group)
+
+    # ---- 3. Plot ----
 
     def _create_plot_controls(self, parent):
         from ui.widgets.toggle_switch import ToggleSwitch
 
-        group = QGroupBox("2. Plot")
+        group = QGroupBox("3. Plot")
         layout = QVBoxLayout(group)
 
-        # Status label (above Plot button)
-        self.status_label = QLabel("")
-        self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
-
-        # Plot + Option buttons
         btn_row = QHBoxLayout()
         plot_btn = QPushButton("Plot")
-        plot_btn.clicked.connect(self._force_replot)
+        plot_btn.clicked.connect(self._plot)
         btn_row.addWidget(plot_btn, 3)
         opt_btn = QPushButton("Option")
         opt_btn.clicked.connect(self._show_style_dialog)
@@ -142,18 +195,17 @@ class BiProfileTab:
         # Show Nodes toggle
         nodes_row = QHBoxLayout()
         self.show_nodes_toggle = ToggleSwitch()
-        self.show_nodes_toggle.toggled.connect(self._on_show_nodes_toggled)
         nodes_row.addWidget(self.show_nodes_toggle)
         nodes_row.addWidget(QLabel("Show Nodes"))
         nodes_row.addStretch()
         layout.addLayout(nodes_row)
 
-        # Apply Scale toggle (ne, Te tab only — BITS SCALE for Thomson ne)
+        # Apply TS Scale toggle (ne,Te only)
         self._apply_scale = False
         if 'ne' in self.params or 'Te' in self.params:
             scale_row = QHBoxLayout()
             self.scale_toggle = ToggleSwitch()
-            self.scale_toggle.toggled.connect(self._on_scale_toggled)
+            self.scale_toggle.toggled.connect(lambda c: setattr(self, '_apply_scale', c))
             scale_row.addWidget(self.scale_toggle)
             scale_row.addWidget(QLabel("Apply TS Scale"))
             scale_row.addStretch()
@@ -166,129 +218,90 @@ class BiProfileTab:
         self.info_label.setWordWrap(True)
         self.info_label.setStyleSheet("color: #888; font-size: 11px;")
         layout.addWidget(self.info_label)
+
         parent.layout().addWidget(group)
 
-    def _create_time_browser(self, parent):
-        from ui.widgets.toggle_switch import ToggleSwitch
+    # ---- Actions ----
 
-        group = QGroupBox("3. Browse Data")
-        layout = QVBoxLayout(group)
-        self.time_label = QLabel("Time: --")
-        self.time_label.setStyleSheet("font-weight: bold; font-size: 13px;")
-        layout.addWidget(self.time_label)
-        self.time_slider = QSlider(Qt.Horizontal)
-        self.time_slider.setEnabled(False)
-        self.time_slider.valueChanged.connect(self._on_slider)
-        self.time_slider.sliderReleased.connect(self._on_slider_released)
-        layout.addWidget(self.time_slider)
-        self.range_label = QLabel("")
-        self.range_label.setStyleSheet("color: #888; font-size: 11px;")
-        layout.addWidget(self.range_label)
+    def _adjust_shot(self, delta):
+        try:
+            self.shot_entry.setText(str(max(1, int(self.shot_entry.text()) + delta)))
+        except ValueError:
+            pass
 
-        # Fix Y-axis toggle
-        fix_row = QHBoxLayout()
-        self.fix_ylim_toggle = ToggleSwitch(checked=self._fix_ylim)
-        self.fix_ylim_toggle.toggled.connect(self._on_fix_ylim_toggled)
-        fix_row.addWidget(self.fix_ylim_toggle)
-        fix_row.addWidget(QLabel("Fix Y-axis"))
-        fix_row.addStretch()
-        layout.addLayout(fix_row)
+    def _update_status(self, message, color='blue'):
+        self.status_label.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 9pt;")
+        self.status_label.setText(message)
+        QApplication.processEvents()
 
-        # ymin/ymax grid: label | entry | ~ | entry
-        ylim_grid = QGridLayout()
-        ylim_grid.setSpacing(4)
-        p1, p2 = self.params[0], self.params[1]
-        u1, u2 = UNITS_QT[p1], UNITS_QT[p2]
-
-        ylim_grid.addWidget(QLabel(f"{p1} [{u1}]"), 0, 0)
-        self.ymin_entry_0 = QLineEdit()
-        self.ymin_entry_0.returnPressed.connect(self._apply_custom_ylim)
-        ylim_grid.addWidget(self.ymin_entry_0, 0, 1)
-        tilde0 = QLabel("~"); tilde0.setAlignment(Qt.AlignCenter); tilde0.setFixedWidth(12)
-        ylim_grid.addWidget(tilde0, 0, 2)
-        self.ymax_entry_0 = QLineEdit()
-        self.ymax_entry_0.returnPressed.connect(self._apply_custom_ylim)
-        ylim_grid.addWidget(self.ymax_entry_0, 0, 3)
-
-        ylim_grid.addWidget(QLabel(f"{p2} [{u2}]"), 1, 0)
-        self.ymin_entry_1 = QLineEdit()
-        self.ymin_entry_1.returnPressed.connect(self._apply_custom_ylim)
-        ylim_grid.addWidget(self.ymin_entry_1, 1, 1)
-        tilde1 = QLabel("~"); tilde1.setAlignment(Qt.AlignCenter); tilde1.setFixedWidth(12)
-        ylim_grid.addWidget(tilde1, 1, 2)
-        self.ymax_entry_1 = QLineEdit()
-        self.ymax_entry_1.returnPressed.connect(self._apply_custom_ylim)
-        ylim_grid.addWidget(self.ymax_entry_1, 1, 3)
-
-        ylim_grid.setColumnStretch(1, 1)
-        ylim_grid.setColumnStretch(3, 1)
-
-        layout.addLayout(ylim_grid)
-
-        self.apply_ylim_btn = QPushButton("Apply Y-axis")
-        self.apply_ylim_btn.clicked.connect(self._apply_custom_ylim)
-        layout.addWidget(self.apply_ylim_btn)
-
-        self._ylim_entries = [
-            (self.ymin_entry_0, self.ymax_entry_0),
-            (self.ymin_entry_1, self.ymax_entry_1),
-        ]
-        self._set_ylim_entries_enabled(self._fix_ylim)
-
-        self.browse_status = QLabel("")
-        self.browse_status.setWordWrap(True)
-        self.browse_status.setStyleSheet("color: #888; font-size: 11px;")
-        layout.addWidget(self.browse_status)
-
-        self._browse_group = group
-        self._browse_group.setEnabled(False)
-        parent.layout().addWidget(group)
-
-    def _set_ylim_entries_enabled(self, enabled):
-        for ymin_e, ymax_e in self._ylim_entries:
-            ymin_e.setEnabled(enabled)
-            ymax_e.setEnabled(enabled)
-        if hasattr(self, 'apply_ylim_btn'):
-            self.apply_ylim_btn.setEnabled(enabled)
-
-    def _on_fix_ylim_toggled(self, checked):
-        self._fix_ylim = checked
-        self._set_ylim_entries_enabled(checked)
-        if self._current_data:
-            if checked:
-                # Auto-fill if empty, and sync entry values to _fixed_ylim
-                for col, (ymin_e, ymax_e) in enumerate(self._ylim_entries):
-                    if not ymin_e.text() and not ymax_e.text() and col in self._fixed_ylim:
-                        lo, hi = self._fixed_ylim[col]
-                        ymin_e.setText(f"{lo:.4g}")
-                        ymax_e.setText(f"{hi:.4g}")
-                self._apply_custom_ylim()
-            else:
-                self._do_slider_update()
-
-    def _apply_custom_ylim(self):
-        """Apply user-entered ymin/ymax per param"""
-        for col, (ymin_e, ymax_e) in enumerate(self._ylim_entries):
-            try:
-                lo = float(ymin_e.text())
-                hi = float(ymax_e.text())
-            except ValueError:
-                continue
-            if lo < hi:
-                self._fixed_ylim[col] = (lo, hi)
-        if self._current_data:
-            self._do_slider_update()
-
-    def _on_show_nodes_toggled(self, checked):
-        if self._current_data is None or not self._plotted:
+    def _fetch(self):
+        shot_text = self.shot_entry.text().strip()
+        if not shot_text:
             return
-        self._do_slider_update()
-
-    def _on_scale_toggled(self, checked):
-        self._apply_scale = checked
-        if self._current_data is None or not self._plotted:
+        try:
+            shot = int(shot_text)
+        except ValueError:
+            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
             return
-        self._do_slider_update()
+
+        self._update_status(f"Loading #{shot}...", color='blue')
+        self.fetch_button.setText("Loading..."); self.fetch_button.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.WaitCursor); QApplication.processEvents()
+        try:
+            sdata = self.main.fetch_biprofile_shot(shot)
+        finally:
+            self.fetch_button.setText("Fetch"); self.fetch_button.setEnabled(True)
+            QApplication.restoreOverrideCursor()
+
+        if not sdata:
+            self._update_status(f"#{shot}: No data", color='red')
+            return
+
+        bi = sdata['bi']
+        ref = next((p for p in self.params if p in bi), None)
+        if ref is None:
+            self._update_status(f"#{shot}: No data for {', '.join(self.params)}", color='red')
+            return
+
+        self._current_shot = shot
+        self._current_data = sdata
+
+        # Populate available list
+        self.available_listbox.clear()
+        for t in bi[ref]['time']:
+            self.available_listbox.addItem(f"{shot:06d}_{t*1e3:06.0f} (Bi)")
+
+        loaded = [p for p in self.params if p in bi]
+        self._update_status(f"#{shot}: {', '.join(loaded)} loaded", color='green')
+        self.info_label.setText(
+            f"EFIT: {bi[ref].get('efit_used','?')}\n"
+            f"Fit: {bi[ref].get('fit_func','?')}\n"
+            f"{len(bi[ref]['time'])} time pts, {len(bi[ref]['psin'])} \u03c8\u2099 pts")
+
+        self.browse_button.setEnabled(True)
+        self.browse_button.setText(f"#{shot} Preview")
+
+    def _open_browse(self):
+        if not self._current_data:
+            return
+        from ui.widgets.biprofile_browse_dialog import BiProfilePreviewDialog
+        dlg = BiProfilePreviewDialog(
+            self.frame, self._current_data['bi'], self._current_shot,
+            self.params, mode='profile',
+            selected_listbox=self.selected_listbox,
+            sdata=self._current_data)
+        dlg.show()
+
+    def _add_items(self):
+        existing = {self.selected_listbox.item(i).text()
+                    for i in range(self.selected_listbox.count())}
+        for item in self.available_listbox.selectedItems():
+            if item.text() not in existing:
+                self.selected_listbox.addItem(item.text())
+
+    def _remove_items(self):
+        for item in reversed(self.selected_listbox.selectedItems()):
+            self.selected_listbox.takeItem(self.selected_listbox.row(item))
 
     # ---- Style Dialog ----
 
@@ -299,16 +312,17 @@ class BiProfileTab:
         dlg.setMinimumWidth(300)
         dl = QVBoxLayout(dlg)
 
-        # Color picker
         color_row = QHBoxLayout()
         color_row.addWidget(QLabel("Color"))
-        self._color_btn = QPushButton()
-        self._color_btn.setFixedSize(W, 24)
-        self._dialog_color = self.plot_color
-        self._color_btn.setStyleSheet(
-            f"background-color: {self._dialog_color}; border: 1px solid #555; border-radius: 4px;")
-        self._color_btn.clicked.connect(self._pick_color)
-        color_row.addWidget(self._color_btn)
+        from PySide6.QtWidgets import QComboBox as _QCB
+        color_combo = _QCB()
+        color_combo.setFixedWidth(W)
+        color_combo.addItems([
+            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
+            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
+        ])
+        color_combo.setCurrentText(getattr(self, '_color_mode', "Fixed(tab10)"))
+        color_row.addWidget(color_combo)
         dl.addLayout(color_row)
 
         for name, attr, lo, hi, default in [
@@ -325,235 +339,120 @@ class BiProfileTab:
 
         btns = QDialogButtonBox(
             QDialogButtonBox.RestoreDefaults | QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(dlg.accept); btns.rejected.connect(dlg.reject)
-        def _reset():
-            self._dialog_color = _DEFAULT_COLOR
-            self._color_btn.setStyleSheet(
-                f"background-color: {self._dialog_color}; border: 1px solid #555; border-radius: 4px;")
-            for spin in dlg.findChildren(QSpinBox):
-                spin.setValue(spin.property('default'))
-        btns.button(QDialogButtonBox.RestoreDefaults).clicked.connect(_reset)
-        dl.addWidget(btns)
 
-        if dlg.exec() == QDialog.Accepted:
-            self.plot_color = self._dialog_color
+        def _apply():
+            self._color_mode = color_combo.currentText()
             for spin in dlg.findChildren(QSpinBox):
                 setattr(self, spin.property('attr'), spin.value())
-            if self._current_data:
-                self._force_replot()
+        def _reset():
+            color_combo.setCurrentText("Fixed(tab10)")
+            for spin in dlg.findChildren(QSpinBox):
+                spin.setValue(spin.property('default'))
 
-    def _pick_color(self):
-        c = QColorDialog.getColor(QColor(self._dialog_color), self.frame, "Plot Color")
-        if c.isValid():
-            self._dialog_color = c.name()
-            self._color_btn.setStyleSheet(
-                f"background-color: {self._dialog_color}; border: 1px solid #555; border-radius: 4px;")
+        btns.accepted.connect(lambda: (_apply(), dlg.accept()))
+        btns.rejected.connect(dlg.reject)
+        btns.button(QDialogButtonBox.RestoreDefaults).clicked.connect(_reset)
+        dl.addWidget(btns)
+        self._style_dialog = dlg
+        dlg.show()
 
-    # ---- Actions ----
-
-    def _update_status(self, message, color='blue'):
-        self.status_label.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 9pt;")
-        self.status_label.setText(message)
-        QApplication.processEvents()
-
-    def _adjust_shot(self, delta):
-        try:
-            self.shot_entry.setText(str(max(1, int(self.shot_entry.text()) + delta)))
-        except ValueError:
-            pass
-
-    def _fetch(self):
-        shot_text = self.shot_entry.text().strip()
-        if not shot_text:
-            return
-        try:
-            shot = int(shot_text)
-        except ValueError:
-            QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
-            return
-        self._update_status(f"Loading #{shot}...", color='blue')
-        self.fetch_button.setText("Loading..."); self.fetch_button.setEnabled(False)
-        QApplication.setOverrideCursor(Qt.WaitCursor); QApplication.processEvents()
-        try:
-            sdata = self.main.fetch_biprofile_shot(shot)
-        finally:
-            self.fetch_button.setText("Fetch"); self.fetch_button.setEnabled(True)
-            QApplication.restoreOverrideCursor()
-        if not sdata:
-            self._update_status(f"#{shot}: No data", color='red')
-            return
-        bi = sdata['bi']
-        ref = next((p for p in self.params if p in bi), None)
-        if ref is None:
-            self._update_status(f"#{shot}: No data for {', '.join(self.params)}", color='red')
-            return
-
-        self._current_shot = shot
-        self._current_data = sdata
-
-        # Precompute fixed ylim from all time slices
-        self._fixed_ylim = {}
-        for col, param in enumerate(self.params):
-            if param not in bi:
-                continue
-            d = bi[param]
-            all_mean = d['mean']
-            all_unc = d['unc']
-            lo = np.nanmin(all_mean - all_unc)
-            hi = np.nanmax(all_mean + all_unc)
-            margin = (hi - lo) * 0.1 if hi > lo else 0.1
-            if param in _ZERO_BOTTOM:
-                self._fixed_ylim[col] = (0, hi + margin)
-            else:
-                self._fixed_ylim[col] = (lo - margin, hi + margin)
-
-        time_arr = bi[ref]['time']
-        self.time_slider.blockSignals(True)
-        self.time_slider.setMinimum(0); self.time_slider.setMaximum(len(time_arr) - 1)
-        self.time_slider.setValue(0); self.time_slider.setEnabled(True)
-        self.time_slider.blockSignals(False)
-        self._plotted = False
-        self._browse_group.setEnabled(False)
-        loaded = [p for p in self.params if p in bi]
-        self._update_status(f"#{shot}: {', '.join(loaded)} loaded  \u2192 Press Plot", color='green')
-        self.info_label.setText(
-            f"EFIT: {bi[ref].get('efit_used','?')}\n"
-            f"Fit: {bi[ref].get('fit_func','?')}\n"
-            f"{len(time_arr)} time pts, {len(bi[ref]['psin'])} \u03c8\u2099 pts")
-        self.range_label.setText(f"{time_arr[0]:.4f} ~ {time_arr[-1]:.4f} s")
-
-    def _force_replot(self):
-        if self._current_data:
-            self._init_axes()
-            self._update_plot(self.time_slider.value())
-            self._plotted = True
-            self._browse_group.setEnabled(True)
-            self._set_ylim_entries_enabled(self._fix_ylim)
-            self._update_status(
-                f"#{self._current_shot}: {', '.join(p for p in self.params if p in self._current_data['bi'])} plotted",
-                color='green')
-            self.browse_status.setText("Drag slider to browse time points")
-
-    def _on_slider(self, value):
-        """During drag: lightweight update (fit line only, no raw overlay)"""
-        if self._current_data is None or not self._plotted:
-            return
-        self._update_plot(value, lightweight=True)
-        bi = self._current_data['bi']
-        ref = next((p for p in self.params if p in bi), None)
-        t = bi[ref]['time'][value]
-        ms = int(round(t * 1000))
-        self.browse_status.setText(f"Dragging... t={t:.4f}s ({ms:06d}ms)")
-
-    def _on_slider_released(self):
-        """On release: full update with raw overlay"""
-        if self._current_data is None or not self._plotted:
-            return
-        self._update_plot(self.time_slider.value(), lightweight=False)
-        bi = self._current_data['bi']
-        ref = next((p for p in self.params if p in bi), None)
-        t = bi[ref]['time'][self.time_slider.value()]
-        ms = int(round(t * 1000))
-        self.browse_status.setText(f"t={t:.4f}s ({ms:06d}ms) — raw overlay updated")
-
-    def _do_slider_update(self):
-        """Called by toggles/apply to refresh at current slider position"""
-        if not self._plotted:
-            return
-        self._update_plot(self.time_slider.value(), lightweight=False)
+    def _get_plot_colors(self, n):
+        """Get n colors from current color mode"""
+        import matplotlib.pyplot as plt
+        mode = getattr(self, '_color_mode', 'Fixed(tab10)')
+        start = mode.find('('); end = mode.find(')')
+        cmap_name = mode[start+1:end] if start != -1 and end != -1 else 'tab10'
+        cmap = plt.get_cmap(cmap_name)
+        if hasattr(cmap, 'colors'):  # discrete
+            return [cmap.colors[i % len(cmap.colors)] for i in range(n)]
+        else:  # continuous
+            if n == 1:
+                return [cmap(0.5)]
+            return [cmap(i / (n - 1)) for i in range(n)]
 
     # ---- Plotting ----
 
-    def _init_axes(self):
-        self.figure.clear()
-        self._axes = []
-        self._artists = []
-        self._legend_entries = {}
+    def _parse_entry(self, entry):
+        """Parse '039551_005020 (Bi)' → (shot, time_s)"""
+        main = entry.split('(')[0].strip()
+        parts = main.split('_')
+        shot = int(parts[0])
+        time_s = float(parts[1]) / 1e3
+        return shot, time_s
 
+    def _plot(self):
+        entries = [self.selected_listbox.item(i).text()
+                   for i in range(self.selected_listbox.count())]
+        if not entries:
+            return
+        if not self._current_data:
+            return
+
+        bi = self._current_data['bi']
+        sdata = self._current_data
+        shot = self._current_shot
+
+        self.figure.clear()
         zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
 
+        axes = []
         for col, param in enumerate(self.params):
             ax = self.figure.add_subplot(1, 2, col + 1)
             ax.set_xlabel(r'$\psi_N$', fontsize=self.label_fontsize)
-            ax.set_ylabel(f'{LABELS.get(param, param)} [{UNITS.get(param, "")}]', fontsize=self.label_fontsize)
+            ax.set_ylabel(f'{LABELS.get(param, param)} [{UNITS.get(param, "")}]',
+                          fontsize=self.label_fontsize)
             ax.tick_params(labelsize=self.tick_fontsize)
             ax.set_xlim(0, 1.1)
             ax.grid(ls='--', lw=0.3, color='#444444')
-            ax.axvline(x=1.0, color=zc, ls='--', lw=0.8, alpha=0.5, gid='zero_ref')
-            self._axes.append(ax)
-            self._legend_entries[col] = []
+            ax.axvline(x=1.0, color=zc, ls='--', lw=0.8, alpha=0.5)
+            axes.append(ax)
 
-        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.92, bottom=0.10, wspace=0.20)
-        apply_dark_figure_style(self.figure)
+        colors = self._get_plot_colors(len(entries))
+        for idx, entry in enumerate(entries):
+            s, t_target = self._parse_entry(entry)
+            color = colors[idx]
+            ms = int(round(t_target * 1000))
 
-    def _update_plot(self, t_idx, lightweight=False):
-        """Update plot. lightweight=True skips raw overlay for fast slider dragging."""
-        sdata = self._current_data
-        shot = self._current_shot
-        bi = sdata['bi']
-        ref = next((p for p in self.params if p in bi), None)
-        t_actual = bi[ref]['time'][t_idx]
-        ms = int(round(t_actual * 1000))
+            for col, param in enumerate(self.params):
+                ax = axes[col]
+                if param not in bi:
+                    continue
 
-        self.time_label.setText(f"Time: {t_actual:.4f} s  ({t_idx}/{len(bi[ref]['time'])-1})")
+                d = bi[param]
+                t_idx = np.argmin(np.abs(d['time'] - t_target))
+                t_actual = d['time'][t_idx]
+                psin = d['psin']
+                mean_p = d['mean'][:, t_idx]
+                unc_p = d['unc'][:, t_idx]
+                valid = ~np.isnan(mean_p)
 
-        for a in self._artists:
-            a.remove()
-        self._artists = []
+                if np.any(valid):
+                    ax.plot(psin[valid], mean_p[valid], '-', color=color, lw=2,
+                            label=f'#{s} {ms:06d}ms (Bi)')
+                    ax.fill_between(psin[valid],
+                                    mean_p[valid] - unc_p[valid],
+                                    mean_p[valid] + unc_p[valid],
+                                    alpha=0.15, color=color)
 
-        for ax in self._axes:
-            leg = ax.get_legend()
-            if leg:
-                leg.remove()
-
-        color = self.plot_color
-        self.figure.suptitle(f'#{shot}  {ms:06d}ms', fontsize=self.label_fontsize)
+                # Raw overlay
+                self._overlay_raw(ax, param, t_actual, color)
 
         for col, param in enumerate(self.params):
-            ax = self._axes[col]
-            self._legend_entries[col] = []
+            ax = axes[col]
+            if param in _ZERO_BOTTOM:
+                yl = ax.get_ylim()
+                ax.set_ylim(0, yl[1])
+            if ax.get_legend_handles_labels()[1]:
+                ax.legend(fontsize=self.legend_fontsize, loc='best', frameon=False)
 
-            if param not in bi:
-                continue
-
-            d = bi[param]
-            psin, mean_p, unc_p = d['psin'], d['mean'][:, t_idx], d['unc'][:, t_idx]
-            valid = ~np.isnan(mean_p)
-
-            if np.any(valid):
-                line, = ax.plot(psin[valid], mean_p[valid], '-', color=color, lw=2)
-                self._artists.append(line)
-                self._legend_entries[col].append((line, 'fit'))
-
-                fill = ax.fill_between(psin[valid],
-                                       mean_p[valid] - unc_p[valid],
-                                       mean_p[valid] + unc_p[valid],
-                                       alpha=0.2, color=color)
-                self._artists.append(fill)
-
-                if self._fix_ylim and col in self._fixed_ylim:
-                    ax.set_ylim(self._fixed_ylim[col])
-                else:
-                    y_min = np.nanmin(mean_p[valid] - unc_p[valid])
-                    y_max = np.nanmax(mean_p[valid] + unc_p[valid])
-                    margin = (y_max - y_min) * 0.1 if y_max > y_min else 0.1
-                    ax.set_ylim(0 if param in _ZERO_BOTTOM else y_min - margin,
-                                y_max + margin)
-
-            # Raw overlay only on full update (not during drag)
-            if not lightweight:
-                self._overlay_raw(ax, col, param, t_actual, color)
-
-            entries = self._legend_entries[col]
-            if entries:
-                ax.legend([h for h, _ in entries], [l for _, l in entries],
-                          fontsize=self.legend_fontsize, loc='best', frameon=False)
-
+        self.figure.subplots_adjust(
+            left=0.10, right=0.97, top=0.95, bottom=0.10, wspace=0.20)
+        apply_dark_figure_style(self.figure)
         self.canvas.draw_idle()
 
     # ---- Raw overlay ----
 
-    def _overlay_raw(self, ax, col, param, t_actual, color):
+    def _overlay_raw(self, ax, param, t_actual, color):
         from data_loaders.biprofile_loader import map_R_to_psin
         sdata = self._current_data
         efit = sdata.get('efit')
@@ -571,9 +470,8 @@ class BiProfileTab:
             y = raw['Ti'][:, t_idx] if param == 'Ti' else raw['vT'][:, t_idx]
             yerr = raw['Ti_err'][:, t_idx] if param == 'Ti' else raw['vT_err'][:, t_idx]
             use_flags = self._get_use_flags(diag, param, len(R))
-            ch_labels = [f'CES{i+1:02d}' for i in range(len(R))]
-            self._plot_raw_with_use(ax, col, psin_mapped, y, yerr, use_flags,
-                                    color, 'o', 'CES', ch_labels)
+            self._plot_raw(ax, psin_mapped, y, yerr, use_flags, color, 'o')
+
         elif param in ['Te', 'ne']:
             raw = sdata.get('thomson')
             if raw is None:
@@ -584,24 +482,13 @@ class BiProfileTab:
             y = raw['Te'][:, t_idx] if param == 'Te' else raw['ne'][:, t_idx]
             yerr = raw['Te_err'][:, t_idx] if param == 'Te' else raw['ne_err'][:, t_idx]
 
-            # Apply BITS SCALE to ne if toggle is on
             if param == 'ne' and self._apply_scale and diag:
                 scale = self._get_ts_scale(diag, t_actual, len(R))
                 y = y * scale
                 yerr = yerr * scale
 
             use_flags = self._get_use_flags(diag, param, len(R))
-            n_core = sum(1 for ch in (diag or {}).get('thomson', {}).get('core', [])
-                         if ch.get('ne_use') is not None or ch.get('te_use') is not None)
-            ch_labels = []
-            for i in range(len(R)):
-                if i < n_core:
-                    ch_labels.append(f'TS_C{i+1}')
-                else:
-                    ch_labels.append(f'TS_E{i-n_core+1}')
-            label = 'Thomson (scaled)' if (param == 'ne' and self._apply_scale) else 'Thomson'
-            self._plot_raw_with_use(ax, col, psin_mapped, y, yerr, use_flags,
-                                    color, 's', label, ch_labels)
+            self._plot_raw(ax, psin_mapped, y, yerr, use_flags, color, 's')
 
     @staticmethod
     def _get_use_flags(diag, param, n_ch):
@@ -629,26 +516,17 @@ class BiProfileTab:
         return flags
 
     def _get_ts_scale(self, diag, t_actual, n_ch):
-        """Get per-channel BITS SCALE values for Thomson ne at given time.
-
-        SCALE is time-dependent (shape=(252,) per channel).
-        Thomson loader sorts channels by R (core first, then edge).
-        """
         scales = np.ones(n_ch)
         ts = diag.get('thomson', {})
-
-        # Time index in BINE grid
         bi = self._current_data['bi']
         ref = next((p for p in ('ne', 'Te') if p in bi), None)
         if ref is None:
             return scales
         t_idx = np.argmin(np.abs(bi[ref]['time'] - t_actual))
-
         idx = 0
         for region in ['core', 'edge']:
             for ch in ts.get(region, []):
-                if idx >= n_ch:
-                    break
+                if idx >= n_ch: break
                 scale_arr = ch.get('scale')
                 if scale_arr is not None:
                     if isinstance(scale_arr, np.ndarray) and len(scale_arr) > 0:
@@ -658,44 +536,23 @@ class BiProfileTab:
                 idx += 1
         return scales
 
-    def _plot_raw_with_use(self, ax, col, psin, y, yerr, use_flags, color,
-                          marker, diag_name, ch_labels=None):
+    @staticmethod
+    def _plot_raw(ax, psin, y, yerr, use_flags, color, marker):
         yerr = np.where(yerr < 0, 0, yerr)
         valid = (psin >= 0) & (psin <= 1.2) & np.isfinite(y)
         used = valid & (use_flags == 1)
         excluded = valid & (use_flags == 0)
         unknown = valid & np.isnan(use_flags)
 
-        labeled = False
         if np.any(used):
-            c = ax.errorbar(psin[used], y[used], yerr=yerr[used],
-                            fmt=marker, markersize=5, color=color,
-                            capsize=5, zorder=10, markeredgewidth=1)
-            self._artists.append(c)
-            self._legend_entries[col].append((c, diag_name))
-            labeled = True
+            ax.errorbar(psin[used], y[used], yerr=yerr[used],
+                        fmt=marker, markersize=5, color=color,
+                        capsize=5, zorder=10, markeredgewidth=1)
         if np.any(excluded):
-            c = ax.errorbar(psin[excluded], y[excluded], yerr=yerr[excluded],
-                            fmt=marker, markersize=5,
-                            color=(0.6, 0.6, 0.6, 0.35),
-                            capsize=5, zorder=5, markeredgewidth=1)
-            self._artists.append(c)
+            ax.errorbar(psin[excluded], y[excluded], yerr=yerr[excluded],
+                        fmt=marker, markersize=5, color=(0.6, 0.6, 0.6, 0.35),
+                        capsize=5, zorder=5, markeredgewidth=1)
         if np.any(unknown):
-            c = ax.errorbar(psin[unknown], y[unknown], yerr=yerr[unknown],
-                            fmt=marker, markersize=5, color=color,
-                            capsize=5, zorder=10, markeredgewidth=1)
-            self._artists.append(c)
-            if not labeled:
-                self._legend_entries[col].append((c, diag_name))
-
-        # Show Nodes: annotate channel labels above data points
-        if ch_labels and self.show_nodes_toggle.isChecked():
-            show_mask = valid  # annotate all valid points (used + excluded + unknown)
-            indices = np.where(show_mask)[0]
-            for idx in indices:
-                ann = ax.annotate(
-                    ch_labels[idx], (psin[idx], y[idx]),
-                    textcoords='offset points', xytext=(0, 5),
-                    ha='center', fontsize=7, alpha=0.8,
-                    clip_on=True, annotation_clip=True)
-                self._artists.append(ann)
+            ax.errorbar(psin[unknown], y[unknown], yerr=yerr[unknown],
+                        fmt=marker, markersize=5, color=color,
+                        capsize=5, zorder=10, markeredgewidth=1)

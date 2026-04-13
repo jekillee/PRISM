@@ -156,32 +156,42 @@ class ECELoader(BaseDiagnosticLoader):
             mds.get(f'SetTimeContext(0,*,{sampling_rate})').data()
             time = mds.get(f'dim_of(\\ECE{first_ch:02d})').data()
             
-            # Load ECE data for all channels in mask_load
+            # Load ECE data (parallel, each channel gets own MDS+ connection)
+            import time as time_module
+            from concurrent.futures import ThreadPoolExecutor
+
+            n_workers = len(ch)
+            print(f"[ECE]   Loading {len(ch)} channels ({n_workers} workers)...")
+            start_time = time_module.time()
+
+            def _load_channel(channel):
+                from MDSplus import Connection as Conn
+                c = Conn(self.app_config.MDS_IP)
+                c.openTree('kstar', shot_number)
+                c.get(f'SetTimeContext(0,*,{sampling_rate})').data()
+                try:
+                    d = c.get(f'\\ECE{channel:02d}').data()
+                except Exception:
+                    d = None
+                c.get('SetTimeContext(,,)').data()
+                c.closeTree('kstar', shot_number)
+                return d
+
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
+                results = list(executor.map(_load_channel, ch))
+
             Te_list = []
             loaded_indices = []
-            
-            print(f"[ECE]   Loading ECE data for {len(ch)} channels...")
-            import time as time_module
-            start_time = time_module.time()
-            
-            for idx, channel in enumerate(ch):
-                try:
-                    data = mds.get(f'\\ECE{channel:02d}').data()
-                    Te_list.append(data)
+            for idx, d in enumerate(results):
+                if d is not None:
+                    Te_list.append(d)
                     loaded_indices.append(idx)
-                except MdsException:
-                    print(f'[ECE]     ECE{channel:02d} not available')
-                
-                # Progress bar
-                progress = (idx + 1) / len(ch)
-                bar_length = 40
-                filled = int(bar_length * progress)
-                bar = '█' * filled + '░' * (bar_length - filled)
-                print(f'\r[ECE]     [{bar}] {idx+1}/{len(ch)} ({progress*100:.1f}%)', end='', flush=True)
-            
+                else:
+                    print(f'[ECE]     ECE{ch[idx]:02d} not available')
+
             elapsed = time_module.time() - start_time
-            print(f'\n[ECE]   Completed in {elapsed:.2f} sec')
-            
+            print(f'[ECE]   Completed in {elapsed:.2f} sec')
+
             mds.get('SetTimeContext(,,)').data()
             
             if len(Te_list) == 0:

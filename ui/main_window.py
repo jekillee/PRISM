@@ -27,16 +27,16 @@ from ui.theme import ThemeManager
 
 _ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
 
-_CATEGORY_ORDER = ["Profiles", "Time Traces", "Spectral Analysis", "Imaging", "Other"]
+_CATEGORY_ORDER = ["Profiles", "Time Traces", "Spectral", "Imaging", "Other"]
 
 # Tab types highlighted with accent color in sidebar
-_NEW_TABS = {'neutron'}
+_NEW_TABS = set()  # no accent-colored tabs
 
 _TAB_TYPE_TO_CATEGORY = {
     'profile': "Profiles",
     'timetrace': "Time Traces",
-    'spectrogram': "Spectral Analysis",
-    'nmode': "Spectral Analysis",
+    'spectrogram': "Spectral",
+    'nmode': "Spectral",
     'tv': "Imaging",
     'tv_startup': "Imaging",
     'irvb': "Imaging",
@@ -130,6 +130,8 @@ class SidebarNav(QWidget):
 
         self._build_tree()
         self.tree.itemClicked.connect(self._on_click)
+        self.tree.itemExpanded.connect(self._on_category_toggled)
+        self.tree.itemCollapsed.connect(self._on_category_toggled)
 
     def _build_tree(self):
         """Build categorized tree from tab configs"""
@@ -137,24 +139,53 @@ class SidebarNav(QWidget):
             self._build_bi_tree()
             return
 
+        # Load saved expand states
+        from config.user_settings import get_tab_settings
+        saved = get_tab_settings('sidebar')
+        collapsed_cats = saved.get('collapsed_categories', [])
+
+        self._cat_items = {}  # {cat_name: QTreeWidgetItem}
+
         for cat_name, items in _categorize_tabs(self.tab_configs):
+            expanded = cat_name not in collapsed_cats
+            arrow = '\u25bc' if expanded else '\u25b6'  # ▼ or ▶
+
             cat_item = QTreeWidgetItem(self.tree)
-            cat_item.setText(0, f"  {cat_name}")
+            cat_item.setText(0, f" {arrow} {cat_name}")
             cat_item.setFlags(Qt.ItemIsEnabled)
             font = cat_item.font(0)
             font.setBold(True)
             font.setPointSize(10)
             cat_item.setFont(0, font)
             cat_item.setForeground(0, QColor("#888888"))
+            cat_item.setData(0, Qt.UserRole + 1, cat_name)
 
             for tab_index, tab_name, tab_type in items:
                 child = QTreeWidgetItem(cat_item)
                 child.setText(0, f"    {tab_name}")
                 child.setData(0, Qt.UserRole, tab_index)
-                if tab_type in _NEW_TABS:
-                    child.setForeground(0, QColor("#0d6efd"))
 
-            cat_item.setExpanded(True)
+            cat_item.setExpanded(expanded)
+            self._cat_items[cat_name] = cat_item
+
+    def _on_category_toggled(self, item):
+        """Save category expand/collapse state and update arrow"""
+        cat_name = item.data(0, Qt.UserRole + 1)
+        if cat_name is None:
+            return
+        # Update arrow indicator
+        arrow = '\u25bc' if item.isExpanded() else '\u25b6'
+        item.setText(0, f" {arrow} {cat_name}")
+        # Save state
+        from config.user_settings import get_tab_settings, set_tab_settings
+        saved = get_tab_settings('sidebar')
+        collapsed = set(saved.get('collapsed_categories', []))
+        if item.isExpanded():
+            collapsed.discard(cat_name)
+        else:
+            collapsed.add(cat_name)
+        saved['collapsed_categories'] = list(collapsed)
+        set_tab_settings('sidebar', saved)
 
     def _build_bi_tree(self):
         """Build BiProfile sidebar: BiProfile > Profiles / Time Traces > Ti,vT / ne,Te"""
@@ -189,6 +220,11 @@ class SidebarNav(QWidget):
         tab_index = item.data(0, Qt.UserRole)
         if tab_index is not None:
             self.tabSelected.emit(tab_index)
+        else:
+            # Category item clicked — toggle expand/collapse
+            cat_name = item.data(0, Qt.UserRole + 1)
+            if cat_name is not None:
+                item.setExpanded(not item.isExpanded())
 
     def _update_logo(self):
         """Update logo image based on current theme"""
@@ -410,7 +446,14 @@ class PRISMApp(QMainWindow):
                     'tab_name': tab_name
                 })
 
+        # Tabs that require nkstar-local resources (TV images, IRVB HTTP server)
+        import socket as _socket
+        _host = _socket.gethostname()
+        _nkstar_only = {'tv', 'tv_startup', 'irvb'}
+
         for special_type in ['spectrogram', 'nmode', 'tv', 'tv_startup', 'irvb', 'neutron']:
+            if special_type in _nkstar_only and not _host.startswith('nkstar'):
+                continue
             self.tab_configs.append({
                 'diagnostic': None,
                 'tab_type': special_type,

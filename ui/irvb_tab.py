@@ -392,8 +392,8 @@ class IRVBTab:
         frame_input_layout.addWidget(self.frame_total_entry)
 
         go_btn = QPushButton()
-        go_btn.setIcon(get_icon(QStyle.SP_MediaPlay))
-        go_btn.setFixedWidth(32)
+        go_btn.setIcon(self.frame.style().standardIcon(QStyle.SP_DialogOkButton))
+        go_btn.setFixedSize(24, 24)
         go_btn.setToolTip("Go to frame")
         go_btn.clicked.connect(self._goto_frame)
         frame_input_layout.addWidget(go_btn)
@@ -411,8 +411,8 @@ class IRVBTab:
         time_input_layout.addWidget(self.time_entry)
 
         go_time_btn = QPushButton()
-        go_time_btn.setIcon(get_icon(QStyle.SP_MediaPlay))
-        go_time_btn.setFixedWidth(32)
+        go_time_btn.setIcon(self.frame.style().standardIcon(QStyle.SP_DialogOkButton))
+        go_time_btn.setFixedSize(24, 24)
         go_time_btn.setToolTip("Go to time")
         go_time_btn.clicked.connect(self._goto_time)
         time_input_layout.addStretch()
@@ -641,7 +641,7 @@ class IRVBTab:
         btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
         dlg_layout.addWidget(btn_box)
 
-        if dialog.exec() == QDialog.Accepted:
+        def _apply():
             self.trace_color_mode = trace_color_combo.currentText()
             self.trace_label_fontsize = trace_label_spin.value()
             self.trace_legend_fontsize = trace_legend_spin.value()
@@ -657,6 +657,9 @@ class IRVBTab:
             if self.region_prad is not None:
                 self._setup_figure()
                 self._update_plot(self.current_frame)
+        dialog.accepted.connect(_apply)
+        self._style_dialog = dialog
+        dialog.show()
 
     @staticmethod
     def _parse_color_mode(text):
@@ -732,7 +735,8 @@ class IRVBTab:
 
         main_layout.addLayout(btn_layout)
 
-        popup.exec()
+        self._example_script_popup = popup
+        popup.show()
 
     def _apply_syntax_highlighting(self, text_widget):
         """Apply Python syntax highlighting to QTextEdit"""

@@ -11,11 +11,25 @@
 # Author: Jekil Lee (jklee@kfe.re.kr)
 #
 
-# PRISM installation directory
-PRISM_HOME="/home/users/jklee/PRISM"
+# Detect server and set paths accordingly
+SERVER_HOST=$(hostname)
 
-# Python path
-PYTHON_PATH="/usr/bin/python38"
+if [[ "$SERVER_HOST" == nkstar* ]]; then
+    PRISM_HOME="/home/users/jklee/PRISM"
+    PYTHON_PATH="/usr/bin/python38"
+    PYSIDE6_SITE="/home/users/jklee/.local/lib/python3.8/site-packages"
+elif [[ "$SERVER_HOST" == ukstar* ]]; then
+    PRISM_HOME="/UKSTAR_HOME/jklee/PRISM"
+    PYTHON_PATH="/usr/bin/python3.8"
+    PYSIDE6_SITE="/UKSTAR_HOME/jklee/.local/lib/python3.8/site-packages"
+else
+    echo "========================================================"
+    echo "  PRISM: Unknown server '$SERVER_HOST'"
+    echo "  PRISM is configured for nkstar and ukstar only."
+    echo "  Please check your server or contact Jekil Lee (jklee@kfe.re.kr)"
+    echo "========================================================"
+    exit 1
+fi
 
 # Check if directory exists
 if [ ! -d "$PRISM_HOME" ]; then
@@ -30,8 +44,6 @@ if [ ! -f "$PRISM_HOME/main.py" ]; then
 fi
 
 # Set PYTHONPATH to PRISM directory and jklee's site-packages only
-# Discard any pre-existing PYTHONPATH (e.g., other users' Python 3.6 paths)
-PYSIDE6_SITE="/home/users/jklee/.local/lib/python3.8/site-packages"
 export PYTHONPATH="$PRISM_HOME:$PYSIDE6_SITE"
 
 # Suppress WAYLAND_DISPLAY warning on Gnome (NoMachine)

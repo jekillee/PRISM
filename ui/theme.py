@@ -132,6 +132,11 @@ QComboBox QAbstractItemView {
     color: #ccc;
     selection-background-color: #37373d;
 }
+QComboBox:disabled {
+    background: #2b2b2b;
+    color: #555;
+    border: 1px solid #3c3c3c;
+}
 
 QLineEdit {
     background: #3c3f41;
@@ -139,6 +144,11 @@ QLineEdit {
     border: 1px solid #555;
     border-radius: 4px;
     padding: 4px 8px;
+}
+QLineEdit:disabled {
+    background: #2b2b2b;
+    color: #555;
+    border: 1px solid #3c3c3c;
 }
 
 QCheckBox { color: #ccc; spacing: 6px; }
@@ -381,6 +391,11 @@ QComboBox QAbstractItemView {
     color: #333;
     selection-background-color: #d0d0d0;
 }
+QComboBox:disabled {
+    background: #e8e8e8;
+    color: #aaa;
+    border: 1px solid #ddd;
+}
 
 QLineEdit {
     background: #ffffff;
@@ -388,6 +403,11 @@ QLineEdit {
     border: 1px solid #cccccc;
     border-radius: 4px;
     padding: 4px 8px;
+}
+QLineEdit:disabled {
+    background: #e8e8e8;
+    color: #aaa;
+    border: 1px solid #ddd;
 }
 
 QCheckBox { color: #333; spacing: 6px; }

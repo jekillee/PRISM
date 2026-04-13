@@ -250,11 +250,14 @@ class ProfileBaseTab(BaseTab):
         btn_box.rejected.connect(dialog.reject)
         dlg_layout.addWidget(btn_box)
 
-        if dialog.exec() == QDialog.Accepted:
+        def _apply():
             self._disabled_channels.clear()
             for idx, cb in checkboxes:
                 if not cb.isChecked():
                     self._disabled_channels.add(idx)
+        dialog.accepted.connect(_apply)
+        self._channel_selector_dialog = dialog
+        dialog.show()
 
     def _get_channel_mask(self, channel_keys: List[str]) -> np.ndarray:
         """Return boolean mask: True = enabled, False = disabled (gray).
@@ -345,7 +348,7 @@ class ProfileBaseTab(BaseTab):
         btn_box.button(QDialogButtonBox.RestoreDefaults).clicked.connect(reset_defaults)
         dlg_layout.addWidget(btn_box)
 
-        if dialog.exec() == QDialog.Accepted:
+        def _apply():
             self.color_mode_combo.setCurrentText(color_combo.currentText())
             self.label_fontsize = label_spin.value()
             self.legend_fontsize = legend_spin.value()
@@ -353,6 +356,9 @@ class ProfileBaseTab(BaseTab):
             # Auto-apply if plot exists
             if self.ax1.lines or self.ax1.collections:
                 self._on_plot_clicked()
+        dialog.accepted.connect(_apply)
+        self._style_dialog = dialog
+        dialog.show()
 
     def _create_fitting_controls(self, parent: QWidget) -> None:
         """Create fitting controls (section 5)"""
@@ -397,6 +403,19 @@ class ProfileBaseTab(BaseTab):
         grid.addWidget(QLabel("~"), row, 2, Qt.AlignCenter)
         self.fit_xmax_entry = QLineEdit("1.05")
         grid.addWidget(self.fit_xmax_entry, row, 3)
+        row += 1
+
+        # dt for time-averaging: [Time avg. [ms]] [toggle] [entry]
+        from ui.widgets.toggle_switch import ToggleSwitch
+        grid.addWidget(QLabel("Time avg. [ms]"), row, 0)
+        self.dt_toggle = ToggleSwitch()
+        self.dt_toggle.toggled.connect(self._on_dt_toggled)
+        grid.addWidget(self.dt_toggle, row, 1, 1, 2, Qt.AlignCenter)
+        self.fit_dt_entry = QLineEdit("0")
+        self.fit_dt_entry.setToolTip("Time averaging window: fit on mean of [t-dt, t+dt].")
+        self.fit_dt_entry.setEnabled(False)
+        grid.addWidget(self.fit_dt_entry, row, 3)
+        self._dt_enabled = False
         row += 1
 
         # R-shift entries per diagnostic (in mm), one per row
@@ -528,7 +547,8 @@ class ProfileBaseTab(BaseTab):
             close_btn = QPushButton("Close")
             close_btn.clicked.connect(dialog.close)
             dlg_layout.addWidget(close_btn)
-            dialog.exec()
+            self._fit_options_dialog = dialog
+            dialog.show()
             return
 
         func_info = FIT_FUNCTIONS[func_name]
@@ -650,7 +670,8 @@ class ProfileBaseTab(BaseTab):
         btn_layout.addWidget(close_btn)
 
         dlg_layout.addLayout(btn_layout)
-        dialog.exec()
+        self._fit_options_dialog = dialog
+        dialog.show()
 
     def _show_rbf_options_dialog(self, ptype: str) -> None:
         """Show RBF options dialog with n_bases setting"""
@@ -713,7 +734,8 @@ class ProfileBaseTab(BaseTab):
         btn_layout.addWidget(close_btn)
 
         dlg_layout.addLayout(btn_layout)
-        dialog.exec()
+        self._rbf_options_dialog = dialog
+        dialog.show()
 
     def perform_fitting(self) -> None:
         """Perform profile fitting on current x-axis coordinate"""
@@ -750,8 +772,37 @@ class ProfileBaseTab(BaseTab):
         success_count = 0
         fail_count = 0
 
+        # dt validation
+        dt_s = self._get_dt_seconds()
+        dt_ms = dt_s * 1000.0
+
+        if self._dt_enabled:
+            dt_text = self.fit_dt_entry.text().strip()
+            try:
+                val = float(dt_text)
+            except ValueError:
+                QMessageBox.warning(self.frame, "Invalid dt",
+                    f"'{dt_text}' is not a valid number. Please enter dt in ms (e.g., 10, 50).")
+                return
+            if val < 0:
+                QMessageBox.warning(self.frame, "Invalid dt",
+                    f"dt cannot be negative ({val} ms). Please enter a positive value.")
+                return
+
+            # Check if dt is too small to actually average anything
+            if dt_s > 0:
+                first_entry = selected_entries[0]
+                sampling_dt = self._get_data_sampling_dt(first_entry)
+                if sampling_dt is not None and dt_s < sampling_dt:
+                    QMessageBox.information(self.frame, "dt too small",
+                        f"dt={dt_ms:.1f}ms is smaller than the data sampling interval "
+                        f"({sampling_dt*1000:.1f}ms).\n\n"
+                        f"No averaging will be performed. "
+                        f"Use dt \u2265 {sampling_dt*1000:.1f}ms to average at least 2 time slices.")
+
         func_summary = ", ".join(f"{pt}={self.fit_func_names.get(pt, 'mtanh')}" for pt in param_types)
-        print(f"\n[Fitting] {func_summary} on {len(selected_entries)} entries (x={x_axis})")
+        dt_info = f", dt={dt_ms:.0f}ms" if dt_s > 0 else ""
+        print(f"\n[Fitting] {func_summary} on {len(selected_entries)} entries (x={x_axis}{dt_info})")
 
         for entry in selected_entries:
             if entry not in self.efit_data:
@@ -767,8 +818,8 @@ class ProfileBaseTab(BaseTab):
             else:
                 interp_func = interp1d(efit_R, efit_entry['rho_tor'], fill_value='extrapolate')
 
-            # Get profile data from subclass
-            profile_data = self._get_efit_profile_data(entry, interp_func)
+            # Get profile data from subclass (with optional time averaging)
+            profile_data = self._get_efit_profile_data(entry, interp_func, dt_s=dt_s)
             if profile_data is None:
                 continue
 
@@ -872,7 +923,25 @@ class ProfileBaseTab(BaseTab):
         """Hook called after fitting completes. Override in subclass."""
         pass
 
-    def _get_efit_profile_data(self, entry: str, interp_func) -> Optional[Dict]:
+    def _on_dt_toggled(self, checked):
+        self._dt_enabled = checked
+        self.fit_dt_entry.setEnabled(checked)
+
+    def _get_dt_seconds(self) -> float:
+        """Get effective dt in seconds (0 if toggle off or invalid)."""
+        if not getattr(self, '_dt_enabled', False):
+            return 0.0
+        try:
+            return max(0.0, float(self.fit_dt_entry.text())) / 1000.0
+        except ValueError:
+            return 0.0
+
+    def _get_data_sampling_dt(self, entry: str) -> Optional[float]:
+        """Get the time sampling interval (in seconds) for the data in this entry.
+        Override in subclasses. Returns None if unknown."""
+        return None
+
+    def _get_efit_profile_data(self, entry: str, interp_func, dt_s: float = 0.0) -> Optional[Dict]:
         """Get profile data for fitting in EFIT coordinates.
 
         Must be implemented by subclasses.
@@ -880,6 +949,7 @@ class ProfileBaseTab(BaseTab):
         Args:
             entry: Listbox entry string
             interp_func: R -> EFIT coordinate interpolation function
+            dt_s: time averaging half-window in seconds. 0 = no averaging.
 
         Returns:
             Dict with structure:

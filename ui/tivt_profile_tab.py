@@ -87,6 +87,13 @@ class TiVTProfileTab(ProfileBaseTab):
 
         parent.layout().addWidget(group)
 
+    def _get_preview_info(self):
+        if not hasattr(self, '_last_preview_data'):
+            return None
+        data, shot, source = self._last_preview_data
+        return (data, shot, source,
+                'Ti', 'vT', self.param1['label'], self.param2['label'])
+
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
         try:
@@ -151,15 +158,19 @@ class TiVTProfileTab(ProfileBaseTab):
         self.available_listbox.clear()
 
         if ces_loaded:
-            # Show CES timepoints
+            self._last_preview_data = (data, shot_number, analysis_type)
             for tp in data.time:
                 item_str = f'{shot_number:06d}_{tp*1e3:06.0f} ({analysis_type})'
                 self.available_listbox.addItem(item_str)
         elif xics_loaded:
-            # Show XICS timepoints (fallback when no CES)
+            self._last_preview_data = (xics_data, shot_number, 'XICS')
             for tp in xics_data.time:
                 item_str = f'{shot_number:06d}_{tp*1e3:06.0f} (XICS)'
                 self.available_listbox.addItem(item_str)
+
+        if hasattr(self, 'browse_button'):
+            self.browse_button.setEnabled(True)
+            self.browse_button.setText(f"#{shot_number} Preview")
 
     def load_file_data(self):
         """Load CES data from result file"""
@@ -256,12 +267,42 @@ class TiVTProfileTab(ProfileBaseTab):
         """Return parameter types for Ti/vT fitting"""
         return ['Ti', 'vT']
 
-    def _get_efit_profile_data(self, entry, interp_func):
+    def _expand_entries_for_dt(self, selected_entries, dt_s):
+        """Expand each CES entry to all time slices within [t-dt, t+dt]."""
+        expanded = []
+        for entry in selected_entries:
+            shot_number, time_point, source = self._parse_entry(entry)
+            if source in ['mod', 'nn']:
+                cache_key = f'{shot_number}_{source}'
+            else:
+                cache_key = f'file_{shot_number}_{source}'
+            if cache_key not in self.data:
+                expanded.append(entry)
+                continue
+            data = self.data[cache_key]
+            t_mask = (data.time >= time_point - dt_s) & (data.time <= time_point + dt_s)
+            for t in data.time[t_mask]:
+                expanded.append(f'{shot_number:06d}_{t*1e3:06.0f} ({source})')
+        # Remove duplicates preserving order
+        seen = set()
+        return [e for e in expanded if not (e in seen or seen.add(e))]
+
+    def _get_data_sampling_dt(self, entry):
+        shot_number, time_point, source = self._parse_entry(entry)
+        if source in ['mod', 'nn']:
+            cache_key = f'{shot_number}_{source}'
+        else:
+            cache_key = f'file_{shot_number}_{source}'
+        if cache_key in self.data and len(self.data[cache_key].time) > 1:
+            return float(np.median(np.diff(self.data[cache_key].time)))
+        return None
+
+    def _get_efit_profile_data(self, entry, interp_func, dt_s=0.0):
         """Get Ti/vT profile data in EFIT coordinates for fitting"""
         shot_number, time_point, source = self._parse_entry(entry)
 
         if source == 'XICS':
-            return None  # Skip XICS-only entries for fitting
+            return None
 
         if source in ['mod', 'nn']:
             cache_key = f'{shot_number}_{source}'
@@ -272,21 +313,36 @@ class TiVTProfileTab(ProfileBaseTab):
             return None
 
         data = self.data[cache_key]
-        time_idx = np.argmin(np.abs(data.time - time_point))
 
-        # Apply R-shift before EFIT coordinate mapping
         ces_rshift = self._get_rshift('CES')
         x_data = interp_func(data.radius + ces_rshift)
 
         Ti_data, Ti_err = data.get_parameter('Ti')
         vT_data, vT_err = data.get_parameter('vT')
 
-        Ti_profile = Ti_data[:, time_idx]
-        Ti_err_profile = Ti_err[:, time_idx]
-        vT_profile = vT_data[:, time_idx]
-        vT_err_profile = vT_err[:, time_idx]
+        if dt_s > 0:
+            # Time averaging: [t-dt, t+dt]
+            t_mask = (data.time >= time_point - dt_s) & (data.time <= time_point + dt_s)
+            n_avg = np.sum(t_mask)
+            if n_avg > 0:
+                Ti_profile = np.nanmean(Ti_data[:, t_mask], axis=1)
+                Ti_err_profile = np.nanmean(Ti_err[:, t_mask], axis=1) / np.sqrt(n_avg)
+                vT_profile = np.nanmean(vT_data[:, t_mask], axis=1)
+                vT_err_profile = np.nanmean(vT_err[:, t_mask], axis=1) / np.sqrt(n_avg)
+                print(f"[Fitting]   {entry}: averaged {n_avg} slices in [{time_point-dt_s:.3f}, {time_point+dt_s:.3f}]s")
+            else:
+                time_idx = np.argmin(np.abs(data.time - time_point))
+                Ti_profile = Ti_data[:, time_idx]
+                Ti_err_profile = Ti_err[:, time_idx]
+                vT_profile = vT_data[:, time_idx]
+                vT_err_profile = vT_err[:, time_idx]
+        else:
+            time_idx = np.argmin(np.abs(data.time - time_point))
+            Ti_profile = Ti_data[:, time_idx]
+            Ti_err_profile = Ti_err[:, time_idx]
+            vT_profile = vT_data[:, time_idx]
+            vT_err_profile = vT_err[:, time_idx]
 
-        # Exclude disabled channels
         ch_keys = [f"CES_{j}" for j in range(len(data.radius))]
         mask = self._get_channel_mask(ch_keys)
 
@@ -528,6 +584,9 @@ class TiVTProfileTab(ProfileBaseTab):
         if not selected_entries:
             return
 
+        dt_s = self._get_dt_seconds()
+        dt_ms = dt_s * 1000.0
+
         x_axis = self._get_selected_x_axis()
 
         if x_axis == "psi_N":
@@ -591,17 +650,36 @@ class TiVTProfileTab(ProfileBaseTab):
 
                 data = self.data[cache_key]
 
-                time_idx = np.argmin(np.abs(data.time - time_point))
                 ces_rshift = self._get_rshift('CES')
                 x_data = interp_func(data.radius + ces_rshift)
 
                 Ti_data, Ti_err = data.get_parameter('Ti')
                 vT_data, vT_err = data.get_parameter('vT')
 
-                Ti_profile = Ti_data[:, time_idx]
-                Ti_err_profile = Ti_err[:, time_idx]
-                vT_profile = vT_data[:, time_idx]
-                vT_err_profile = vT_err[:, time_idx]
+                # dt averaging for plot
+                dt_s = self._get_dt_seconds()
+                dt_ms = dt_s * 1000.0
+
+                if dt_s > 0:
+                    t_mask = (data.time >= time_point - dt_s) & (data.time <= time_point + dt_s)
+                    n_avg = np.sum(t_mask)
+                    if n_avg > 0:
+                        Ti_profile = np.nanmean(Ti_data[:, t_mask], axis=1)
+                        Ti_err_profile = np.nanmean(Ti_err[:, t_mask], axis=1) / np.sqrt(n_avg)
+                        vT_profile = np.nanmean(vT_data[:, t_mask], axis=1)
+                        vT_err_profile = np.nanmean(vT_err[:, t_mask], axis=1) / np.sqrt(n_avg)
+                    else:
+                        time_idx = np.argmin(np.abs(data.time - time_point))
+                        Ti_profile = Ti_data[:, time_idx]
+                        Ti_err_profile = Ti_err[:, time_idx]
+                        vT_profile = vT_data[:, time_idx]
+                        vT_err_profile = vT_err[:, time_idx]
+                else:
+                    time_idx = np.argmin(np.abs(data.time - time_point))
+                    Ti_profile = Ti_data[:, time_idx]
+                    Ti_err_profile = Ti_err[:, time_idx]
+                    vT_profile = vT_data[:, time_idx]
+                    vT_err_profile = vT_err[:, time_idx]
 
                 # Split enabled/disabled channels
                 ch_keys = [f"CES_{j}" for j in range(len(x_data))]
@@ -613,27 +691,31 @@ class TiVTProfileTab(ProfileBaseTab):
                     ti_max = max(ti_max, np.nanmax(Ti_profile[:lcfs_idx][valid_mask]))
                     vt_max = max(vt_max, np.nanmax(np.abs(vT_profile[:lcfs_idx][valid_mask])))
 
-                label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms ({source})'
+                time_ms = entry.split("_")[1].split()[0]
+                if dt_s > 0:
+                    label = f'#{shot_number} {time_ms}ms\u00b1{dt_ms:.0f}ms ({source})'
+                else:
+                    label = f'#{shot_number} {time_ms}ms ({source})'
 
-                style = self._get_marker_style(source)
-
+                # Marker: filled (raw), filled + black edge (averaged)
                 plot_kwargs = {
-                    'fmt': style['marker'],
+                    'fmt': 'o',
                     'capsize': 5,
                     'label': label,
                     'color': color,
                     'markersize': 5,
-                    'fillstyle': style['fillstyle']
                 }
-                if style['markerfacecolor'] == 'none':
-                    plot_kwargs['markerfacecolor'] = 'none'
-                    plot_kwargs['markeredgewidth'] = style['markeredgewidth']
+                if dt_s > 0:
+                    plot_kwargs['markeredgecolor'] = 'black'
+                    plot_kwargs['markeredgewidth'] = 1.0
 
                 if mask.any():
                     self.ax1.errorbar(x_data[mask], Ti_profile[mask], Ti_err_profile[mask], **plot_kwargs)
                     self.ax2.errorbar(x_data[mask], vT_profile[mask], vT_err_profile[mask], **plot_kwargs)
                 if (~mask).any():
                     dim_kwargs = {**plot_kwargs, 'color': (0.6, 0.6, 0.6, 0.35), 'label': ''}
+                    dim_kwargs.pop('markeredgecolor', None)
+                    dim_kwargs.pop('markeredgewidth', None)
                     self.ax1.errorbar(x_data[~mask], Ti_profile[~mask], Ti_err_profile[~mask], **dim_kwargs)
                     self.ax2.errorbar(x_data[~mask], vT_profile[~mask], vT_err_profile[~mask], **dim_kwargs)
 
@@ -719,11 +801,15 @@ class TiVTProfileTab(ProfileBaseTab):
 
     def _write_data_to_file(self, file_path, selected_entries):
         """Write Ti/vT profile data to text file"""
+        dt_s = self._get_dt_seconds()
+        dt_ms = dt_s * 1000.0
+
         with open(file_path, 'w') as f:
-            # Write header
             f.write("# Ti/vT Profile Data\n")
             if self.computed_efit_tree:
                 f.write(f"# EFIT Source: {self.computed_efit_tree}\n")
+            if dt_s > 0:
+                f.write(f"# Time averaging: dt = {dt_ms:.0f} ms\n")
             f.write("#%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s,%10s\n" % (
                 "Shot", "Time[s]", "R[m]", "psi_N", "rho_pol", "rho_tor",
                 "Ti[keV]", "Ti_err", "vT[km/s]", "vT_err", "Source"
@@ -765,17 +851,32 @@ class TiVTProfileTab(ProfileBaseTab):
                 else:
                     data = self.data[cache_key]
 
-                time_idx = np.argmin(np.abs(data.time - time_point))
-                actual_time = data.time[time_idx]
-                R_data = data.radius
+                actual_time = time_point
+                R_data = data.radius + self._get_rshift('CES')
 
                 Ti_data, Ti_err = data.get_parameter('Ti')
                 vT_data, vT_err = data.get_parameter('vT')
 
-                Ti_profile = Ti_data[:, time_idx]
-                Ti_err_profile = Ti_err[:, time_idx]
-                vT_profile = vT_data[:, time_idx]
-                vT_err_profile = vT_err[:, time_idx]
+                if dt_s > 0:
+                    t_mask = (data.time >= time_point - dt_s) & (data.time <= time_point + dt_s)
+                    n_avg = np.sum(t_mask)
+                    if n_avg > 0:
+                        Ti_profile = np.nanmean(Ti_data[:, t_mask], axis=1)
+                        Ti_err_profile = np.nanmean(Ti_err[:, t_mask], axis=1) / np.sqrt(n_avg)
+                        vT_profile = np.nanmean(vT_data[:, t_mask], axis=1)
+                        vT_err_profile = np.nanmean(vT_err[:, t_mask], axis=1) / np.sqrt(n_avg)
+                    else:
+                        time_idx = np.argmin(np.abs(data.time - time_point))
+                        Ti_profile = Ti_data[:, time_idx]
+                        Ti_err_profile = Ti_err[:, time_idx]
+                        vT_profile = vT_data[:, time_idx]
+                        vT_err_profile = vT_err[:, time_idx]
+                else:
+                    time_idx = np.argmin(np.abs(data.time - time_point))
+                    Ti_profile = Ti_data[:, time_idx]
+                    Ti_err_profile = Ti_err[:, time_idx]
+                    vT_profile = vT_data[:, time_idx]
+                    vT_err_profile = vT_err[:, time_idx]
 
                 # Get EFIT values
                 psi_n, rho_pol, rho_tor = self._get_efit_values_at_R(entry, R_data)
