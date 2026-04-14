@@ -190,14 +190,14 @@ class BiProfileBrowseDialog(QDialog):
         fix_row.addStretch()
         opt_layout.addLayout(fix_row)
 
-        # Apply TS Scale toggle (profile mode, ne/Te only)
-        self._apply_scale = False
+        # Deapply TS Scale toggle (profile mode, ne/Te only) — scale applied by default
+        self._apply_scale = True
         if self.mode == 'profile' and ('ne' in self.params or 'Te' in self.params):
             scale_row = QHBoxLayout()
             self.scale_toggle = ToggleSwitch()
             self.scale_toggle.toggled.connect(self._on_scale_toggled)
             scale_row.addWidget(self.scale_toggle)
-            scale_row.addWidget(QLabel("Apply TS Scale"))
+            scale_row.addWidget(QLabel("Unapply TS ne Scale"))
             scale_row.addStretch()
             opt_layout.addLayout(scale_row)
 
@@ -380,7 +380,7 @@ class BiProfileBrowseDialog(QDialog):
     # ---- Raw overlay (profile mode only) ----
 
     def _on_scale_toggled(self, checked):
-        self._apply_scale = checked
+        self._apply_scale = not checked
         self._update_plot(self.slider.value())
 
     def _overlay_raw(self, ax, param, t_actual, color):

@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 """
-PRISM v2.3
+PRISM v2.4.1
 Main entry point
 
 Plasma Research Integrated System for Multi-diagnostics
@@ -14,14 +14,14 @@ A modular viewer for KSTAR diagnostic data including:
 - Spectrogram Analysis
 - TV Image Viewer
 - IRVB (Infra-Red Video Bolometer)
-- BiProfile (Bayesian Inference Profile Fitting)
+- TRANSP (Transport Analysis Profile Fitting)
 
 Usage:
     python main.py              # Full PRISM (all tabs with sidebar)
     python main.py --select     # Tab selector (choose one viewer)
     python main.py -s           # Tab selector (short form)
-    python main.py --bi         # BiProfile viewer
-    python main.py bi           # BiProfile viewer (short form)
+    python main.py --transp     # TRANSP viewer
+    python main.py transp       # TRANSP viewer (short form)
 
 Author: Jekil Lee (jklee@kfe.re.kr)
 """
@@ -109,8 +109,8 @@ def main():
 
     if arg in ('-s', '--select'):
         window = PRISMApp(mode='select')
-    elif arg in ('-b', '--bi', 'bi'):
-        window = PRISMApp(mode='bi')
+    elif arg in ('-t', '--transp', 'transp', '-b', '--bi', 'bi'):
+        window = PRISMApp(mode='transp')
     else:
         window = PRISMApp(mode='')
 

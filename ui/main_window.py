@@ -27,7 +27,7 @@ from ui.theme import ThemeManager
 
 _ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
 
-_CATEGORY_ORDER = ["Profiles", "Time Traces", "Spectral", "Imaging", "Other"]
+_CATEGORY_ORDER = ["Profiles", "Time Traces", "Spectral", "Imaging", "TRANSP", "Other"]
 
 # Tab types highlighted with accent color in sidebar
 _NEW_TABS = set()  # no accent-colored tabs
@@ -43,6 +43,8 @@ _TAB_TYPE_TO_CATEGORY = {
     'neutron': "Time Traces",
     'bi_profile': "Profiles",
     'bi_timetrace': "Time Traces",
+    'transp_profile': "TRANSP",
+    'transp_timetrace': "TRANSP",
 }
 
 
@@ -135,7 +137,7 @@ class SidebarNav(QWidget):
 
     def _build_tree(self):
         """Build categorized tree from tab configs"""
-        if self.mode == 'bi':
+        if self.mode == 'transp':
             self._build_bi_tree()
             return
 
@@ -170,51 +172,89 @@ class SidebarNav(QWidget):
 
     def _on_category_toggled(self, item):
         """Save category expand/collapse state and update arrow"""
-        cat_name = item.data(0, Qt.UserRole + 1)
-        if cat_name is None:
+        cat_key = item.data(0, Qt.UserRole + 1)
+        if cat_key is None:
             return
-        # Update arrow indicator
+        # Display label: use part after '/' for sub-categories, full key for roots
+        display = cat_key.split('/')[-1] if '/' in cat_key else cat_key
+        # Indent: sub-categories get extra space
+        indent = "  " if '/' in cat_key else " "
         arrow = '\u25bc' if item.isExpanded() else '\u25b6'
-        item.setText(0, f" {arrow} {cat_name}")
+        item.setText(0, f"{indent}{arrow} {display}")
         # Save state
         from config.user_settings import get_tab_settings, set_tab_settings
         saved = get_tab_settings('sidebar')
         collapsed = set(saved.get('collapsed_categories', []))
         if item.isExpanded():
-            collapsed.discard(cat_name)
+            collapsed.discard(cat_key)
         else:
-            collapsed.add(cat_name)
+            collapsed.add(cat_key)
         saved['collapsed_categories'] = list(collapsed)
         set_tab_settings('sidebar', saved)
 
     def _build_bi_tree(self):
-        """Build BiProfile sidebar: BiProfile > Profiles / Time Traces > Ti,vT / ne,Te"""
-        bi_item = QTreeWidgetItem(self.tree)
-        bi_item.setText(0, "  BiProfile")
-        bi_item.setFlags(Qt.ItemIsEnabled)
-        font = bi_item.font(0)
-        font.setBold(True)
-        font.setPointSize(10)
-        bi_item.setFont(0, font)
-        bi_item.setForeground(0, QColor("#888888"))
+        """Build TRANSP viewer sidebar with collapsible root nodes."""
+        from config.user_settings import get_tab_settings
+        saved = get_tab_settings('sidebar')
+        collapsed_cats = saved.get('collapsed_categories', [])
 
-        for cat_name, items in _categorize_tabs(self.tab_configs):
-            cat_item = QTreeWidgetItem(bi_item)
-            cat_item.setText(0, f"    {cat_name}")
-            cat_item.setFlags(Qt.ItemIsEnabled)
-            cat_font = cat_item.font(0)
-            cat_font.setBold(True)
-            cat_item.setFont(0, cat_font)
-            cat_item.setForeground(0, QColor("#888888"))
+        self._cat_items = {}
 
-            for tab_index, tab_name, tab_type in items:
-                child = QTreeWidgetItem(cat_item)
-                child.setText(0, f"      {tab_name}")
-                child.setData(0, Qt.UserRole, tab_index)
+        _BI_CATS = {"Profiles", "Time Traces"}
+        categorized = _categorize_tabs(self.tab_configs)
+        bi_cats = [(n, items) for n, items in categorized if n in _BI_CATS]
+        transp_cats = [(n, items) for n, items in categorized if n not in _BI_CATS]
 
-            cat_item.setExpanded(True)
+        def _add_root(label, cats, flat=False):
+            expanded = label not in collapsed_cats
+            arrow = '\u25bc' if expanded else '\u25b6'
 
-        bi_item.setExpanded(True)
+            root = QTreeWidgetItem(self.tree)
+            root.setText(0, f" {arrow} {label}")
+            root.setFlags(Qt.ItemIsEnabled)
+            root.setData(0, Qt.UserRole + 1, label)
+            font = root.font(0)
+            font.setBold(True)
+            font.setPointSize(10)
+            root.setFont(0, font)
+            root.setForeground(0, QColor("#888888"))
+            self._cat_items[label] = root
+
+            if flat:
+                # Tabs directly under root (no sub-categories)
+                for _, items in cats:
+                    for tab_index, tab_name, tab_type in items:
+                        child = QTreeWidgetItem(root)
+                        child.setText(0, f"    {tab_name}")
+                        child.setData(0, Qt.UserRole, tab_index)
+            else:
+                for cat_name, items in cats:
+                    cat_key = f"{label}/{cat_name}"
+                    cat_expanded = cat_key not in collapsed_cats
+                    cat_arrow = '\u25bc' if cat_expanded else '\u25b6'
+
+                    cat_item = QTreeWidgetItem(root)
+                    cat_item.setText(0, f"  {cat_arrow} {cat_name}")
+                    cat_item.setFlags(Qt.ItemIsEnabled)
+                    cat_item.setData(0, Qt.UserRole + 1, cat_key)
+                    cat_font = cat_item.font(0)
+                    cat_font.setBold(True)
+                    cat_item.setFont(0, cat_font)
+                    cat_item.setForeground(0, QColor("#888888"))
+                    self._cat_items[cat_key] = cat_item
+
+                    for tab_index, tab_name, tab_type in items:
+                        child = QTreeWidgetItem(cat_item)
+                        child.setText(0, f"      {tab_name}")
+                        child.setData(0, Qt.UserRole, tab_index)
+
+                    cat_item.setExpanded(cat_expanded)
+
+            root.setExpanded(expanded)
+
+        _add_root("BiProfile", bi_cats)
+        if transp_cats:
+            _add_root("TRANSP", transp_cats, flat=True)
 
     def _on_click(self, item, _col):
         tab_index = item.data(0, Qt.UserRole)
@@ -238,7 +278,7 @@ class SidebarNav(QWidget):
 
     def select_first(self):
         """Select the first tab item"""
-        if self.mode == 'bi':
+        if self.mode == 'transp':
             # 3-level: BiProfile > category > tab
             bi = self.tree.topLevelItem(0)
             if bi and bi.childCount() > 0:
@@ -257,7 +297,7 @@ class PRISMApp(QMainWindow):
 
     mode='':       Full PRISM with sidebar
     mode='select': Tab selector screen (button grid)
-    mode='bi':     BiProfile viewer (Bayesian inference profiles)
+    mode='transp':     TRANSP viewer (transport analysis profiles)
     """
 
     def __init__(self, mode=''):
@@ -279,10 +319,13 @@ class PRISMApp(QMainWindow):
         self.tab_cache = {}
         self.tab_widgets = {}
 
-        if self.mode == 'bi':
+        if self.mode == 'transp':
             self._build_bi_tab_configs()
         else:
             self._build_tab_configs()
+
+        # Print startup message for all modes
+        self._print_startup_message()
 
         if self.mode == 'select':
             # Tab selector mode
@@ -291,10 +334,11 @@ class PRISMApp(QMainWindow):
             self._create_selector_ui()
             self.setFixedWidth(360)
             self.adjustSize()
-        elif self.mode == 'bi':
-            # BiProfile viewer mode
+            QTimer.singleShot(0, lambda: show_update_popup(self))
+        elif self.mode == 'transp':
+            # TRANSP viewer mode
             self._bi_shot_data = {}
-            self.setWindowTitle(f'PRISM v{VERSION} - BiProfile Viewer')
+            self.setWindowTitle(f'PRISM v{VERSION} - TRANSP Viewer')
             self.resize(1500, 700)
             self._create_widgets()
             ThemeManager.on_theme_changed(self._on_theme_changed)
@@ -308,11 +352,7 @@ class PRISMApp(QMainWindow):
             # Register theme change callback
             ThemeManager.on_theme_changed(self._on_theme_changed)
 
-            # Print startup message
-            self._print_startup_message()
-
             # Defer first tab creation and update popup to after window is shown
-            # This prevents blocking the UI for 3+ seconds during startup
             QTimer.singleShot(0, self._deferred_startup)
 
     def _deferred_startup(self):
@@ -324,7 +364,8 @@ class PRISMApp(QMainWindow):
             self._switch_tab(0)
 
     def _deferred_startup_bi(self):
-        """BiProfile mode startup"""
+        """TRANSP viewer mode startup"""
+        show_update_popup(self)
         if self.tab_configs:
             self.sidebar.select_first()
             self._switch_tab(0)
@@ -334,7 +375,7 @@ class PRISMApp(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_bi_tab_configs(self):
-        """Build tab configs for BiProfile mode"""
+        """Build tab configs for TRANSP viewer mode"""
         self.tab_configs = [
             {'diagnostic': None, 'tab_type': 'bi_profile',
              'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
@@ -344,6 +385,10 @@ class PRISMApp(QMainWindow):
              'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
             {'diagnostic': None, 'tab_type': 'bi_timetrace',
              'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
+            {'diagnostic': None, 'tab_type': 'transp_profile',
+             'tab_name': 'Profile'},
+            {'diagnostic': None, 'tab_type': 'transp_timetrace',
+             'tab_name': 'Time Trace'},
         ]
 
     def fetch_biprofile_shot(self, shot):
@@ -674,9 +719,11 @@ class PRISMApp(QMainWindow):
 
         config = self.tab_configs[tab_index]
 
-        # BiProfile tabs (custom, not via TabFactory)
+        # BiProfile / TRANSP tabs (custom, not via TabFactory)
         if config['tab_type'] in ('bi_profile', 'bi_timetrace'):
             tab = self._create_bi_tab(config)
+        elif config['tab_type'] in ('transp_profile', 'transp_timetrace'):
+            tab = self._create_transp_tab(config)
         else:
             tab = TabFactory.create_tab(
                 None,
@@ -702,6 +749,15 @@ class PRISMApp(QMainWindow):
         else:
             from ui.biprofile_timetrace_tab import BiTimeTraceTab
             return BiTimeTraceTab(self, config['bi_params'])
+
+    def _create_transp_tab(self, config):
+        """Create a TRANSP CDF tab instance"""
+        if config['tab_type'] == 'transp_profile':
+            from ui.transp_profile_tab import TranspProfileTab
+            return TranspProfileTab(self)
+        else:
+            from ui.transp_timetrace_tab import TranspTimeTraceTab
+            return TranspTimeTraceTab(self)
 
     def _update_toolbar(self, tab_index):
         """Update toolbar for the current tab"""
@@ -771,6 +827,7 @@ class PRISMApp(QMainWindow):
         print()
         print("  * prism       Launch full PRISM with all diagnostics")
         print("  * prism -s    Select and launch individual diagnostic viewers")
+        print("  * prism -t    Launch TRANSP viewer")
         print("  * prism -h    Show help")
         print()
 

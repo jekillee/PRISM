@@ -107,7 +107,7 @@ class ECELoader(BaseDiagnosticLoader):
 
     def load_data(self, shot_number, analysis_type=None, sampling_rate=None):
         """Load ECE data from MDS+
-        
+
         sampling_rate: sampling period in seconds (default 0.01 = 100Hz)
         """
         if sampling_rate is None:
@@ -161,7 +161,6 @@ class ECELoader(BaseDiagnosticLoader):
             from concurrent.futures import ThreadPoolExecutor
 
             n_workers = len(ch)
-            print(f"[ECE]   Loading {len(ch)} channels ({n_workers} workers)...")
             start_time = time_module.time()
 
             def _load_channel(channel):
@@ -177,8 +176,23 @@ class ECELoader(BaseDiagnosticLoader):
                 c.closeTree('kstar', shot_number)
                 return d
 
-            with ThreadPoolExecutor(max_workers=n_workers) as executor:
-                results = list(executor.map(_load_channel, ch))
+            try:
+                from tqdm import tqdm
+                with ThreadPoolExecutor(max_workers=n_workers) as executor:
+                    from concurrent.futures import as_completed
+                    future_to_idx = {executor.submit(_load_channel, ch[i]): i
+                                     for i in range(len(ch))}
+                    results = [None] * len(ch)
+                    with tqdm(total=len(ch), desc="[ECE] Loading channels",
+                              unit="ch", ncols=80) as pbar:
+                        for future in as_completed(future_to_idx):
+                            idx = future_to_idx[future]
+                            results[idx] = future.result()
+                            pbar.update(1)
+            except ImportError:
+                print(f"[ECE]   Loading {len(ch)} channels ({n_workers} workers)...")
+                with ThreadPoolExecutor(max_workers=n_workers) as executor:
+                    results = list(executor.map(_load_channel, ch))
 
             Te_list = []
             loaded_indices = []

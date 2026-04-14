@@ -5,6 +5,31 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-04-14
+
+### Added
+- **TRANSP CDF Viewer**: New TRANSP category in `prism transp` sidebar with Profile and Time Trace tabs for TRANSP output CDF files
+  - Profile tab: Open CDF → filter/select variable → select time points → plot radial profiles. Cross-CDF comparison via Selected list
+  - Time Trace tab: Open multiple CDFs → filter/select variable → compare runs. Remove Selected Run button for run management
+  - Auto-detect default CDF directory (nkstar: `~/`, ukstar: `/UKSTAR_HOME/data/transp/{user}/`)
+  - Duplicate CDF detection (same file cannot be loaded twice)
+  - netCDF4 backend with scipy fallback; auto-categorization of profile (2D) vs time trace (1D) variables
+  - Non-modal file dialog for CDF open
+- **ECE tqdm Progress Bar**: Terminal progress bar during parallel ECE channel loading (fallback to log if tqdm unavailable)
+- **BiProfile Settings Persistence**: Shot number, color mode, font sizes, show nodes, TS scale state saved/restored across sessions
+
+### Changed
+- **`prism transp` Command**: Renamed from `prism bi` (`-b`/`--bi`/`-t` kept as aliases). Window title: "TRANSP Viewer"
+- **Startup Banner & What's New**: Now shown in all modes (full, select, transp)
+- **BiProfile Default Colormap**: Changed from Fixed(tab10) to Gradient(viridis) for all BiProfile tabs
+- **BiProfile TS ne Scale**: Scale applied by default; toggle renamed to "Unapply TS ne Scale"
+- **TRANSP Sidebar**: BiProfile and TRANSP as independent collapsible root nodes with ▼/▶ arrows and state persistence
+
+### Fixed
+- **ne/Te Profile ECE+TS**: Fixed ECE data not showing in TS+ECE mode (undefined `dt_s` variable in `plot_data()` caused silent NameError)
+- **BiProfile Preview**: Fixed import error (`BiProfilePreviewDialog` → `BiProfileBrowseDialog`)
+- **BiProfile Color Bug**: Fixed all entries showing same color with Gradient colormaps (viridis etc.) by using mode prefix instead of `hasattr(cmap, 'colors')`
+
 ## [2.4.0] - 2026-04-13
 
 ### Added

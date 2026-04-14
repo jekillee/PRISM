@@ -30,6 +30,7 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 - **Profile Browse**: Slider-based data browsing with playback before selecting time points
 - **Time Averaging**: dt-based profile averaging for fitting and visualization
 - **Collapsible Sidebar**: Expand/collapse category groups with state persistence
+- **TRANSP CDF Viewer**: Load TRANSP output CDF files for profile and time trace visualization with variable filter/search and cross-run comparison
 
 ## Supported Diagnostics
 
@@ -47,7 +48,7 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 | Neutron | Fusion Neutron (near J-port) | Fission, He3, Diamond |
 | TV | Visible Camera (IVIS) | Image sequence |
 | IRVB | Infra-Red Video Bolometer | 2D Prad |
-| BiProfile | Bayesian Inference Profile Fitting | Ti, vT, Te, ne |
+| TRANSP | Transport Analysis (BiProfile + CDF) | Ti, vT, Te, ne, CDF profiles/traces |
 
 ## Usage
 
@@ -55,7 +56,7 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 |---------|-------------|
 | `prism` | Full PRISM with sidebar navigation |
 | `prism -s` | Select and launch individual diagnostic viewers |
-| `prism bi` | BiProfile viewer (Bayesian inference profiles) |
+| `prism transp` | TRANSP viewer (transport analysis profiles) |
 | `prism -h` | Show help |
 
 ## Installation
@@ -71,8 +72,8 @@ prism
 # Select a viewer
 prism -s
 
-# BiProfile viewer
-prism bi
+# TRANSP viewer
+prism transp
 ```
 
 | Server | PRISM Path | Python | Note |
@@ -119,7 +120,8 @@ PRISM/
 │   ├── irvb_loader.py           # IRVB loader
 │   ├── neutron_loader.py        # Neutron loader
 │   ├── efit_loader.py           # EFIT loader
-│   └── biprofile_loader.py     # BiProfile loader (BIPROFILE + DIAG_PARAMS + raw)
+│   ├── biprofile_loader.py     # BiProfile loader (BIPROFILE + DIAG_PARAMS + raw)
+│   └── transp_cdf_loader.py   # TRANSP CDF (netCDF) loader
 ├── ui/
 │   ├── theme.py                 # Theme manager (dark/light QSS, palette, mpl)
 │   ├── ui_constants.py          # UI constants and helpers
@@ -143,6 +145,8 @@ PRISM/
 │   ├── neutron_timetrace_tab.py # Neutron time trace tab
 │   ├── biprofile_profile_tab.py # BiProfile profile tab
 │   ├── biprofile_timetrace_tab.py # BiProfile time trace tab
+│   ├── transp_profile_tab.py   # TRANSP CDF profile tab
+│   ├── transp_timetrace_tab.py # TRANSP CDF time trace tab
 │   ├── icons/                   # SVG icons (logo, themed widgets)
 │   └── widgets/
 │       ├── custom_toolbar.py    # Custom matplotlib toolbar

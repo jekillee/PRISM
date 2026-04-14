@@ -6,7 +6,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 from PySide6.QtWidgets import (
-    QMessageBox, QLineEdit, QComboBox, QPushButton,
+    QMessageBox, QLineEdit, QComboBox, QPushButton, QApplication,
     QWidget, QHBoxLayout, QVBoxLayout, QGroupBox, QGridLayout, QLabel, QStyle
 )
 
@@ -93,6 +93,7 @@ class NeTeProfileTab(ProfileBaseTab):
             self.shot_entry.setText(str(new_shot))
         except ValueError:
             pass
+
 
     def _get_preview_info(self):
         if not hasattr(self, '_last_preview_data'):
@@ -549,10 +550,7 @@ class NeTeProfileTab(ProfileBaseTab):
                                 te_max = max(te_max, np.nanmax(ece_Te_profile[valid_in_range]))
 
                             ece_time_ms = entry.split("_")[1].split()[0]
-                            if dt_s > 0:
-                                ece_label = f'#{shot_number} {ece_time_ms}ms\u00b1{dt_ms:.0f}ms (ECE)'
-                            else:
-                                ece_label = f'#{shot_number} {ece_time_ms}ms (ECE)'
+                            ece_label = f'#{shot_number} {ece_time_ms}ms (ECE)'
                             # Combine with hardware valid mask
                             enabled = valid_mask & ece_ch_mask
                             disabled = valid_mask & (~ece_ch_mask)

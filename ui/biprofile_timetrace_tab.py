@@ -43,9 +43,13 @@ class BiTimeTraceTab:
         self.legend_fontsize = 8
         self.tick_fontsize = 10
 
+        param_key = ''.join(p.lower() for p in params)
+        self._settings_key = f"bi_{param_key}_timetrace"
+
         self.frame = QWidget()
         self.canvas = None
         self._create_widgets()
+        self._restore_settings()
 
     def _create_widgets(self):
         self.figure = Figure((10, 6))
@@ -194,6 +198,32 @@ class BiTimeTraceTab:
 
         parent.layout().addWidget(group)
 
+    # ---- Settings ----
+
+    def _restore_settings(self):
+        from config.user_settings import get_tab_settings
+        s = get_tab_settings(self._settings_key)
+        if s.get("shot"):
+            self.shot_entry.setText(str(s["shot"]))
+        self._color_mode = s.get("color_mode", "Gradient(viridis)")
+        self.label_fontsize = s.get("label_fontsize", 12)
+        self.legend_fontsize = s.get("legend_fontsize", 8)
+        self.tick_fontsize = s.get("tick_fontsize", 10)
+        if s.get("show_nodes") and hasattr(self, 'show_nodes_toggle'):
+            self.show_nodes_toggle.setChecked(s["show_nodes"], animate=False)
+
+    def save_settings(self):
+        from config.user_settings import get_tab_settings, set_tab_settings
+        s = get_tab_settings(self._settings_key)
+        s["shot"] = self.shot_entry.text()
+        s["color_mode"] = getattr(self, '_color_mode', 'Gradient(viridis)')
+        s["label_fontsize"] = self.label_fontsize
+        s["legend_fontsize"] = self.legend_fontsize
+        s["tick_fontsize"] = self.tick_fontsize
+        if hasattr(self, 'show_nodes_toggle'):
+            s["show_nodes"] = self.show_nodes_toggle.isChecked()
+        set_tab_settings(self._settings_key, s)
+
     # ---- Actions ----
 
     def _adjust_shot(self, delta):
@@ -256,8 +286,8 @@ class BiTimeTraceTab:
     def _open_browse(self):
         if not self._current_data:
             return
-        from ui.widgets.biprofile_browse_dialog import BiProfilePreviewDialog
-        dlg = BiProfilePreviewDialog(
+        from ui.widgets.biprofile_browse_dialog import BiProfileBrowseDialog
+        dlg = BiProfileBrowseDialog(
             self.frame, self._current_data['bi'], self._current_shot,
             self.params, mode='timetrace',
             selected_listbox=self.selected_listbox)
@@ -292,7 +322,7 @@ class BiTimeTraceTab:
             "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
             "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
         ])
-        color_combo.setCurrentText(getattr(self, '_color_mode', "Fixed(tab10)"))
+        color_combo.setCurrentText(getattr(self, '_color_mode', "Gradient(viridis)"))
         color_row.addWidget(color_combo)
         dl.addLayout(color_row)
 
@@ -316,7 +346,7 @@ class BiTimeTraceTab:
             for spin in dlg.findChildren(QSpinBox):
                 setattr(self, spin.property('attr'), spin.value())
         def _reset():
-            color_combo.setCurrentText("Fixed(tab10)")
+            color_combo.setCurrentText("Gradient(viridis)")
             for spin in dlg.findChildren(QSpinBox):
                 spin.setValue(spin.property('default'))
 
@@ -329,13 +359,13 @@ class BiTimeTraceTab:
 
     def _get_plot_colors(self, n):
         import matplotlib.pyplot as plt
-        mode = getattr(self, '_color_mode', 'Fixed(tab10)')
+        mode = getattr(self, '_color_mode', 'Gradient(viridis)')
         start = mode.find('('); end = mode.find(')')
-        cmap_name = mode[start+1:end] if start != -1 and end != -1 else 'tab10'
+        cmap_name = mode[start+1:end] if start != -1 and end != -1 else 'viridis'
         cmap = plt.get_cmap(cmap_name)
-        if hasattr(cmap, 'colors'):
+        if mode.startswith('Fixed'):
             return [cmap.colors[i % len(cmap.colors)] for i in range(n)]
-        else:
+        else:  # Gradient
             if n == 1: return [cmap(0.5)]
             return [cmap(i / (n - 1)) for i in range(n)]
 

@@ -73,7 +73,8 @@ show_help() {
     echo "Options:"
     echo "  (none)        Launch full PRISM with all tabs"
     echo "  -s, --select  Open tab selector to launch a single viewer"
-    echo "  -b, --bi, bi  Launch BiProfile viewer (Bayesian inference profiles)"
+    echo "  -t, --transp, transp  Launch TRANSP viewer (transport analysis profiles)
+  -b, --bi, bi          (alias for --transp)"
     echo "  -h, --help    Show this help message"
     echo ""
     echo "Available Tabs:"
@@ -81,7 +82,7 @@ show_help() {
     echo "  Time Traces     Ti/vT, ne/Te, MSE, Neutron (Fission/He3/Diamond)"
     echo "  Spectral        Spectrogram (ECE/ECEI/BES/Mirnov), n-Mode Spectrum"
     echo "  Imaging         TV Viewer, TV Startup, IRVB"
-    echo "  BiProfile       Ti/vT, ne/Te Profiles & Time Traces (prism bi)"
+    echo "  TRANSP          Ti/vT, ne/Te Profiles & Time Traces (prism transp)"
     echo ""
     echo "Keyboard Shortcuts:"
     echo "  Delete/Backspace  Remove selected items from list"
@@ -95,8 +96,9 @@ show_help() {
     echo "Settings: ~/.config/prism/settings.json"
     echo ""
     echo "Examples:"
-    echo "  prism          # Launch full PRISM"
-    echo "  prism -s       # Choose a single viewer to launch"
+    echo "  prism              # Launch full PRISM"
+    echo "  prism -s           # Choose a single viewer to launch"
+    echo "  prism transp       # Launch TRANSP viewer"
     echo ""
     echo "Jekil Lee (jklee@kfe.re.kr)"
     echo ""
@@ -112,9 +114,9 @@ case "$1" in
         cd "$PRISM_HOME"
         $PYTHON_PATH main.py --select
         ;;
-    -b|--bi|bi)
+    -t|--transp|transp|-b|--bi|bi)
         cd "$PRISM_HOME"
-        $PYTHON_PATH main.py --bi 2>/dev/null
+        $PYTHON_PATH main.py --transp 2>/dev/null
         ;;
     "")
         cd "$PRISM_HOME"
