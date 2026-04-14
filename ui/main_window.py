@@ -1013,10 +1013,26 @@ class _SingleTabWindow(QMainWindow):
         self.setCentralWidget(central)
 
         # Create the tab
-        self.tab = TabFactory.create_tab(
-            None, app_config, tab_config['diagnostic'],
-            tab_config['tab_type'], efit_loader, plot_manager
-        )
+        tt = tab_config['tab_type']
+        if tt in ('bi_profile', 'bi_timetrace'):
+            if tt == 'bi_profile':
+                from ui.biprofile_profile_tab import BiProfileTab
+                self.tab = BiProfileTab(self, tab_config['bi_params'])
+            else:
+                from ui.biprofile_timetrace_tab import BiTimeTraceTab
+                self.tab = BiTimeTraceTab(self, tab_config['bi_params'])
+        elif tt in ('transp_profile', 'transp_timetrace'):
+            if tt == 'transp_profile':
+                from ui.transp_profile_tab import TranspProfileTab
+                self.tab = TranspProfileTab(self)
+            else:
+                from ui.transp_timetrace_tab import TranspTimeTraceTab
+                self.tab = TranspTimeTraceTab(self)
+        else:
+            self.tab = TabFactory.create_tab(
+                None, app_config, tab_config['diagnostic'],
+                tab_config['tab_type'], efit_loader, plot_manager
+            )
 
         if self.tab:
             self.stack.addWidget(self.tab.frame)
@@ -1029,8 +1045,63 @@ class _SingleTabWindow(QMainWindow):
                 self.toolbar_layout.addWidget(self.toolbar)
                 self.tab.toolbar = self.toolbar
 
+        # BiProfile support: delegate to PRISMApp's fetch method
+        self._bi_shot_data = {}
+        self.config = app_config
+
         # Register theme callback
         ThemeManager.on_theme_changed(self._on_theme_changed)
+
+    def fetch_biprofile_shot(self, shot):
+        """Delegate BiProfile loading (same as PRISMApp)"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from data_loaders.biprofile_loader import (
+            load_biprofile, load_diag_params,
+            load_efit_psin, load_ces_raw, load_thomson_raw,
+        )
+        if shot in self._bi_shot_data:
+            return self._bi_shot_data[shot]
+
+        bi_data = {}
+        diag = None; efit = None; ces = None; thomson = None
+
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            futures = {}
+            for param in ['Ti', 'vT', 'Te', 'ne']:
+                futures[executor.submit(load_biprofile, shot, param)] = param
+            futures[executor.submit(load_diag_params, shot)] = 'diag'
+            futures[executor.submit(load_ces_raw, shot)] = 'ces'
+            futures[executor.submit(load_thomson_raw, shot)] = 'thomson'
+
+            for future in as_completed(futures):
+                key = futures[future]
+                try:
+                    result = future.result()
+                    if key in ['Ti', 'vT', 'Te', 'ne']:
+                        if result is not None:
+                            bi_data[key] = result
+                    elif key == 'diag':
+                        diag = result
+                    elif key == 'ces':
+                        ces = result
+                    elif key == 'thomson':
+                        thomson = result
+                except Exception as e:
+                    print(f"[Loader] BiProfile {key} failed: {e}")
+
+        if bi_data:
+            ref = next(iter(bi_data.values()))
+            efit_tree = ref.get('efit_used', 'efit01')
+            try:
+                efit = load_efit_psin(shot, efit_tree)
+            except Exception as e:
+                print(f"[Loader] EFIT failed: {e}")
+
+        self._bi_shot_data[shot] = {
+            'bi': bi_data, 'diag': diag,
+            'efit': efit, 'ces': ces, 'thomson': thomson,
+        }
+        return self._bi_shot_data[shot]
 
     def _on_theme_changed(self, theme_name):
         if self.tab and hasattr(self.tab, 'canvas') and self.tab.canvas:
