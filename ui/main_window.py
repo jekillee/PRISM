@@ -709,7 +709,15 @@ class PRISMApp(QMainWindow):
         tab_type = config['tab_type']
 
         # Build window title
-        if tab_type == 'profile':
+        if tab_type == 'bi_profile':
+            title = f"BiProfile {tab_name} Profile"
+        elif tab_type == 'bi_timetrace':
+            title = f"BiProfile {tab_name} Time Trace"
+        elif tab_type == 'transp_profile':
+            title = f"TRANSP Profile"
+        elif tab_type == 'transp_timetrace':
+            title = f"TRANSP Time Trace"
+        elif tab_type == 'profile':
             title = f"{tab_name} Profile"
         elif tab_type == 'timetrace':
             title = f"{tab_name} Time Trace"
