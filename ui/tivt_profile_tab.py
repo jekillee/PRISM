@@ -170,7 +170,7 @@ class TiVTProfileTab(ProfileBaseTab):
 
         if hasattr(self, 'browse_button'):
             self.browse_button.setEnabled(True)
-            self.browse_button.setText(f"#{shot_number} Preview")
+            self.browse_button.setText(f"Browse #{shot_number}")
 
     def load_file_data(self):
         """Load CES data from result file"""

@@ -10,9 +10,10 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QScrollArea, QLayout,
     QGroupBox, QGridLayout, QLabel, QLineEdit, QPushButton, QFrame,
-    QListWidget, QAbstractItemView,
+    QListWidget, QAbstractItemView, QFileDialog,
     QApplication, QMessageBox, QStyle, QSpinBox,
     QDialog, QDialogButtonBox,
+    QTableWidget, QTableWidgetItem, QHeaderView,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -87,6 +88,7 @@ class BiProfileTab:
         self._create_shot_input(control_frame)
         self._create_select_data(control_frame)
         self._create_plot_controls(control_frame)
+        self._create_save_controls(control_frame)
         control_layout.addStretch()
 
     # ---- 1. Load Data ----
@@ -130,7 +132,7 @@ class BiProfileTab:
         layout = QVBoxLayout(group)
 
         # Preview button
-        self.browse_button = QPushButton("Fetch a shot to preview")
+        self.browse_button = QPushButton("Fetch a shot to browse")
         self.browse_button.setEnabled(False)
         self.browse_button.clicked.connect(self._open_browse)
         layout.addWidget(self.browse_button)
@@ -313,13 +315,13 @@ class BiProfileTab:
             f"{len(bi[ref]['time'])} time pts, {len(bi[ref]['psin'])} \u03c8\u2099 pts")
 
         self.browse_button.setEnabled(True)
-        self.browse_button.setText(f"#{shot} Preview")
+        self.browse_button.setText(f"Browse #{shot}")
 
     def _open_browse(self):
         if not self._current_data:
             return
-        from ui.widgets.biprofile_browse_dialog import BiProfileBrowseDialog
-        dlg = BiProfileBrowseDialog(
+        from ui.widgets.preview_dialog import BiProfilePreviewDialog
+        dlg = BiProfilePreviewDialog(
             self.frame, self._current_data['bi'], self._current_shot,
             self.params, mode='profile',
             selected_listbox=self.selected_listbox,
@@ -336,6 +338,184 @@ class BiProfileTab:
     def _remove_items(self):
         for item in reversed(self.selected_listbox.selectedItems()):
             self.selected_listbox.takeItem(self.selected_listbox.row(item))
+
+    # ---- Style Dialog ----
+
+    # ---- 4. Save Data ----
+
+    def _create_save_controls(self, parent):
+        group = QGroupBox("4. Save Data")
+        layout = QVBoxLayout(group)
+        btn = QPushButton("Preview && Save")
+        btn.clicked.connect(self._preview_and_save)
+        layout.addWidget(btn)
+        parent.layout().addWidget(group)
+
+    def _preview_and_save(self):
+        lines = self._build_csv_lines()
+        if not lines:
+            QMessageBox.warning(self.frame, "Warning", "No data to preview")
+            return
+        self._show_data_preview(lines)
+
+    def _build_csv_lines(self):
+        entries = [self.selected_listbox.item(i).text()
+                   for i in range(self.selected_listbox.count())]
+        if not entries or not self._current_data:
+            return None
+
+        bi = self._current_data['bi']
+        lines = []
+        lines.append(f"# BiProfile Data\n")
+        header_parts = ["Shot", "Time[s]", "psi_N"]
+        for p in self.params:
+            units = UNITS.get(p, '')
+            header_parts.append(f"{p}[{units}]")
+            header_parts.append(f"{p}_unc")
+        lines.append("#" + ','.join(f"{h:>12s}" for h in header_parts) + "\n")
+
+        for entry in entries:
+            s, t_target = self._parse_entry(entry)
+            for col, param in enumerate(self.params):
+                if param not in bi:
+                    continue
+                d = bi[param]
+                t_idx = np.argmin(np.abs(d['time'] - t_target))
+                t_actual = d['time'][t_idx]
+                psin = d['psin']
+                mean_p = d['mean'][:, t_idx]
+                unc_p = d['unc'][:, t_idx]
+
+                if col == 0:
+                    # First param: store psin and values
+                    n_psi = len(psin)
+                    shot_col = [str(s)] * n_psi
+                    time_col = [f"{t_actual:.4f}"] * n_psi
+                    psin_col = psin
+                    data_cols = {param: (mean_p, unc_p)}
+                else:
+                    data_cols[param] = (mean_p, unc_p)
+
+            for i in range(n_psi):
+                row = f" {shot_col[i]:>12s},{time_col[i]:>12s},{psin_col[i]:>12.6f}"
+                for p in self.params:
+                    if p in data_cols:
+                        m, u = data_cols[p]
+                        row += f",{m[i]:>12.6e},{u[i]:>12.6e}"
+                    else:
+                        row += f",{'':>12s},{'':>12s}"
+                lines.append(row + "\n")
+
+        return lines
+
+    def _show_data_preview(self, lines):
+        from PySide6.QtGui import QFont, QKeySequence
+
+        headers = []
+        data_rows = []
+        title_line = ""
+        last_comment_with_comma = None
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith('#'):
+                content = stripped.lstrip('#').strip()
+                if ',' in content:
+                    last_comment_with_comma = content
+                else:
+                    title_line = content
+            else:
+                if not headers and last_comment_with_comma:
+                    headers = [h.strip() for h in last_comment_with_comma.split(',')]
+                data_rows.append([c.strip() for c in stripped.split(',')])
+
+        if not data_rows:
+            QMessageBox.information(self.frame, "Preview", "No data to display")
+            return
+
+        n_cols = len(headers) if headers else len(data_rows[0])
+        n_rows = len(data_rows)
+
+        dlg = QDialog(self.frame)
+        dlg.setWindowTitle(f"Data Preview — {title_line}" if title_line else "Data Preview")
+        dlg.resize(min(120 * n_cols, 1200), min(30 * n_rows + 100, 700))
+        dl = QVBoxLayout(dlg)
+
+        info = QLabel(f"{n_rows} rows \u00d7 {n_cols} columns")
+        info.setStyleSheet("color: gray;")
+        dl.addWidget(info)
+
+        table = QTableWidget(n_rows, n_cols)
+        table.setFont(QFont('Courier', 9))
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        if headers:
+            table.setHorizontalHeaderLabels(headers)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        table.verticalHeader().setDefaultSectionSize(24)
+
+        for r, row in enumerate(data_rows):
+            for c, val in enumerate(row):
+                if c < n_cols:
+                    table.setItem(r, c, QTableWidgetItem(val))
+
+        table.resizeColumnsToContents()
+        for c in range(n_cols):
+            if table.columnWidth(c) > 150:
+                table.setColumnWidth(c, 150)
+
+        dl.addWidget(table)
+
+        def _copy_selection():
+            sel = table.selectedRanges()
+            if not sel:
+                return
+            rows = range(sel[0].topRow(), sel[0].bottomRow() + 1)
+            cols = range(sel[0].leftColumn(), sel[0].rightColumn() + 1)
+            text = '\n'.join(
+                '\t'.join((table.item(r, c).text() if table.item(r, c) else '')
+                          for c in cols) for r in rows)
+            QApplication.clipboard().setText(text)
+        QShortcut(QKeySequence.Copy, table).activated.connect(_copy_selection)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        save_btn = QPushButton("Save as .csv")
+        def _save():
+            import os
+            path, _ = QFileDialog.getSaveFileName(
+                dlg, "Save Data", os.path.expanduser("~"),
+                "CSV files (*.csv);;All files (*)")
+            if not path:
+                return
+            if not os.path.splitext(path)[1]:
+                path += '.csv'
+            with open(path, 'w') as f:
+                f.writelines(lines)
+            QMessageBox.information(dlg, "Saved", f"Data saved to {path}")
+        save_btn.clicked.connect(_save)
+        btn_row.addWidget(save_btn)
+
+        copy_btn = QPushButton("Copy to Clipboard")
+        def _copy_all():
+            text = '\t'.join(headers) + '\n' if headers else ''
+            text += '\n'.join('\t'.join(row) for row in data_rows)
+            QApplication.clipboard().setText(text)
+            copy_btn.setText("Copied!")
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1500, lambda: copy_btn.setText("Copy to Clipboard"))
+        copy_btn.clicked.connect(_copy_all)
+        btn_row.addWidget(copy_btn)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dlg.close)
+        btn_row.addWidget(close_btn)
+
+        dl.addLayout(btn_row)
+        dlg.show()
 
     # ---- Style Dialog ----
 
@@ -378,6 +558,7 @@ class BiProfileTab:
             self._color_mode = color_combo.currentText()
             for spin in dlg.findChildren(QSpinBox):
                 setattr(self, spin.property('attr'), spin.value())
+            self._plot()
         def _reset():
             color_combo.setCurrentText("Gradient(viridis)")
             for spin in dlg.findChildren(QSpinBox):

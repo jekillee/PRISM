@@ -27,7 +27,9 @@ from ui.theme import ThemeManager
 
 _ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
 
-_CATEGORY_ORDER = ["Profiles", "Time Traces", "Spectral", "Imaging", "TRANSP", "Other"]
+_CATEGORY_ORDER = ["Profiles", "Time Traces", "Spectral", "Imaging",
+                    "BiProfile Profiles", "BiProfile Time Traces",
+                    "TRANSP Profiles", "TRANSP Time Traces", "Other"]
 
 # Tab types highlighted with accent color in sidebar
 _NEW_TABS = set()  # no accent-colored tabs
@@ -41,10 +43,10 @@ _TAB_TYPE_TO_CATEGORY = {
     'tv_startup': "Imaging",
     'irvb': "Imaging",
     'neutron': "Time Traces",
-    'bi_profile': "Profiles",
-    'bi_timetrace': "Time Traces",
-    'transp_profile': "TRANSP",
-    'transp_timetrace': "TRANSP",
+    'bi_profile': "BiProfile Profiles",
+    'bi_timetrace': "BiProfile Time Traces",
+    'transp_profile': "TRANSP Profiles",
+    'transp_timetrace': "TRANSP Time Traces",
 }
 
 
@@ -146,28 +148,79 @@ class SidebarNav(QWidget):
         saved = get_tab_settings('sidebar')
         collapsed_cats = saved.get('collapsed_categories', [])
 
-        self._cat_items = {}  # {cat_name: QTreeWidgetItem}
+        self._cat_items = {}  # {cat_key: QTreeWidgetItem}
+        _roots = {}  # {parent_name: root QTreeWidgetItem}
 
         for cat_name, items in _categorize_tabs(self.tab_configs):
-            expanded = cat_name not in collapsed_cats
-            arrow = '\u25bc' if expanded else '\u25b6'  # ▼ or ▶
+            # Detect parent group (e.g. "BiProfile Profiles" → parent "BiProfile", sub "Profiles")
+            parts = cat_name.split(' ', 1)
+            if len(parts) == 2 and parts[0] in ('BiProfile', 'TRANSP'):
+                parent_name, sub_name = parts
+            else:
+                parent_name, sub_name = None, None
 
-            cat_item = QTreeWidgetItem(self.tree)
-            cat_item.setText(0, f" {arrow} {cat_name}")
-            cat_item.setFlags(Qt.ItemIsEnabled)
-            font = cat_item.font(0)
-            font.setBold(True)
-            font.setPointSize(10)
-            cat_item.setFont(0, font)
-            cat_item.setForeground(0, QColor("#888888"))
-            cat_item.setData(0, Qt.UserRole + 1, cat_name)
+            if parent_name:
+                # Create parent root if not yet
+                if parent_name not in _roots:
+                    p_expanded = parent_name not in collapsed_cats
+                    p_arrow = '\u25bc' if p_expanded else '\u25b6'
+                    root = QTreeWidgetItem(self.tree)
+                    root.setText(0, f" {p_arrow} {parent_name}")
+                    root.setFlags(Qt.ItemIsEnabled)
+                    root.setData(0, Qt.UserRole + 1, parent_name)
+                    font = root.font(0)
+                    font.setBold(True); font.setPointSize(10)
+                    root.setFont(0, font)
+                    root.setForeground(0, QColor("#888888"))
+                    root.setExpanded(p_expanded)
+                    self._cat_items[parent_name] = root
+                    _roots[parent_name] = root
 
-            for tab_index, tab_name, tab_type in items:
-                child = QTreeWidgetItem(cat_item)
-                child.setText(0, f"    {tab_name}")
-                child.setData(0, Qt.UserRole, tab_index)
+                # TRANSP: flat (tabs directly under root)
+                # BiProfile: sub-categories under root
+                if parent_name == 'TRANSP':
+                    for tab_index, tab_name, tab_type in items:
+                        child = QTreeWidgetItem(_roots[parent_name])
+                        child.setText(0, f"    {tab_name}")
+                        child.setData(0, Qt.UserRole, tab_index)
+                else:
+                    cat_key = f"{parent_name}/{cat_name}"
+                    expanded = cat_key not in collapsed_cats
+                    arrow = '\u25bc' if expanded else '\u25b6'
+                    cat_item = QTreeWidgetItem(_roots[parent_name])
+                    cat_item.setText(0, f"  {arrow} {sub_name}")
+                    cat_item.setFlags(Qt.ItemIsEnabled)
+                    cat_item.setData(0, Qt.UserRole + 1, cat_key)
+                    cat_font = cat_item.font(0)
+                    cat_font.setBold(True)
+                    cat_item.setFont(0, cat_font)
+                    cat_item.setForeground(0, QColor("#888888"))
+                    cat_item.setExpanded(expanded)
+                    self._cat_items[cat_key] = cat_item
 
-            cat_item.setExpanded(expanded)
+                    for tab_index, tab_name, tab_type in items:
+                        child = QTreeWidgetItem(cat_item)
+                        child.setText(0, f"      {tab_name}")
+                        child.setData(0, Qt.UserRole, tab_index)
+            else:
+                # Top-level category (Profiles, Time Traces, etc.)
+                expanded = cat_name not in collapsed_cats
+                arrow = '\u25bc' if expanded else '\u25b6'
+                cat_item = QTreeWidgetItem(self.tree)
+                cat_item.setText(0, f" {arrow} {cat_name}")
+                cat_item.setFlags(Qt.ItemIsEnabled)
+                cat_item.setData(0, Qt.UserRole + 1, cat_name)
+                font = cat_item.font(0)
+                font.setBold(True); font.setPointSize(10)
+                cat_item.setFont(0, font)
+                cat_item.setForeground(0, QColor("#888888"))
+                cat_item.setExpanded(expanded)
+                self._cat_items[cat_name] = cat_item
+
+                for tab_index, tab_name, tab_type in items:
+                    child = QTreeWidgetItem(cat_item)
+                    child.setText(0, f"    {tab_name}")
+                    child.setData(0, Qt.UserRole, tab_index)
             self._cat_items[cat_name] = cat_item
 
     def _on_category_toggled(self, item):
@@ -175,8 +228,12 @@ class SidebarNav(QWidget):
         cat_key = item.data(0, Qt.UserRole + 1)
         if cat_key is None:
             return
-        # Display label: use part after '/' for sub-categories, full key for roots
-        display = cat_key.split('/')[-1] if '/' in cat_key else cat_key
+        # Display label: strip parent prefix for sub-categories
+        if '/' in cat_key:
+            parent, sub = cat_key.split('/', 1)
+            display = sub.replace(f"{parent} ", "") if sub.startswith(parent) else sub
+        else:
+            display = cat_key
         # Indent: sub-categories get extra space
         indent = "  " if '/' in cat_key else " "
         arrow = '\u25bc' if item.isExpanded() else '\u25b6'
@@ -200,10 +257,9 @@ class SidebarNav(QWidget):
 
         self._cat_items = {}
 
-        _BI_CATS = {"Profiles", "Time Traces"}
         categorized = _categorize_tabs(self.tab_configs)
-        bi_cats = [(n, items) for n, items in categorized if n in _BI_CATS]
-        transp_cats = [(n, items) for n, items in categorized if n not in _BI_CATS]
+        bi_cats = [(n, items) for n, items in categorized if n.startswith("BiProfile")]
+        transp_cats = [(n, items) for n, items in categorized if n.startswith("TRANSP")]
 
         def _add_root(label, cats, flat=False):
             expanded = label not in collapsed_cats
@@ -234,7 +290,9 @@ class SidebarNav(QWidget):
                     cat_arrow = '\u25bc' if cat_expanded else '\u25b6'
 
                     cat_item = QTreeWidgetItem(root)
-                    cat_item.setText(0, f"  {cat_arrow} {cat_name}")
+                    # Strip root prefix for display (e.g. "BiProfile Profiles" → "Profiles")
+                    display_name = cat_name.replace(f"{label} ", "") if cat_name.startswith(label) else cat_name
+                    cat_item.setText(0, f"  {cat_arrow} {display_name}")
                     cat_item.setFlags(Qt.ItemIsEnabled)
                     cat_item.setData(0, Qt.UserRole + 1, cat_key)
                     cat_font = cat_item.font(0)
@@ -386,9 +444,9 @@ class PRISMApp(QMainWindow):
             {'diagnostic': None, 'tab_type': 'bi_timetrace',
              'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
             {'diagnostic': None, 'tab_type': 'transp_profile',
-             'tab_name': 'Profile'},
+             'tab_name': 'Profiles'},
             {'diagnostic': None, 'tab_type': 'transp_timetrace',
-             'tab_name': 'Time Trace'},
+             'tab_name': 'Time Traces'},
         ]
 
     def fetch_biprofile_shot(self, shot):
@@ -505,6 +563,26 @@ class PRISMApp(QMainWindow):
                 'tab_name': TabFactory.get_tab_name(None, special_type)
             })
 
+        # BiProfile tabs
+        self.tab_configs.extend([
+            {'diagnostic': None, 'tab_type': 'bi_profile',
+             'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
+            {'diagnostic': None, 'tab_type': 'bi_profile',
+             'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
+            {'diagnostic': None, 'tab_type': 'bi_timetrace',
+             'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
+            {'diagnostic': None, 'tab_type': 'bi_timetrace',
+             'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
+        ])
+
+        # TRANSP CDF tabs
+        self.tab_configs.append({
+            'diagnostic': None, 'tab_type': 'transp_profile',
+            'tab_name': 'Profiles'})
+        self.tab_configs.append({
+            'diagnostic': None, 'tab_type': 'transp_timetrace',
+            'tab_name': 'Time Traces'})
+
     # ------------------------------------------------------------------
     # Tab Selector Mode (prism select)
     # ------------------------------------------------------------------
@@ -541,18 +619,64 @@ class PRISMApp(QMainWindow):
         header_layout.addStretch()
         layout.addWidget(header)
 
-        # Categorized buttons (one row per category, equal-width buttons)
-        for cat_name, items in _categorize_tabs(self.tab_configs):
-            cat_label = QLabel(cat_name)
-            cat_label.setStyleSheet(
-                "color: #888; font-size: 10px; font-weight: bold; "
-                "padding: 4px 0 1px 0;"
-            )
-            layout.addWidget(cat_label)
+        # Categorized buttons
+        _HEADER_STYLE = ("color: #0d6efd; font-size: 11px; font-weight: bold; "
+                         "padding: 6px 0 1px 0;")
+        _SUB_STYLE = ("color: #888; font-size: 10px; font-weight: bold; "
+                      "padding: 2px 0 1px 8px;")
+        def _lbl(text, style):
+            l = QLabel(text); l.setStyleSheet(style); return l
+
+        categorized = _categorize_tabs(self.tab_configs)
+        last_parent = None
+        # Collect TRANSP items to merge into one row
+        _transp_items = []
+
+        for cat_name, items in categorized:
+            parts = cat_name.split(' ', 1)
+            if len(parts) == 2 and parts[0] in ('BiProfile', 'TRANSP'):
+                parent, sub = parts
+            else:
+                parent, sub = None, cat_name
+
+            # TRANSP: collect all items, render later as one row
+            if parent == 'TRANSP':
+                if parent != last_parent:
+                    _transp_items = []
+                _transp_items.extend(items)
+                last_parent = parent
+                continue
+
+            # Show parent header (BiProfile)
+            if parent and parent != last_parent:
+                layout.addWidget(_lbl(parent, _HEADER_STYLE))
+            last_parent = parent
+
+            if parent:
+                # Sub-category label (indented)
+                layout.addWidget(_lbl(f"  {sub}", _SUB_STYLE))
+            else:
+                # Top-level category
+                layout.addWidget(_lbl(cat_name, _HEADER_STYLE))
 
             btn_row = QHBoxLayout()
             btn_row.setSpacing(4)
             for tab_index, tab_name, tab_type in items:
+                btn = QPushButton(tab_name)
+                btn.setFixedHeight(26)
+                btn.setStyleSheet("font-size: 11px; padding: 2px 8px;")
+                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.clicked.connect(partial(self._launch_single_tab, tab_index))
+                btn_row.addWidget(btn, 1)
+            layout.addLayout(btn_row)
+
+        # TRANSP: header + single row of buttons
+        if _transp_items:
+            layout.addWidget(_lbl("TRANSP", _HEADER_STYLE))
+            btn_row = QHBoxLayout()
+            btn_row.setSpacing(4)
+            for tab_index, tab_name, tab_type in _transp_items:
                 btn = QPushButton(tab_name)
                 btn.setFixedHeight(26)
                 btn.setStyleSheet("font-size: 11px; padding: 2px 8px;")

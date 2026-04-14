@@ -197,11 +197,14 @@ class BaseTab(ABC):
         outer_frame = QGroupBox("2. Select Data", parent)
         outer_layout = QVBoxLayout(outer_frame)
 
-        # Browse button (profile tabs only) — top of section
-        if self.tab_type == 'profile':
+        # Browse button — top of section
+        if self.tab_type in ('profile', 'timetrace'):
             self.browse_button = QPushButton("Fetch a shot to browse")
             self.browse_button.setEnabled(False)
-            self.browse_button.clicked.connect(self._open_preview)
+            if self.tab_type == 'profile':
+                self.browse_button.clicked.connect(self._open_preview)
+            else:
+                self.browse_button.clicked.connect(self._open_timetrace_preview)
             outer_layout.addWidget(self.browse_button)
 
         # Main content layout: available list | buttons | selected list
@@ -414,12 +417,12 @@ class BaseTab(ABC):
                                     "No data loaded. Fetch a shot first.")
             return
 
-        from ui.widgets.preview_dialog import ProfileBrowseDialog
+        from ui.widgets.preview_dialog import ProfilePreviewDialog
 
         # info is 7 or 8 elements (8th is optional extra_data like ECE)
         extra_data = info[7] if len(info) > 7 else None
         data, shot, source, p1_name, p2_name, p1_label, p2_label = info[:7]
-        dlg = ProfileBrowseDialog(
+        dlg = ProfilePreviewDialog(
             self.frame, data, shot, source,
             p1_name, p2_name, p1_label, p2_label,
             selected_listbox=self.selected_listbox,
@@ -432,6 +435,31 @@ class BaseTab(ABC):
         """Return (data, shot, source, p1_name, p2_name, p1_label, p2_label)
         or None if no data available. Override in subclasses."""
         return None
+
+    def _open_timetrace_preview(self):
+        """Open browse dialog for time trace channels."""
+        channels = self._get_timetrace_preview_channels()
+        if not channels:
+            QMessageBox.information(self.frame, "Browse",
+                                    "No data loaded. Fetch a shot first.")
+            return
+
+        from ui.widgets.preview_dialog import TimeTracePreviewDialog
+
+        shot = channels[0].get('shot', 0)
+        source = channels[0].get('source', '')
+        dlg = TimeTracePreviewDialog(
+            self.frame, shot, source,
+            self.param1['label'], self.param2['label'],
+            channels, selected_listbox=self.selected_listbox)
+        dlg.show()
+
+    def _get_timetrace_preview_channels(self):
+        """Return list of channel dicts for TimeTracePreviewDialog.
+        Override in timetrace subclasses. Each dict must have:
+            entry, label, time, param1, param2, shot, source
+        """
+        return []
 
     # ===== Common action methods =====
 

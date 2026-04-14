@@ -189,7 +189,7 @@ class NeTeProfileTab(ProfileBaseTab):
 
             if hasattr(self, 'browse_button'):
                 self.browse_button.setEnabled(True)
-                self.browse_button.setText(f"#{shot_number} Preview")
+                self.browse_button.setText(f"Browse #{shot_number}")
 
         except ValueError:
             QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")

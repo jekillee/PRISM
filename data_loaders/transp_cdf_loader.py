@@ -31,7 +31,7 @@ def load_transp_cdf(filepath):
         dn = dim_name.upper()
         if 'TIME' in dn:
             time_dims.add(dim_name)
-        if dn in ('X', 'XB', 'X2', 'XB2'):
+        if dn in ('X', 'XB', 'X2', 'XB2', 'XRHO', 'XRHOB'):
             spatial_dims.add(dim_name)
 
     profiles = {}
@@ -78,9 +78,16 @@ def load_transp_cdf(filepath):
                     'units': _get_attr(var, 'units', ''),
                     'time': time.astype(np.float64),
                     'x': x.astype(np.float64),
-                    'x_label': x_dim,
+                    'x_dim': x_dim,
                     'data': data.astype(np.float64),
                 }
+
+    # Extract coordinate mapping arrays for x-axis conversion
+    coords = {}
+    for cname in ('PLFLX', 'RMNMP', 'RMJMP', 'RMAJM'):
+        if cname in nc.variables:
+            cdata = _get_data(nc.variables[cname]).astype(np.float64)
+            coords[cname] = cdata
 
     _close_netcdf(nc)
     print(f"[TRANSP] Loaded {label}: {len(profiles)} profiles, "
@@ -90,6 +97,7 @@ def load_transp_cdf(filepath):
         'label': label,
         'profiles': profiles,
         'timetraces': timetraces,
+        'coords': coords,
     }
 
 

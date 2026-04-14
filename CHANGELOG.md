@@ -5,6 +5,32 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.2] - 2026-04-14
+
+### Added
+- **Time Trace Browse**: Slider-based channel browsing in all Time Trace tabs (Ti/vT, ne/Te, MSE). Browse button in Select Data section
+- **TRANSP Browse Dialogs**: Profile Browse (variable selector + time slider) and Time Trace Browse (variable selector, all runs plotted)
+- **TRANSP X-axis Selection**: R/ψ_N/ρ_pol/ρ_tor radio buttons in Plot section (same layout as PRISM Profiles). R = LFS major radius [m]
+- **TRANSP Preview & Save**: Spreadsheet-style data preview with Copy to Clipboard and Save as .csv (PRISM-style format with all coordinate columns)
+- **BiProfile Preview & Save**: Same Preview & Save for both BiProfile Profile and Time Trace tabs
+- **BiProfile/TRANSP in prism -s**: Tab selector now includes BiProfile and TRANSP tabs with grouped layout
+- **BiProfile/TRANSP in full PRISM sidebar**: Hierarchical categories (BiProfile > Profiles/Time Traces, TRANSP flat)
+
+### Changed
+- **Browse Rename**: All "Preview" buttons renamed to "Browse" across all tabs (PRISM, BiProfile, TRANSP). "Preview" reserved for Save Data section
+- **Preview Dialog Consolidation**: All preview dialogs merged into single `preview_dialog.py` (ProfilePreviewDialog, TimeTracePreviewDialog, TranspProfilePreviewDialog, TranspTimeTracePreviewDialog, BiProfilePreviewDialog)
+- **TRANSP Profile Workflow**: Open CDF keeps cache for cross-CDF comparison; Selected list preserved across CDF opens; re-selecting same CDF switches without reload
+- **TRANSP CDF Filter**: `.CDF` only by default in file dialog
+- **TRANSP Status Label**: Moved to Load CDF section; colored (green) instead of gray
+- **Plot Option Auto-apply**: Font size changes in Option dialog now immediately re-plot (all custom tabs)
+- **Selector UI**: Category headers in blue (#0d6efd); TRANSP shown as single button row without sub-labels
+- **Variable Settings**: TRANSP variable selection saved/restored across sessions
+
+### Fixed
+- **TRANSP Filter**: Filtering to non-matching text no longer clears Available listbox
+- **TRANSP CDF Reopen**: Previously opened CDF can be re-selected (switches via cache instead of being silently ignored)
+- **prism -b/--bi removed**: Only `-t`/`--transp`/`transp` supported
+
 ## [2.4.1] - 2026-04-14
 
 ### Added
@@ -19,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BiProfile Settings Persistence**: Shot number, color mode, font sizes, show nodes, TS scale state saved/restored across sessions
 
 ### Changed
-- **`prism transp` Command**: Renamed from `prism bi` (`-b`/`--bi`/`-t` kept as aliases). Window title: "TRANSP Viewer"
+- **`prism transp` Command**: Renamed from `prism bi` (old aliases removed). Launch via `-t`/`--transp`/`transp`. Window title: "TRANSP Viewer"
 - **Startup Banner & What's New**: Now shown in all modes (full, select, transp)
 - **BiProfile Default Colormap**: Changed from Fixed(tab10) to Gradient(viridis) for all BiProfile tabs
 - **BiProfile TS ne Scale**: Scale applied by default; toggle renamed to "Unapply TS ne Scale"

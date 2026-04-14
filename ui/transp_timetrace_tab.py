@@ -11,8 +11,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QScrollArea, QLayout,
     QGroupBox, QLabel, QLineEdit, QPushButton, QFrame,
     QListWidget, QAbstractItemView, QComboBox, QFileDialog,
-    QApplication, QStyle, QSpinBox,
+    QApplication, QMessageBox, QStyle, QSpinBox,
     QDialog, QDialogButtonBox,
+    QTableWidget, QTableWidgetItem, QHeaderView,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -76,7 +77,9 @@ class TranspTimeTraceTab:
 
         self._create_load_section(control_frame)
         self._create_select_section(control_frame)
+        self._create_var_section(control_frame)
         self._create_plot_controls(control_frame)
+        self._create_save_section(control_frame)
         control_layout.addStretch()
 
     # ---- 1. Load CDF ----
@@ -89,6 +92,10 @@ class TranspTimeTraceTab:
         open_btn.clicked.connect(self._open_cdf)
         layout.addWidget(open_btn)
 
+        self.cdf_status = QLabel("")
+        self.cdf_status.setWordWrap(True)
+        layout.addWidget(self.cdf_status)
+
         parent.layout().addWidget(group)
 
     # ---- 2. Select Data ----
@@ -99,35 +106,11 @@ class TranspTimeTraceTab:
         self._select_group = group
         layout = QVBoxLayout(group)
 
-        # Loaded CDF status
-        self.cdf_status = QLabel("No CDF loaded")
-        self.cdf_status.setWordWrap(True)
-        layout.addWidget(self.cdf_status)
-
-        # Variable filter + combo
-        filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("Filter"))
-        self.var_filter = QLineEdit()
-        self.var_filter.setPlaceholderText("Type to filter variables...")
-        self.var_filter.textChanged.connect(self._update_var_combo)
-        filter_row.addWidget(self.var_filter, 1)
-        layout.addLayout(filter_row)
-
-        var_row = QHBoxLayout()
-        var_row.addWidget(QLabel("Variable"))
-        self.var_combo = QComboBox()
-        self.var_combo.setMaxVisibleItems(20)
-        self.var_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        self.var_combo.setMinimumContentsLength(10)
-        self.var_combo.setStyleSheet("QComboBox { combobox-popup: 0; }")
-        self.var_combo.view().setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        var_row.addWidget(self.var_combo, 1)
-        layout.addLayout(var_row)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(sep)
+        # Preview button
+        self.preview_button = QPushButton("Load a CDF to browse")
+        self.preview_button.setEnabled(False)
+        self.preview_button.clicked.connect(self._open_preview)
+        layout.addWidget(self.preview_button)
 
         # Selected run IDs (populated on CDF load)
         layout.addWidget(QLabel("Selected Runs"))
@@ -145,10 +128,34 @@ class TranspTimeTraceTab:
 
         parent.layout().addWidget(group)
 
-    # ---- 3. Plot ----
+    def _create_var_section(self, parent):
+        group = QGroupBox("3. Select TRANSP Variable")
+        group.setEnabled(False)
+        self._var_group = group
+        layout = QVBoxLayout(group)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Filter"))
+        self.var_filter = QLineEdit()
+        self.var_filter.setPlaceholderText("Type to filter...")
+        self.var_filter.textChanged.connect(self._update_var_combo)
+        filter_row.addWidget(self.var_filter, 1)
+        layout.addLayout(filter_row)
+
+        self.var_combo = QComboBox()
+        self.var_combo.setMaxVisibleItems(20)
+        self.var_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.var_combo.setMinimumContentsLength(10)
+        self.var_combo.setStyleSheet("QComboBox { combobox-popup: 0; }")
+        self.var_combo.view().setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        layout.addWidget(self.var_combo)
+
+        parent.layout().addWidget(group)
+
+    # ---- 4. Plot ----
 
     def _create_plot_controls(self, parent):
-        group = QGroupBox("3. Plot")
+        group = QGroupBox("4. Plot")
         layout = QVBoxLayout(group)
 
         btn_row = QHBoxLayout()
@@ -160,6 +167,16 @@ class TranspTimeTraceTab:
         btn_row.addWidget(opt_btn, 1)
         layout.addLayout(btn_row)
 
+        parent.layout().addWidget(group)
+
+    # ---- 5. Save Data ----
+
+    def _create_save_section(self, parent):
+        group = QGroupBox("5. Save Data")
+        layout = QVBoxLayout(group)
+        btn = QPushButton("Preview && Save")
+        btn.clicked.connect(self._preview_and_save)
+        layout.addWidget(btn)
         parent.layout().addWidget(group)
 
     # ================================================================
@@ -192,7 +209,7 @@ class TranspTimeTraceTab:
     def _open_cdf(self):
         start_dir = getattr(self, '_last_cdf_dir', self._default_cdf_dir())
         dlg = QFileDialog(self.frame, "Open TRANSP CDF", start_dir,
-                          "CDF files (*.CDF *.cdf *.nc);;All files (*)")
+                          "TRANSP CDF (*.CDF);;All files (*)")
         dlg.setFileMode(QFileDialog.ExistingFile)
         dlg.setWindowModality(Qt.NonModal)
         dlg.fileSelected.connect(self._on_cdf_selected)
@@ -219,6 +236,24 @@ class TranspTimeTraceTab:
         self._update_selected_runs()
         self._update_cdf_status()
         self._select_group.setEnabled(bool(self._cdf_cache))
+        self._var_group.setEnabled(bool(self._cdf_cache))
+
+        if self._cdf_cache:
+            label = list(self._cdf_cache.keys())[-1]
+            self._preview_label = label
+            shot, run = self._parse_run_label(label)
+            self.preview_button.setEnabled(True)
+            self.preview_button.setText(f"Browse #{shot} ({run})")
+
+    def _open_preview(self):
+        label = getattr(self, '_preview_label', None)
+        if not label or label not in self._cdf_cache:
+            return
+
+        from ui.widgets.preview_dialog import TranspTimeTracePreviewDialog
+        dlg = TranspTimeTracePreviewDialog(
+            self.frame, {label: self._cdf_cache[label]}, [label])
+        dlg.show()
 
     def _update_cdf_status(self, color='green'):
         if not self._cdf_cache:
@@ -258,11 +293,13 @@ class TranspTimeTraceTab:
         self.var_combo.clear()
         for vn, display in filtered:
             self.var_combo.addItem(display, vn)
-        if current_var:
+        restore_var = current_var or getattr(self, '_pending_variable', None)
+        if restore_var:
             for i in range(self.var_combo.count()):
-                if self.var_combo.itemData(i) == current_var:
+                if self.var_combo.itemData(i) == restore_var:
                     self.var_combo.setCurrentIndex(i)
                     break
+            self._pending_variable = None
         self.var_combo.blockSignals(False)
 
     def _update_selected_runs(self):
@@ -286,6 +323,7 @@ class TranspTimeTraceTab:
         self._update_cdf_status()
         if not self._cdf_cache:
             self._select_group.setEnabled(False)
+            self._var_group.setEnabled(False)
 
     # ================================================================
     # Plotting
@@ -337,7 +375,7 @@ class TranspTimeTraceTab:
                 units_seen.add(tt['units'])
                 shot, run = self._parse_run_label(label)
                 ax.plot(tt['time'], tt['data'], '-', color=colors[idx],
-                        lw=1.5, label=f'#{shot} ({run})')
+                        lw=1.5, marker='.', markersize=3, label=f'#{shot} ({run})')
             except Exception as e:
                 print(f"[TRANSP] Error plotting {var_name} ({label}): {e}")
 
@@ -352,6 +390,165 @@ class TranspTimeTraceTab:
             left=0.12, right=0.97, top=0.95, bottom=0.10)
         apply_dark_figure_style(self.figure)
         self.canvas.draw_idle()
+
+    # ================================================================
+    # Style dialog
+    # ================================================================
+
+    # ================================================================
+    # Preview & Save
+    # ================================================================
+
+    def _build_csv_lines(self):
+        """Build CSV lines in PRISM export format."""
+        import re
+        var_name = self.var_combo.currentData()
+        run_labels = [self.selected_listbox.item(i).data(Qt.UserRole)
+                      for i in range(self.selected_listbox.count())]
+        if not var_name or not run_labels:
+            return None
+
+        units = ''
+        for cdf in self._cdf_cache.values():
+            if var_name in cdf['timetraces']:
+                units = cdf['timetraces'][var_name].get('units', '')
+                break
+
+        lines = []
+        lines.append(f"# TRANSP Time Trace: {var_name}\n")
+        lines.append(f"#%10s,%10s,%10s,%14s\n" % (
+            "Shot", "Run", "Time[s]", f"{var_name}[{units}]"))
+
+        for label in run_labels:
+            cdf = self._cdf_cache.get(label)
+            if cdf is None or var_name not in cdf['timetraces']:
+                continue
+            tt = cdf['timetraces'][var_name]
+            m = re.match(r'^(\d+)(.*)', label)
+            shot = m.group(1) if m else label
+            run = m.group(2) if m else ''
+
+            for t, v in zip(tt['time'], tt['data']):
+                lines.append(" %10s,%10s,%10.4f,%14.6e\n" % (shot, run, t, v))
+
+        return lines
+
+    def _preview_and_save(self):
+        lines = self._build_csv_lines()
+        if not lines:
+            QMessageBox.warning(self.frame, "Warning", "No data to preview")
+            return
+        self._show_data_preview(lines)
+
+    def _show_data_preview(self, lines):
+        """Show data in PRISM-style spreadsheet dialog."""
+        from PySide6.QtGui import QFont, QKeySequence
+
+        headers = []
+        data_rows = []
+        title_line = ""
+        last_comment_with_comma = None
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith('#'):
+                content = stripped.lstrip('#').strip()
+                if ',' in content:
+                    last_comment_with_comma = content
+                else:
+                    title_line = content
+            else:
+                if not headers and last_comment_with_comma:
+                    headers = [h.strip() for h in last_comment_with_comma.split(',')]
+                data_rows.append([c.strip() for c in stripped.split(',')])
+
+        if not data_rows:
+            QMessageBox.information(self.frame, "Preview", "No data to display")
+            return
+
+        n_cols = len(headers) if headers else len(data_rows[0])
+        n_rows = len(data_rows)
+
+        dlg = QDialog(self.frame)
+        dlg.setWindowTitle(f"Data Preview — {title_line}" if title_line else "Data Preview")
+        dlg.resize(min(120 * n_cols, 1200), min(30 * n_rows + 100, 700))
+        dl = QVBoxLayout(dlg)
+
+        info = QLabel(f"{n_rows} rows \u00d7 {n_cols} columns")
+        info.setStyleSheet("color: gray;")
+        dl.addWidget(info)
+
+        table = QTableWidget(n_rows, n_cols)
+        table.setFont(QFont('Courier', 9))
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        if headers:
+            table.setHorizontalHeaderLabels(headers)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        table.verticalHeader().setDefaultSectionSize(24)
+
+        for r, row in enumerate(data_rows):
+            for c, val in enumerate(row):
+                if c < n_cols:
+                    table.setItem(r, c, QTableWidgetItem(val))
+
+        table.resizeColumnsToContents()
+        for c in range(n_cols):
+            if table.columnWidth(c) > 150:
+                table.setColumnWidth(c, 150)
+
+        dl.addWidget(table)
+
+        def _copy_selection():
+            sel = table.selectedRanges()
+            if not sel:
+                return
+            rows = range(sel[0].topRow(), sel[0].bottomRow() + 1)
+            cols = range(sel[0].leftColumn(), sel[0].rightColumn() + 1)
+            text = '\n'.join(
+                '\t'.join((table.item(r, c).text() if table.item(r, c) else '')
+                          for c in cols) for r in rows)
+            QApplication.clipboard().setText(text)
+        QShortcut(QKeySequence.Copy, table).activated.connect(_copy_selection)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        save_btn = QPushButton("Save as .csv")
+        def _save():
+            import os
+            path, _ = QFileDialog.getSaveFileName(
+                dlg, "Save Data", os.path.expanduser("~"),
+                "CSV files (*.csv);;All files (*)")
+            if not path:
+                return
+            if not os.path.splitext(path)[1]:
+                path += '.csv'
+            with open(path, 'w') as f:
+                f.writelines(lines)
+            QMessageBox.information(dlg, "Saved", f"Data saved to {path}")
+        save_btn.clicked.connect(_save)
+        btn_row.addWidget(save_btn)
+
+        copy_btn = QPushButton("Copy to Clipboard")
+        def _copy_all():
+            text = '\t'.join(headers) + '\n' if headers else ''
+            text += '\n'.join('\t'.join(row) for row in data_rows)
+            QApplication.clipboard().setText(text)
+            copy_btn.setText("Copied!")
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(1500, lambda: copy_btn.setText("Copy to Clipboard"))
+        copy_btn.clicked.connect(_copy_all)
+        btn_row.addWidget(copy_btn)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dlg.close)
+        btn_row.addWidget(close_btn)
+
+        dl.addLayout(btn_row)
+        dlg.show()
 
     # ================================================================
     # Style dialog
@@ -399,6 +596,7 @@ class TranspTimeTraceTab:
             self._color_mode = color_combo.currentText()
             for spin in dlg.findChildren(QSpinBox):
                 setattr(self, spin.property('attr'), spin.value())
+            self._plot()
 
         def _reset():
             color_combo.setCurrentText("Gradient(viridis)")
@@ -422,6 +620,9 @@ class TranspTimeTraceTab:
         self.label_fontsize = s.get("label_fontsize", 12)
         self.legend_fontsize = s.get("legend_fontsize", 8)
         self.tick_fontsize = s.get("tick_fontsize", 10)
+        saved_var = s.get("variable", "")
+        if saved_var:
+            self._pending_variable = saved_var
 
     def save_settings(self):
         from config.user_settings import get_tab_settings, set_tab_settings
@@ -430,4 +631,5 @@ class TranspTimeTraceTab:
         s["label_fontsize"] = self.label_fontsize
         s["legend_fontsize"] = self.legend_fontsize
         s["tick_fontsize"] = self.tick_fontsize
+        s["variable"] = self.var_combo.currentData() or ""
         set_tab_settings(self._settings_key, s)

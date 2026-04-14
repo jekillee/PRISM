@@ -74,7 +74,7 @@ show_help() {
     echo "  (none)        Launch full PRISM with all tabs"
     echo "  -s, --select  Open tab selector to launch a single viewer"
     echo "  -t, --transp, transp  Launch TRANSP viewer (transport analysis profiles)
-  -b, --bi, bi          (alias for --transp)"
+"
     echo "  -h, --help    Show this help message"
     echo ""
     echo "Available Tabs:"
@@ -114,7 +114,7 @@ case "$1" in
         cd "$PRISM_HOME"
         $PYTHON_PATH main.py --select
         ;;
-    -t|--transp|transp|-b|--bi|bi)
+    -t|--transp|transp)
         cd "$PRISM_HOME"
         $PYTHON_PATH main.py --transp 2>/dev/null
         ;;

@@ -228,6 +228,11 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
 
             print(f"[ne/Te] Total channels loaded: {len(all_channels)}")
 
+            if hasattr(self, 'browse_button'):
+                self.browse_button.setEnabled(True)
+                self.browse_button.setText(f"Browse #{shot_number}")
+                self._last_shot = shot_number
+
         except ValueError:
             QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
         except Exception as e:
@@ -271,6 +276,34 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
             # Fallback
             radius = float(parts[1]) / 1e3 if len(parts) > 1 and parts[1] else 0
             return shot_number, radius, 'TS', diag_label, sampling_key
+
+    def _get_timetrace_preview_channels(self):
+        shot = getattr(self, '_last_shot', None)
+        if shot is None:
+            return []
+
+        channels = []
+
+        # Thomson channels
+        ts_key = f'{shot}_TS'
+        ts_data = self.data.get(ts_key)
+        if ts_data is not None:
+            Te_data, _ = ts_data.get_parameter('Te')
+            ne_data, _ = ts_data.get_parameter('ne')
+            for i, R in enumerate(ts_data.radius):
+                ch_label = f'TSC{i+1:02d}' if i < 14 else f'TSE{i-14+1:02d}'
+                channels.append({
+                    'entry': f'{shot:06d}_{R*1e3:.0f} ({ch_label})',
+                    'label': f'{ch_label} R={R*1e3:.0f}mm',
+                    'time': ts_data.time,
+                    'param1': Te_data[i, :],
+                    'param2': ne_data[i, :],
+                    'shot': shot,
+                    'source': 'TS',
+                })
+
+        channels.sort(key=lambda c: float(c['entry'].split('_')[1].split()[0]))
+        return channels
 
     def plot_data(self):
         """Plot time traces with markers only (no lines)"""

@@ -174,6 +174,12 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
         for ch in all_channels:
             self.available_listbox.addItem(ch['label'])
 
+        if hasattr(self, 'browse_button'):
+            self.browse_button.setEnabled(True)
+            self.browse_button.setText(f"Browse #{shot_number}")
+            self._last_shot = shot_number
+            self._last_source = analysis_type
+
     def load_file_data(self):
         """Load CES data from result file, sorted by R"""
         file_path = QFileDialog.getOpenFileName(
@@ -274,6 +280,48 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
         else:
             # File data: half-filled circle
             return {'marker': 'o', 'markerfacecolor': None, 'markeredgewidth': 1, 'fillstyle': 'right'}
+
+    def _get_timetrace_preview_channels(self):
+        shot = getattr(self, '_last_shot', None)
+        source = getattr(self, '_last_source', None)
+        if shot is None:
+            return []
+
+        channels = []
+        cache_key = f'{shot}_{source}'
+        data = self.data.get(cache_key)
+        if data is not None:
+            Ti_data, _ = data.get_parameter('Ti')
+            vT_data, _ = data.get_parameter('vT')
+            for i, R in enumerate(data.radius):
+                ch_label = f'{source}{i+1:02d}'
+                channels.append({
+                    'entry': f'{shot:06d}_{R*1e3:.0f} ({ch_label})',
+                    'label': f'{ch_label} R={R*1e3:.0f}mm',
+                    'time': data.time,
+                    'param1': Ti_data[i, :],
+                    'param2': vT_data[i, :],
+                    'shot': shot,
+                    'source': source,
+                })
+
+        xics_key = f'{shot}_XICS'
+        xics = self.xics_data_cache.get(xics_key)
+        if xics is not None:
+            Ti_x, _ = xics.get_parameter('Ti')
+            vT_x, _ = xics.get_parameter('vT')
+            channels.append({
+                'entry': f'{shot:06d}_1800 (XICS)',
+                'label': 'XICS R=1800mm',
+                'time': xics.time,
+                'param1': Ti_x[0, :],
+                'param2': vT_x[0, :],
+                'shot': shot,
+                'source': 'XICS',
+            })
+
+        channels.sort(key=lambda c: float(c['entry'].split('_')[1].split()[0]))
+        return channels
 
     def plot_data(self):
         """Plot time traces with markers"""

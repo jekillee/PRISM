@@ -157,6 +157,11 @@ class MSETimeTraceTab(TimeTraceBaseTab):
             print(f"[MSE] Data loaded: {np.sum(good_mask)} good channels")
             print(f"[MSE]   NB source: {data.nb_source}")
 
+            if hasattr(self, 'browse_button'):
+                self.browse_button.setEnabled(True)
+                self.browse_button.setText(f"Browse #{shot_number}")
+                self._last_shot = shot_number
+
         except ValueError:
             QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
         except Exception as e:
@@ -173,6 +178,47 @@ class MSETimeTraceTab(TimeTraceBaseTab):
         radius = float(parts[1]) / 1e3  # mm to m
 
         return shot_number, radius, ch_label
+
+    def _get_timetrace_preview_channels(self):
+        shot = getattr(self, '_last_shot', None)
+        if shot is None:
+            return []
+
+        mse_key = f'{shot}_MSE'
+        data = self.data.get(mse_key)
+        if data is None:
+            return []
+
+        channels = []
+        tgamma = data.measurements['tgamma']
+        good_mask = tgamma['good_mask']
+        R_raw = tgamma['R']
+        raw_channels = tgamma.get('raw_channels', list(range(1, 26)))
+        gamma_data = tgamma['data']
+
+        # Use the currently selected secondary parameter (q or j)
+        p2_name = getattr(self, '_current_param2', 'q')
+        p2_meas = data.measurements.get(p2_name)
+
+        for ch_idx in np.where(good_mask)[0]:
+            R_val = R_raw[ch_idx]
+            ch_num = raw_channels[ch_idx] if ch_idx < len(raw_channels) else ch_idx + 1
+            ch_label = f'MSE{ch_num:02d}'
+
+            p2_trace = None
+            if p2_meas is not None and ch_idx < p2_meas['data'].shape[0]:
+                p2_trace = p2_meas['data'][ch_idx, :]
+
+            channels.append({
+                'entry': f'{shot:06d}_{R_val*1e3:.0f} ({ch_label})',
+                'label': f'{ch_label} R={R_val*1e3:.0f}mm',
+                'time': data.time,
+                'param1': gamma_data[ch_idx, :],
+                'param2': p2_trace,
+                'shot': shot,
+                'source': 'MSE',
+            })
+        return channels
 
     def plot_data(self):
         """Plot time traces"""

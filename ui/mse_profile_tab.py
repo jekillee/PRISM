@@ -248,7 +248,7 @@ class MSEProfileTab(ProfileBaseTab):
             self._last_preview_data = (data, shot_number, 'MSE')
             if hasattr(self, 'browse_button'):
                 self.browse_button.setEnabled(True)
-                self.browse_button.setText(f"#{shot_number} Preview")
+                self.browse_button.setText(f"Browse #{shot_number}")
 
             print(f"[MSE] Data loaded: {len(data.time_prof)} timepoints")
             print(f"[MSE]   NB source: {data.nb_source}")
