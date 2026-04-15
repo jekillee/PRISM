@@ -192,19 +192,10 @@ class TVTab:
 
         grid.addLayout(shot_layout, 0, 1)
 
-        btn_layout = QHBoxLayout()
         fetch_btn = QPushButton('Fetch')
         fetch_btn.setFixedWidth(70)
         fetch_btn.clicked.connect(self._search_available_tvs)
-        btn_layout.addWidget(fetch_btn)
-
-        browse_btn = QPushButton()
-        browse_btn.setIcon(get_icon(QStyle.SP_DirOpenIcon))
-        browse_btn.setFixedWidth(30)
-        browse_btn.clicked.connect(self._load_zip_file)
-        btn_layout.addWidget(browse_btn)
-
-        grid.addLayout(btn_layout, 0, 2)
+        grid.addWidget(fetch_btn, 0, 2)
 
         # Row 1: TV dropdown and Load button
         grid.addWidget(QLabel('TV'), 1, 0)
@@ -218,15 +209,20 @@ class TVTab:
         load_btn.clicked.connect(self._load_selected_tv)
         grid.addWidget(load_btn, 1, 2)
 
+        # Open TV File button
+        browse_btn = QPushButton("Open TV File...")
+        browse_btn.clicked.connect(self._load_zip_file)
+        grid.addWidget(browse_btn, 2, 0, 1, 3)
+
         # File label
         self.file_label = QLabel("No file loaded")
         self.file_label.setWordWrap(True)
-        grid.addWidget(self.file_label, 2, 0, 1, 3)
+        grid.addWidget(self.file_label, 3, 0, 1, 3)
 
         # Loading status label
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: blue; font-weight: bold; font-size: 9pt;")
-        grid.addWidget(self.status_label, 3, 0, 1, 3)
+        grid.addWidget(self.status_label, 4, 0, 1, 3)
 
         parent_layout.addWidget(group)
 

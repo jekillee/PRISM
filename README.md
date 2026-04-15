@@ -31,6 +31,8 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 - **Time Averaging**: dt-based profile averaging for fitting and visualization
 - **Collapsible Sidebar**: Expand/collapse category groups with state persistence
 - **TRANSP CDF Viewer**: Load TRANSP output CDF files for profile and time trace visualization with variable filter/search and cross-run comparison
+- **EFIT Viewer**: Time traces (AEQDSK scalars), profiles (GEQDSK), 2D equilibrium contours, and p-file viewer with MDS+ and file support
+- **Grouped Sidebar**: Collapsible groups (Diagnostics/EFIT/BiProfile/TRANSP) with expand/collapse state persistence
 
 ## Supported Diagnostics
 
@@ -48,16 +50,20 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 | Neutron | Fusion Neutron (near J-port) | Fission, He3, Diamond |
 | TV | Visible Camera (IVIS) | Image sequence |
 | IRVB | Infra-Red Video Bolometer | 2D Prad |
+| EFIT | Equilibrium Fitting | Scalars, profiles, 2D ψ, p-file |
 | TRANSP | Transport Analysis (BiProfile + CDF) | Ti, vT, Te, ne, CDF profiles/traces |
 
 ## Usage
 
 | Command | Description |
 |---------|-------------|
-| `prism` | Full PRISM with sidebar navigation |
-| `prism -s` | Select and launch individual diagnostic viewers |
-| `prism transp` | TRANSP viewer (transport analysis profiles) |
-| `prism -h` | Show help |
+| `prism` | Full PRISM (Diagnostics + EFIT + BiProfile + TRANSP) |
+| `prism -d`, `prism --diag` | Diagnostic data viewer only |
+| `prism -e`, `prism --efit` | EFIT viewer |
+| `prism -b`, `prism --biprofile` | BiProfile viewer |
+| `prism -t`, `prism --transp` | TRANSP CDF viewer |
+| `prism -s`, `prism --select` | Select and launch individual viewers |
+| `prism -h`, `prism --help` | Show help |
 
 ## Installation
 
@@ -66,14 +72,23 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 PRISM is pre-installed on both servers. No installation required.
 
 ```bash
-# Full PRISM
+# Full PRISM (Diagnostics + EFIT + BiProfile + TRANSP)
 prism
 
-# Select a viewer
-prism -s
+# Diagnostic data viewer only
+prism -d
 
-# TRANSP viewer
-prism transp
+# EFIT viewer
+prism -e
+
+# BiProfile viewer
+prism -b
+
+# TRANSP CDF viewer
+prism -t
+
+# Select and launch individual viewers
+prism -s
 ```
 
 | Server | PRISM Path | Python | Note |
@@ -121,7 +136,8 @@ PRISM/
 │   ├── neutron_loader.py        # Neutron loader
 │   ├── efit_loader.py           # EFIT loader
 │   ├── biprofile_loader.py     # BiProfile loader (BIPROFILE + DIAG_PARAMS + raw)
-│   └── transp_cdf_loader.py   # TRANSP CDF (netCDF) loader
+│   ├── transp_cdf_loader.py   # TRANSP CDF (netCDF) loader
+│   └── efit_viewer_loader.py  # EFIT viewer loader (MDS+, g-file, a-file)
 ├── ui/
 │   ├── theme.py                 # Theme manager (dark/light QSS, palette, mpl)
 │   ├── ui_constants.py          # UI constants and helpers
@@ -147,6 +163,10 @@ PRISM/
 │   ├── biprofile_timetrace_tab.py # BiProfile time trace tab
 │   ├── transp_profile_tab.py   # TRANSP CDF profile tab
 │   ├── transp_timetrace_tab.py # TRANSP CDF time trace tab
+│   ├── efit_scalar_tab.py      # EFIT time traces (AEQDSK scalars)
+│   ├── efit_profile_tab.py     # EFIT profiles (GEQDSK)
+│   ├── efit_2d_tab.py          # EFIT 2D equilibrium contours
+│   ├── efit_pfile_tab.py       # EFIT p-file viewer
 │   ├── icons/                   # SVG icons (logo, themed widgets)
 │   └── widgets/
 │       ├── custom_toolbar.py    # Custom matplotlib toolbar

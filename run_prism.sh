@@ -71,18 +71,23 @@ show_help() {
     echo "Usage: prism [option]"
     echo ""
     echo "Options:"
-    echo "  (none)        Launch full PRISM with all tabs"
-    echo "  -s, --select  Open tab selector to launch a single viewer"
-    echo "  -t, --transp, transp  Launch TRANSP viewer (transport analysis profiles)
-"
-    echo "  -h, --help    Show this help message"
+    echo "  (none)                Full PRISM (Diagnostics + EFIT + BiProfile + TRANSP)"
+    echo "  -d, --diag            Diagnostic data viewer"
+    echo "  -e, --efit            EFIT viewer"
+    echo "  -b, --biprofile       BiProfile viewer"
+    echo "  -t, --transp          TRANSP CDF viewer"
+    echo "  -s, --select          Select and launch individual viewers"
+    echo "  -h, --help            Show this help message"
     echo ""
     echo "Available Tabs:"
-    echo "  Profiles        Ti/vT (CES), ne/Te (Thomson+ECE), MSE (gamma/q/j)"
-    echo "  Time Traces     Ti/vT, ne/Te, MSE, Neutron (Fission/He3/Diamond)"
-    echo "  Spectral        Spectrogram (ECE/ECEI/BES/Mirnov), n-Mode Spectrum"
-    echo "  Imaging         TV Viewer, TV Startup, IRVB"
-    echo "  TRANSP          Ti/vT, ne/Te Profiles & Time Traces (prism transp)"
+    echo "  Diagnostics"
+    echo "    Profiles      Ti/vT (CES), ne/Te (Thomson+ECE), MSE (gamma/q/j)"
+    echo "    Time Traces   Ti/vT, ne/Te, MSE, Neutron (Fission/He3/Diamond)"
+    echo "    Spectral      Spectrogram (ECE/ECEI/BES/Mirnov), n-Mode Spectrum"
+    echo "    Imaging       TV Viewer, TV Startup, IRVB"
+    echo "  EFIT            Time Traces, Profiles, 2D, p-File"
+    echo "  BiProfile       Ti/vT, ne/Te Profiles & Time Traces"
+    echo "  TRANSP          Ti/vT, ne/Te Profiles & Time Traces (CDF)"
     echo ""
     echo "Keyboard Shortcuts:"
     echo "  Delete/Backspace  Remove selected items from list"
@@ -91,14 +96,17 @@ show_help() {
     echo "Data Sources:"
     echo "  MDS+    mdsr.kstar.kfe.re.kr:8005 (CES, Thomson, ECE, MSE, Neutron, ...)"
     echo "  HTTP    172.17.112.125 (IRVB)"
-    echo "  File    TV images (.bmp, .png, .jpg)"
+    echo "  File    TV images, TRANSP CDF, EFIT g/a/p-files"
     echo ""
     echo "Settings: ~/.config/prism/settings.json"
     echo ""
     echo "Examples:"
-    echo "  prism              # Launch full PRISM"
-    echo "  prism -s           # Choose a single viewer to launch"
-    echo "  prism transp       # Launch TRANSP viewer"
+    echo "  prism              # Full PRISM (all groups)"
+    echo "  prism -d           # Diagnostic data viewer"
+    echo "  prism -e           # EFIT viewer"
+    echo "  prism -b           # BiProfile viewer"
+    echo "  prism -t           # TRANSP CDF viewer"
+    echo "  prism -s           # Select and launch individual viewers"
     echo ""
     echo "Jekil Lee (jklee@kfe.re.kr)"
     echo ""
@@ -112,15 +120,23 @@ case "$1" in
         ;;
     -s|--select)
         cd "$PRISM_HOME"
-        $PYTHON_PATH main.py --select
+        $PYTHON_PATH main.py --select 2>/dev/null
+        ;;
+    -d|--diag|diag|"")
+        cd "$PRISM_HOME"
+        $PYTHON_PATH main.py 2>/dev/null
+        ;;
+    -b|--biprofile|biprofile)
+        cd "$PRISM_HOME"
+        $PYTHON_PATH main.py --biprofile 2>/dev/null
         ;;
     -t|--transp|transp)
         cd "$PRISM_HOME"
         $PYTHON_PATH main.py --transp 2>/dev/null
         ;;
-    "")
+    -e|--efit|efit)
         cd "$PRISM_HOME"
-        $PYTHON_PATH main.py
+        $PYTHON_PATH main.py --efit 2>/dev/null
         ;;
     *)
         echo "Error: Unknown option '$1'"

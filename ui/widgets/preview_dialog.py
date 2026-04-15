@@ -228,10 +228,10 @@ class ProfilePreviewDialog(_PreviewBase):
         def _nav(layout):
             row1 = QHBoxLayout()
             row1.addWidget(QLabel("Frame"))
-            self.frame_entry = QLineEdit("0")
+            self.frame_entry = QLineEdit("1")
             self.frame_entry.returnPressed.connect(self._goto_frame)
             row1.addWidget(self.frame_entry)
-            row1.addWidget(QLabel(f"/ {len(self.time_arr)-1}"))
+            row1.addWidget(QLabel(f"/ {len(self.time_arr)}"))
             go = QPushButton()
             go.setIcon(self.style().standardIcon(QStyle.SP_DialogOkButton))
             go.setFixedSize(24, 24)
@@ -256,7 +256,7 @@ class ProfilePreviewDialog(_PreviewBase):
     def _goto_frame(self):
         try:
             self.slider.setValue(
-                max(0, min(len(self.time_arr) - 1, int(self.frame_entry.text()))))
+                max(0, min(len(self.time_arr) - 1, int(self.frame_entry.text()) - 1)))
         except ValueError:
             pass
 
@@ -309,7 +309,7 @@ class ProfilePreviewDialog(_PreviewBase):
 
         self.figure.suptitle(
             f"#{self.shot_number}  {ms:06d}ms  ({self.source})", fontsize=12)
-        self.frame_entry.setText(str(t_idx))
+        self.frame_entry.setText(str(t_idx + 1))
         self.time_entry.setText(f"{t_actual:.4f}")
 
         for a in self._artists:
@@ -618,10 +618,10 @@ class TranspProfilePreviewDialog(_PreviewBase):
 
             row1 = QHBoxLayout()
             row1.addWidget(QLabel("Frame"))
-            self.frame_entry = QLineEdit("0")
+            self.frame_entry = QLineEdit("1")
             self.frame_entry.returnPressed.connect(self._goto_frame)
             row1.addWidget(self.frame_entry)
-            self.frame_max_label = QLabel("/ 0")
+            self.frame_max_label = QLabel("/ 0")  # updated in _on_var_changed
             row1.addWidget(self.frame_max_label)
             go = QPushButton()
             go.setIcon(self.style().standardIcon(QStyle.SP_DialogOkButton))
@@ -671,14 +671,14 @@ class TranspProfilePreviewDialog(_PreviewBase):
         n = len(self._current_prof['time'])
         self._n_items = n
         self.slider.setMaximum(max(0, n - 1))
-        self.frame_max_label.setText(f"/ {n - 1}")
+        self.frame_max_label.setText(f"/ {n}")
         self.slider.setValue(0)
         self._update_plot(0)
 
     def _goto_frame(self):
         try:
             self.slider.setValue(
-                max(0, min(self.slider.maximum(), int(self.frame_entry.text()))))
+                max(0, min(self.slider.maximum(), int(self.frame_entry.text()) - 1)))
         except ValueError:
             pass
 
@@ -714,9 +714,15 @@ class TranspProfilePreviewDialog(_PreviewBase):
         ms = int(round(t_actual * 1000))
         vn = self.var_combo.currentData()
 
+        # Use per-time shot labels if available
+        shot_labels = self.cdf.get('shot_labels')
+        if shot_labels and t_idx < len(shot_labels):
+            title_shot = shot_labels[t_idx]
+        else:
+            title_shot = f"#{self.shot} ({self.run})"
         self.figure.suptitle(
-            f"#{self.shot} ({self.run})  {ms:06d}ms  —  {vn}", fontsize=12)
-        self.frame_entry.setText(str(t_idx))
+            f"{title_shot}  {ms:06d}ms  —  {vn}", fontsize=12)
+        self.frame_entry.setText(str(t_idx + 1))
         self.time_entry.setText(f"{t_actual:.4f}")
 
         for a in self._artists:
@@ -945,8 +951,12 @@ class TranspTimeTracePreviewDialog(QDialog):
             legend = f"#{m.group(1)} ({m.group(2)})" if m else label
             valid = np.isfinite(tt['data'])
             if np.any(valid):
-                ax.plot(tt['time'][valid], tt['data'][valid], '-',
-                        color=colors[idx], lw=1.5, marker='.', markersize=3, label=legend)
+                if len(tt['data']) <= 1:
+                    ax.plot(tt['time'][valid], tt['data'][valid], 'o',
+                            color=colors[idx], markersize=8, label=legend)
+                else:
+                    ax.plot(tt['time'][valid], tt['data'][valid], '-',
+                            color=colors[idx], lw=1.5, marker='.', markersize=5, label=legend)
 
         units = ''
         for cdf in self.cdf_cache.values():

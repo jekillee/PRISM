@@ -5,6 +5,46 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-04-15
+
+### Added
+- **EFIT Viewer** (`prism -e`): New standalone EFIT viewer with four tabs
+  - Time Traces: AEQDSK scalar variables from MDS+ or a-files (multi-select). EFITVIEWER_KFE mapping standard
+  - Profiles: GEQDSK 1D profiles from MDS+ or g-files. X-axis: ψ_N/ρ_pol/ρ_tor
+  - 2D: Contour plots (ψ_N/ρ_pol/ρ_tor) with separatrix, boundary, magnetic axis, X-points, limiter. Configurable SOL contours
+  - p-File: PEQDSK profile viewer with Browse
+- **Diagnostic-only Mode** (`prism -d`): Launches with Diagnostics sidebar only (no EFIT/BiProfile/TRANSP)
+- **BiProfile Standalone** (`prism -b`): Dedicated BiProfile viewer mode
+- **Grouped Sidebar**: Full PRISM sidebar organized into collapsible groups (Diagnostics → EFIT → BiProfile → TRANSP) with text arrows inheriting font style/color. Divider lines between groups
+- **a-file Parser**: AEQDSK parser using EFITVIEWER_KFE standard (Block 1: 24 scalars, Block 2: 41 scalars). BETAN computed from BETAT/(Ip[MA]/(a[m]×BT[T]))
+- **g-file Parser**: GEQDSK parser with Fortran format support and limiter data (XLIM/YLIM)
+- **p-file Parser**: PEQDSK parser (block headers with psinorm variables)
+- **Time Trace Browse**: Slider-based channel browsing in all Time Trace tabs (Ti/vT, ne/Te, MSE)
+- **TRANSP Browse Dialogs**: Profile Browse (variable selector + time slider) and Time Trace Browse (variable selector, all runs plotted)
+- **TRANSP X-axis Selection**: R/ψ_N/ρ_pol/ρ_tor radio buttons in Plot section. R = LFS major radius [m]
+- **TRANSP/BiProfile Preview & Save**: Spreadsheet-style data preview with Copy to Clipboard and Save as .csv
+- **EFIT/BiProfile/TRANSP in prism -s**: Tab selector with grouped QGroupBox layout
+
+### Changed
+- **Sidebar Restructuring**: Four collapsible groups with Unicode arrows (▶/▼). Sub-categories indented, leaf tabs further indented. QFrame dividers between groups
+- **Selector UI** (`prism -s`): QGroupBox per group (Diagnostics/EFIT/BiProfile/TRANSP) with blue header, gray sub-labels. Version/date in header, author in footer
+- **Browse Rename**: All "Preview" buttons renamed to "Browse". "Preview" reserved for Save Data section
+- **Preview Dialog Consolidation**: All preview dialogs merged into single `preview_dialog.py`
+- **TRANSP Profile Workflow**: Open CDF keeps cache for cross-CDF comparison; Selected list preserved across CDF opens
+- **Variable Settings**: TRANSP/EFIT variable selection saved/restored across sessions
+- **Non-native File Dialogs**: All non-modal QFileDialog use DontUseNativeDialog to suppress GTK transient parent warnings
+- **Startup Banner**: Updated with all launch modes (prism, -d, -e, -b, -t, -s, -h)
+- **run_prism.sh**: All modes stderr-redirected (`2>/dev/null`) to suppress MDSplus buffer_free messages
+
+### Fixed
+- **BiProfile fetch in full PRISM**: Fixed `AttributeError: '_bi_shot_data'` (missing initialization in full mode)
+- **EFIT Scalar Tab**: Fixed `QGridLayout` not imported, variable dropdown empty (indentation bug), Browse KeyError
+- **EFIT a-file Mapping**: Corrected RMAXIS/ZMAXIS positions, QSTAR vs Q0 distinction, header skip
+- **EFIT g-file/p-file Cache**: Added time to cache key to avoid collision for same shot different times
+- **EFIT 2D Tab**: Full rewrite (removed references to non-existent self.app_config/self.efit_loader)
+- **prism -s Crash**: _SingleTabWindow now handles BiProfile/TRANSP/EFIT tab types
+- **Profile Browse Line Style**: p-file Browse now uses line+marker (was marker-only)
+
 ## [2.4.2] - 2026-04-14
 
 ### Added

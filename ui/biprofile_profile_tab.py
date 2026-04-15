@@ -284,7 +284,7 @@ class BiProfileTab:
         self.fetch_button.setText("Loading..."); self.fetch_button.setEnabled(False)
         QApplication.setOverrideCursor(Qt.WaitCursor); QApplication.processEvents()
         try:
-            sdata = self.main.fetch_biprofile_shot(shot)
+            sdata = self.main.fetch_biprofile_shot(shot, params=self.params)
         finally:
             self.fetch_button.setText("Fetch"); self.fetch_button.setEnabled(True)
             QApplication.restoreOverrideCursor()

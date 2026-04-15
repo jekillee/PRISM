@@ -66,25 +66,17 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
         self.analysis_combo = QComboBox()
         self.analysis_combo.addItems(analysis_types)
         self.analysis_combo.setCurrentText('mod')
-        self.analysis_combo.setFixedWidth(70)
+        self.analysis_combo.setFixedWidth(110)
         grid.addWidget(self.analysis_combo, 0, 3)
-
-        btn_frame = QWidget()
-        btn_frame_layout = QHBoxLayout(btn_frame)
-        btn_frame_layout.setContentsMargins(0, 0, 0, 0)
 
         self.fetch_button = QPushButton('Fetch')
         self.fetch_button.setFixedWidth(70)
         self.fetch_button.clicked.connect(self.load_shot_data)
-        btn_frame_layout.addWidget(self.fetch_button)
+        grid.addWidget(self.fetch_button, 0, 4)
 
-        file_button = QPushButton()
-        file_button.setIcon(get_icon(QStyle.SP_DirOpenIcon))
-        file_button.setFixedWidth(28)
+        file_button = QPushButton("Open CES Result File...")
         file_button.clicked.connect(self.load_file_data)
-        btn_frame_layout.addWidget(file_button)
-
-        grid.addWidget(btn_frame, 0, 4)
+        grid.addWidget(file_button, 1, 0, 1, 5)
 
         parent.layout().addWidget(group)
 

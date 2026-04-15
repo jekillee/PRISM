@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 """
-PRISM v2.4.2
+PRISM v2.5.0
 Main entry point
 
 Plasma Research Integrated System for Multi-diagnostics
@@ -107,10 +107,16 @@ def main():
 
     from ui.main_window import PRISMApp
 
-    if arg in ('-s', '--select'):
-        window = PRISMApp(mode='select')
+    if arg in ('-d', '--diag', 'diag'):
+        window = PRISMApp(mode='diag')
+    elif arg in ('-b', '--biprofile', 'biprofile'):
+        window = PRISMApp(mode='biprofile')
     elif arg in ('-t', '--transp', 'transp'):
         window = PRISMApp(mode='transp')
+    elif arg in ('-e', '--efit', 'efit'):
+        window = PRISMApp(mode='efit')
+    elif arg in ('-s', '--select'):
+        window = PRISMApp(mode='select')
     else:
         window = PRISMApp(mode='')
 

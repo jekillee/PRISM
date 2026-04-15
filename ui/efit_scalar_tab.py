@@ -1,6 +1,6 @@
 """
-TRANSP CDF Time Trace tab - load CDF files and plot time trace variables.
-Supports multiple CDFs for comparison.
+EFIT Scalar tab - load EFIT AEQDSK scalar time traces from MDS+ or a-files
+and plot selected variables. Supports multiple shots/trees for comparison.
 """
 
 import numpy as np
@@ -8,9 +8,9 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QScrollArea, QLayout,
-    QGroupBox, QLabel, QLineEdit, QPushButton, QFrame,
-    QListWidget, QAbstractItemView, QComboBox, QFileDialog,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QSplitter, QScrollArea, QLayout,
+    QGroupBox, QLabel, QLineEdit, QPushButton, QFrame, QComboBox,
+    QListWidget, QAbstractItemView, QFileDialog,
     QApplication, QMessageBox, QStyle, QSpinBox,
     QDialog, QDialogButtonBox,
     QTableWidget, QTableWidgetItem, QHeaderView,
@@ -22,17 +22,17 @@ from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_ic
 from ui.theme import ThemeManager
 
 
-class TranspTimeTraceTab:
-    """TRANSP CDF Time Trace tab: load CDF → select variables → plot."""
+class EfitScalarTab:
+    """EFIT Scalar tab: load AEQDSK data -> select variables -> plot."""
 
     def __init__(self, main_window):
         self.main = main_window
-        self._cdf_cache = {}  # {label: cdf_data}
+        self._data_cache = {}  # {cache_key: efit_data}
 
         self.label_fontsize = 12
         self.legend_fontsize = 8
         self.tick_fontsize = 10
-        self._settings_key = "transp_timetrace"
+        self._settings_key = "efit_scalar"
 
         self.frame = QWidget()
         self.canvas = None
@@ -82,19 +82,54 @@ class TranspTimeTraceTab:
         self._create_save_section(control_frame)
         control_layout.addStretch()
 
-    # ---- 1. Load CDF ----
+    # ---- 1. Load Data ----
 
     def _create_load_section(self, parent):
-        group = QGroupBox("1. Load CDF")
+        group = QGroupBox("1. Load Data")
         layout = QVBoxLayout(group)
 
-        open_btn = QPushButton("Open CDF...")
-        open_btn.clicked.connect(self._open_cdf)
+        grid = QGridLayout()
+        grid.setColumnStretch(1, 1)
+        grid.addWidget(QLabel("Shot"), 0, 0)
+        self.shot_entry = QLineEdit()
+        self.shot_entry.returnPressed.connect(self._fetch)
+        grid.addWidget(self.shot_entry, 0, 1)
+
+        btn_updown = QWidget()
+        bl = QVBoxLayout(btn_updown)
+        bl.setContentsMargins(0, 0, 0, 0); bl.setSpacing(0)
+        sty = "padding: 0px; border-radius: 2px;"
+        up = QPushButton()
+        up.setIcon(get_icon(QStyle.SP_ArrowUp))
+        up.setFixedSize(24, 15); up.setStyleSheet(sty)
+        up.clicked.connect(lambda: self._adjust_shot(1)); bl.addWidget(up)
+        dn = QPushButton()
+        dn.setIcon(get_icon(QStyle.SP_ArrowDown))
+        dn.setFixedSize(24, 15); dn.setStyleSheet(sty)
+        dn.clicked.connect(lambda: self._adjust_shot(-1)); bl.addWidget(dn)
+        grid.addWidget(btn_updown, 0, 2)
+
+        self.tree_combo = QComboBox()
+        self.tree_combo.addItems([
+            "efitrt1", "efitrt2", "efit01", "efit02", "efit04",
+        ])
+        self.tree_combo.setCurrentText("efitrt1")
+        grid.addWidget(self.tree_combo, 0, 3)
+
+        fetch_btn = QPushButton("Fetch")
+        fetch_btn.setFixedWidth(70)
+        fetch_btn.clicked.connect(self._fetch)
+        grid.addWidget(fetch_btn, 0, 4)
+        layout.addLayout(grid)
+
+        # Open a-File
+        open_btn = QPushButton("Open a-File...")
+        open_btn.clicked.connect(self._open_file)
         layout.addWidget(open_btn)
 
-        self.cdf_status = QLabel("")
-        self.cdf_status.setWordWrap(True)
-        layout.addWidget(self.cdf_status)
+        self.load_status = QLabel("")
+        self.load_status.setWordWrap(True)
+        layout.addWidget(self.load_status)
 
         parent.layout().addWidget(group)
 
@@ -106,13 +141,13 @@ class TranspTimeTraceTab:
         self._select_group = group
         layout = QVBoxLayout(group)
 
-        # Preview button
-        self.preview_button = QPushButton("Load a CDF to browse")
+        # Browse button
+        self.preview_button = QPushButton("Load data to browse")
         self.preview_button.setEnabled(False)
         self.preview_button.clicked.connect(self._open_preview)
         layout.addWidget(self.preview_button)
 
-        # Selected run IDs (populated on CDF load)
+        # Selected runs list
         layout.addWidget(QLabel("Selected Runs"))
         self.selected_listbox = QListWidget()
         self.selected_listbox.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -128,8 +163,10 @@ class TranspTimeTraceTab:
 
         parent.layout().addWidget(group)
 
+    # ---- 3. Select Variable ----
+
     def _create_var_section(self, parent):
-        group = QGroupBox("3. Select TRANSP Variable")
+        group = QGroupBox("3. Select Variable")
         group.setEnabled(False)
         self._var_group = group
         layout = QVBoxLayout(group)
@@ -183,107 +220,180 @@ class TranspTimeTraceTab:
     # Actions
     # ================================================================
 
-    @staticmethod
-    def _default_cdf_dir():
-        import os, socket
-        host = socket.gethostname()
-        user = os.environ.get('USER', os.environ.get('USERNAME', ''))
-        if host.startswith('nkstar'):
-            return f"/home/users/{user}"
-        elif host.startswith('ukstar'):
-            transp_dir = f"/UKSTAR_HOME/data/transp/{user}"
-            if os.path.isdir(transp_dir):
-                return transp_dir
-            return f"/UKSTAR_HOME/{user}"
-        return os.path.expanduser("~")
+    def _make_cache_key(self, shot, tree):
+        return f"{shot}_{tree}"
 
-    @staticmethod
-    def _parse_run_label(label):
-        """Split run label into (shot_str, run_suffix). e.g. '39551W09' → ('39551','W09')"""
+    def _parse_cache_key(self, key):
+        """Split cache key into (shot, tree).
+        MDS+: '39551_efit01' -> ('39551', 'efit01')
+        a-file: 'a023879.011700_kin_0' -> ('23879', 'kin_0 @11700ms')
+        """
         import re
-        m = re.match(r'^(\d+)(.*)', label)
+        # Try a/g-file pattern first
+        m = re.match(r'^[ag](\d+)\.(\d+)_(.+)$', key)
         if m:
-            return m.group(1), m.group(2)
-        return label, ''
+            return m.group(1), f"{m.group(3)} @{m.group(2)}ms"
+        m = re.match(r'^[ag](\d+)\.(\d+)$', key)
+        if m:
+            return m.group(1), f"@{m.group(2)}ms"
+        # MDS+ pattern
+        parts = key.split('_', 1)
+        if len(parts) == 2:
+            return parts[0], parts[1]
+        return key, ''
 
-    def _open_cdf(self):
-        start_dir = getattr(self, '_last_cdf_dir', self._default_cdf_dir())
-        dlg = QFileDialog(self.frame, "Open TRANSP CDF", start_dir,
-                          "TRANSP CDF (*.CDF);;All files (*)")
-        dlg.setFileMode(QFileDialog.ExistingFile)
-        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
-        dlg.setWindowModality(Qt.NonModal)
-        dlg.fileSelected.connect(self._on_cdf_selected)
-        dlg.show()
+    def _adjust_shot(self, delta):
+        try:
+            self.shot_entry.setText(str(max(1, int(self.shot_entry.text()) + delta)))
+        except ValueError:
+            pass
 
-    def _on_cdf_selected(self, path):
-        import os
-        self._last_cdf_dir = os.path.dirname(path)
-
-        # Skip if same file already loaded
-        basename = os.path.splitext(os.path.basename(path))[0]
-        if basename in self._cdf_cache:
+    def _fetch(self):
+        shot_text = self.shot_entry.text().strip()
+        if not shot_text:
+            QMessageBox.warning(self.frame, "Warning", "Enter a shot number.")
+            return
+        try:
+            shot_number = int(shot_text)
+        except ValueError:
+            QMessageBox.warning(self.frame, "Warning", "Shot number must be an integer.")
             return
 
+        tree = self.tree_combo.currentText()
+        cache_key = self._make_cache_key(shot_number, tree)
+
+        if cache_key in self._data_cache:
+            return
+
+        self.load_status.setStyleSheet("color: blue; font-weight: bold; font-size: 9pt;")
+        self.load_status.setText(f"Loading #{shot_number} ({tree})...")
         QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.processEvents()
         try:
-            from data_loaders.transp_cdf_loader import load_transp_cdf
-            cdf = load_transp_cdf(path)
-            self._cdf_cache[cdf['label']] = cdf
+            from data_loaders.efit_viewer_loader import load_efit_mds
+            efit_data = load_efit_mds(shot_number, tree, load_profiles=False, load_2d=False)
+            self._data_cache[cache_key] = efit_data
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            self.load_status.setStyleSheet("color: red; font-weight: bold; font-size: 9pt;")
+            self.load_status.setText(f"Failed: {e}")
+            return
         finally:
             QApplication.restoreOverrideCursor()
 
         self._update_var_combo()
         self._update_selected_runs()
-        self._update_cdf_status()
-        self._select_group.setEnabled(bool(self._cdf_cache))
-        self._var_group.setEnabled(bool(self._cdf_cache))
+        self._update_load_status()
+        self._select_group.setEnabled(bool(self._data_cache))
+        self._var_group.setEnabled(bool(self._data_cache))
 
-        if self._cdf_cache:
-            label = list(self._cdf_cache.keys())[-1]
-            self._preview_label = label
-            shot, run = self._parse_run_label(label)
+        if self._data_cache:
+            self._preview_label = cache_key
+            shot, tree_name = self._parse_cache_key(cache_key)
             self.preview_button.setEnabled(True)
-            self.preview_button.setText(f"Browse #{shot} ({run})")
+            self.preview_button.setText(f"Browse #{shot} ({tree_name})")
 
-    def _open_preview(self):
-        label = getattr(self, '_preview_label', None)
-        if not label or label not in self._cdf_cache:
-            return
+    def _open_file(self):
+        start_dir = getattr(self, '_last_file_dir', None)
+        if start_dir is None:
+            import os
+            start_dir = os.path.expanduser("~")
 
-        from ui.widgets.preview_dialog import TranspTimeTracePreviewDialog
-        dlg = TranspTimeTracePreviewDialog(
-            self.frame, {label: self._cdf_cache[label]}, [label])
+        dlg = QFileDialog(self.frame, "Open EFIT a-File", start_dir,
+                          "EFIT a-files (a*);;All files (*)")
+        dlg.setFileMode(QFileDialog.ExistingFiles)
+        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
+        dlg.setWindowModality(Qt.NonModal)
+        dlg.filesSelected.connect(self._on_files_selected)
         dlg.show()
 
-    def _update_cdf_status(self, color='green'):
-        if not self._cdf_cache:
-            self.cdf_status.setStyleSheet("color: #888; font-weight: bold; font-size: 9pt;")
-            self.cdf_status.setText("No CDF loaded")
+    def _on_files_selected(self, paths):
+        import os
+        if not paths:
             return
-        parts = []
-        for label in sorted(self._cdf_cache):
-            shot, run = self._parse_run_label(label)
-            parts.append(f"#{shot} ({run})")
-        n_t = sum(len(c['timetraces']) for c in self._cdf_cache.values())
-        self.cdf_status.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 9pt;")
-        self.cdf_status.setText(f"{', '.join(parts)}  —  {n_t} time traces")
+        self._last_file_dir = os.path.dirname(paths[0])
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            from data_loaders.efit_viewer_loader import load_afile
+            for path in paths:
+                basename = os.path.basename(path)
+                if basename in self._data_cache:
+                    continue
+                efit_data = load_afile(path)
+                self._data_cache[basename] = efit_data
+        except Exception as e:
+            QMessageBox.critical(self.frame, "Error", f"Failed to load file:\n{e}")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        self._update_var_combo()
+        self._update_selected_runs()
+        self._update_load_status()
+        self._select_group.setEnabled(bool(self._data_cache))
+        self._var_group.setEnabled(bool(self._data_cache))
+
+        if self._data_cache:
+            self._preview_label = list(self._data_cache.keys())[-1]
+            self.preview_button.setEnabled(True)
+            self.preview_button.setText(f"Browse ({len(self._data_cache)} loaded)")
+
+    def _open_preview(self):
+        """Browse EFIT scalars — all runs, variable selector."""
+        if not self._data_cache:
+            return
+
+        # Build pseudo-cache for TranspTimeTracePreviewDialog — all runs, sorted
+        pseudo_cache = {}
+        run_labels = []
+        for key, efit in sorted(self._data_cache.items()):
+            display_label = key.replace('_', '', 1)
+            pseudo_cache[display_label] = {'timetraces': {}}
+            run_labels.append(display_label)
+            for vn, vd in efit.get('scalars', {}).items():
+                pseudo_cache[display_label]['timetraces'][vn] = {
+                    'time': vd['time'],
+                    'data': vd['data'],
+                    'long_name': vd.get('label', vn),
+                'units': '',
+            }
+
+        from ui.widgets.preview_dialog import TranspTimeTracePreviewDialog
+        dlg = TranspTimeTracePreviewDialog(self.frame, pseudo_cache, run_labels)
+        dlg.show()
+
+    def _update_load_status(self, color='green'):
+        if not self._data_cache:
+            self.load_status.setStyleSheet(
+                "color: #888; font-weight: bold; font-size: 9pt;")
+            self.load_status.setText("No data loaded")
+            return
+        n_runs = len(self._data_cache)
+        n_v = max(len(d.get('scalars', {})) for d in self._data_cache.values())
+        self.load_status.setStyleSheet(
+            f"color: {color}; font-weight: bold; font-size: 9pt;")
+        self.load_status.setText(f"{n_runs} run(s) loaded  —  {n_v} variables")
 
     def _update_var_combo(self):
-        """Refresh variable combo from all loaded CDFs, applying filter."""
+        """Refresh variable combo from intersection of all loaded data."""
         filt = self.var_filter.text().strip().upper()
         current_var = self.var_combo.currentData()
 
+        # Intersection of variable names (skip empty scalar dicts)
+        var_sets = [set(efit.get('scalars', {}).keys())
+                    for efit in self._data_cache.values()
+                    if efit.get('scalars')]
+        common_vars = set.intersection(*var_sets) if var_sets else set()
+
         all_vars = {}
-        for cdf in self._cdf_cache.values():
-            for vn, vd in cdf['timetraces'].items():
-                if vn not in all_vars:
-                    parts = [vn]
-                    if vd['long_name'] and vd['long_name'] != vn:
-                        parts.append(f"- {vd['long_name']}")
-                    if vd['units']:
-                        parts.append(f"[{vd['units']}]")
-                    all_vars[vn] = ' '.join(parts)
+        first_efit = next(iter(self._data_cache.values()), {})
+        for vn in common_vars:
+            vd = first_efit.get('scalars', {}).get(vn, {})
+            parts = [vn]
+            label = vd.get('label', '')
+            if label and label != vn:
+                parts.append(f"- {label}")
+            all_vars[vn] = ' '.join(parts)
 
         filtered = sorted(all_vars.items())
         if filt:
@@ -304,25 +414,25 @@ class TranspTimeTraceTab:
         self.var_combo.blockSignals(False)
 
     def _update_selected_runs(self):
-        """Add newly loaded CDF run IDs to selected list."""
+        """Add newly loaded run entries to selected list."""
         existing = {self.selected_listbox.item(i).data(Qt.UserRole)
                     for i in range(self.selected_listbox.count())}
-        for label in sorted(self._cdf_cache):
-            if label not in existing:
-                shot, run = self._parse_run_label(label)
+        for key in sorted(self._data_cache):
+            if key not in existing:
+                shot, tree = self._parse_cache_key(key)
                 from PySide6.QtWidgets import QListWidgetItem
-                item = QListWidgetItem(f"#{shot} ({run})")
-                item.setData(Qt.UserRole, label)
+                item = QListWidgetItem(f"#{shot} ({tree})")
+                item.setData(Qt.UserRole, key)
                 self.selected_listbox.addItem(item)
 
     def _remove_items(self):
         for item in reversed(self.selected_listbox.selectedItems()):
-            label = item.data(Qt.UserRole)
+            key = item.data(Qt.UserRole)
             self.selected_listbox.takeItem(self.selected_listbox.row(item))
-            self._cdf_cache.pop(label, None)
+            self._data_cache.pop(key, None)
         self._update_var_combo()
-        self._update_cdf_status()
-        if not self._cdf_cache:
+        self._update_load_status()
+        if not self._data_cache:
             self._select_group.setEnabled(False)
             self._var_group.setEnabled(False)
 
@@ -347,9 +457,9 @@ class TranspTimeTraceTab:
         var_name = self.var_combo.currentData()
         if not var_name:
             return
-        run_labels = [self.selected_listbox.item(i).data(Qt.UserRole)
-                      for i in range(self.selected_listbox.count())]
-        if not run_labels:
+        run_keys = [self.selected_listbox.item(i).data(Qt.UserRole)
+                    for i in range(self.selected_listbox.count())]
+        if not run_keys:
             return
 
         self.figure.clear()
@@ -360,27 +470,30 @@ class TranspTimeTraceTab:
 
         # Filter runs that have this variable
         plot_items = []
-        for label in run_labels:
-            cdf = self._cdf_cache.get(label)
-            if cdf and var_name in cdf['timetraces']:
-                plot_items.append((label, cdf['timetraces'][var_name]))
+        for key in run_keys:
+            efit = self._data_cache.get(key)
+            if efit and var_name in efit.get('scalars', {}):
+                plot_items.append((key, efit['scalars'][var_name]))
 
         if not plot_items:
             return
 
         colors = self._get_plot_colors(len(plot_items))
-        units_seen = set()
-
-        for idx, (label, tt) in enumerate(plot_items):
+        for idx, (key, sd) in enumerate(plot_items):
             try:
-                units_seen.add(tt['units'])
-                shot, run = self._parse_run_label(label)
-                ax.plot(tt['time'], tt['data'], '-', color=colors[idx],
-                        lw=1.5, marker='.', markersize=3, label=f'#{shot} ({run})')
+                shot, tree = self._parse_cache_key(key)
+                if len(sd['data']) == 1:
+                    # Single point (a-file) — marker only
+                    ax.plot(sd['time'], sd['data'], 'o', color=colors[idx],
+                            markersize=6, label=f'#{shot} ({tree})')
+                else:
+                    ax.plot(sd['time'], sd['data'], '-', color=colors[idx],
+                            lw=1.5, marker='.', markersize=3,
+                            label=f'#{shot} ({tree})')
             except Exception as e:
-                print(f"[TRANSP] Error plotting {var_name} ({label}): {e}")
+                print(f"[EFIT] Error plotting {var_name} ({key}): {e}")
 
-        # Y-axis: variable name + units
+        # Y-axis label from combo display text
         display_text = self.var_combo.currentText()
         ax.set_ylabel(display_text, fontsize=self.label_fontsize)
 
@@ -396,41 +509,93 @@ class TranspTimeTraceTab:
     # Style dialog
     # ================================================================
 
+    def _show_style_dialog(self):
+        W = 150
+        dlg = QDialog(self.frame)
+        dlg.setWindowTitle("Plot Options")
+        dlg.setMinimumWidth(300)
+        dl = QVBoxLayout(dlg)
+
+        color_row = QHBoxLayout()
+        color_row.addWidget(QLabel("Color"))
+        color_combo = QComboBox()
+        color_combo.setFixedWidth(W)
+        color_combo.addItems([
+            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)",
+            "Gradient(coolwarm)",
+            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)",
+            "Fixed(Set3)",
+        ])
+        color_combo.setCurrentText(getattr(self, '_color_mode',
+                                           "Gradient(viridis)"))
+        color_row.addWidget(color_combo)
+        dl.addLayout(color_row)
+
+        for name, attr, lo, hi, default in [
+            ("Label font size", 'label_fontsize', 6, 24, 12),
+            ("Legend font size", 'legend_fontsize', 4, 20, 8),
+            ("Tick font size", 'tick_fontsize', 6, 20, 10),
+        ]:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(name))
+            spin = QSpinBox(); spin.setFixedWidth(W)
+            spin.setRange(lo, hi); spin.setValue(getattr(self, attr))
+            spin.setProperty('attr', attr); spin.setProperty('default', default)
+            row.addWidget(spin); dl.addLayout(row)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.RestoreDefaults | QDialogButtonBox.Ok
+            | QDialogButtonBox.Cancel)
+
+        def _apply():
+            self._color_mode = color_combo.currentText()
+            for spin in dlg.findChildren(QSpinBox):
+                setattr(self, spin.property('attr'), spin.value())
+            self._plot()
+
+        def _reset():
+            color_combo.setCurrentText("Gradient(viridis)")
+            for spin in dlg.findChildren(QSpinBox):
+                spin.setValue(spin.property('default'))
+
+        btns.accepted.connect(lambda: (_apply(), dlg.accept()))
+        btns.rejected.connect(dlg.reject)
+        btns.button(QDialogButtonBox.RestoreDefaults).clicked.connect(_reset)
+        dl.addWidget(btns)
+        dlg.show()
+
     # ================================================================
     # Preview & Save
     # ================================================================
 
     def _build_csv_lines(self):
         """Build CSV lines in PRISM export format."""
-        import re
         var_name = self.var_combo.currentData()
-        run_labels = [self.selected_listbox.item(i).data(Qt.UserRole)
-                      for i in range(self.selected_listbox.count())]
-        if not var_name or not run_labels:
+        run_keys = [self.selected_listbox.item(i).data(Qt.UserRole)
+                    for i in range(self.selected_listbox.count())]
+        if not var_name or not run_keys:
             return None
 
         units = ''
-        for cdf in self._cdf_cache.values():
-            if var_name in cdf['timetraces']:
-                units = cdf['timetraces'][var_name].get('units', '')
+        for efit in self._data_cache.values():
+            if var_name in efit.get('scalars', {}):
+                units = efit['scalars'][var_name].get('units', '')
                 break
 
         lines = []
-        lines.append(f"# TRANSP Time Trace: {var_name}\n")
+        lines.append(f"# EFIT Scalar: {var_name}\n")
         lines.append(f"#%10s,%10s,%10s,%14s\n" % (
-            "Shot", "Run", "Time[s]", f"{var_name}[{units}]"))
+            "Shot", "Tree", "Time[s]", f"{var_name}[{units}]"))
 
-        for label in run_labels:
-            cdf = self._cdf_cache.get(label)
-            if cdf is None or var_name not in cdf['timetraces']:
+        for key in run_keys:
+            efit = self._data_cache.get(key)
+            if efit is None or var_name not in efit.get('scalars', {}):
                 continue
-            tt = cdf['timetraces'][var_name]
-            m = re.match(r'^(\d+)(.*)', label)
-            shot = m.group(1) if m else label
-            run = m.group(2) if m else ''
+            sd = efit['scalars'][var_name]
+            shot, tree = self._parse_cache_key(key)
 
-            for t, v in zip(tt['time'], tt['data']):
-                lines.append(" %10s,%10s,%10.4f,%14.6e\n" % (shot, run, t, v))
+            for t, v in zip(sd['time'], sd['data']):
+                lines.append(" %10s,%10s,%10.4f,%14.6e\n" % (shot, tree, t, v))
 
         return lines
 
@@ -549,65 +714,6 @@ class TranspTimeTraceTab:
         btn_row.addWidget(close_btn)
 
         dl.addLayout(btn_row)
-        dlg.show()
-
-    # ================================================================
-    # Style dialog
-    # ================================================================
-
-    def _show_style_dialog(self):
-        W = 150
-        dlg = QDialog(self.frame)
-        dlg.setWindowTitle("Plot Options")
-        dlg.setMinimumWidth(300)
-        dl = QVBoxLayout(dlg)
-
-        color_row = QHBoxLayout()
-        color_row.addWidget(QLabel("Color"))
-        color_combo = QComboBox()
-        color_combo.setFixedWidth(W)
-        color_combo.addItems([
-            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)",
-            "Gradient(coolwarm)",
-            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)",
-            "Fixed(Set3)",
-        ])
-        color_combo.setCurrentText(getattr(self, '_color_mode',
-                                           "Gradient(viridis)"))
-        color_row.addWidget(color_combo)
-        dl.addLayout(color_row)
-
-        for name, attr, lo, hi, default in [
-            ("Label font size", 'label_fontsize', 6, 24, 12),
-            ("Legend font size", 'legend_fontsize', 4, 20, 8),
-            ("Tick font size", 'tick_fontsize', 6, 20, 10),
-        ]:
-            row = QHBoxLayout()
-            row.addWidget(QLabel(name))
-            spin = QSpinBox(); spin.setFixedWidth(W)
-            spin.setRange(lo, hi); spin.setValue(getattr(self, attr))
-            spin.setProperty('attr', attr); spin.setProperty('default', default)
-            row.addWidget(spin); dl.addLayout(row)
-
-        btns = QDialogButtonBox(
-            QDialogButtonBox.RestoreDefaults | QDialogButtonBox.Ok
-            | QDialogButtonBox.Cancel)
-
-        def _apply():
-            self._color_mode = color_combo.currentText()
-            for spin in dlg.findChildren(QSpinBox):
-                setattr(self, spin.property('attr'), spin.value())
-            self._plot()
-
-        def _reset():
-            color_combo.setCurrentText("Gradient(viridis)")
-            for spin in dlg.findChildren(QSpinBox):
-                spin.setValue(spin.property('default'))
-
-        btns.accepted.connect(lambda: (_apply(), dlg.accept()))
-        btns.rejected.connect(dlg.reject)
-        btns.button(QDialogButtonBox.RestoreDefaults).clicked.connect(_reset)
-        dl.addWidget(btns)
         dlg.show()
 
     # ================================================================

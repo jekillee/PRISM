@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QPushButton, QStatusBar, QProgressBar, QMessageBox, QFrame, QStyle,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer, QSize
 from PySide6.QtGui import QColor, QFont, QPixmap, QIcon
 
 from config.app_config import AppConfig, VERSION, UPDATE_DATE, CONTACT_EMAIL, AUTHOR_NAME
@@ -28,8 +28,10 @@ from ui.theme import ThemeManager
 _ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
 
 _CATEGORY_ORDER = ["Profiles", "Time Traces", "Spectral", "Imaging",
+                    "EFIT",
                     "BiProfile Profiles", "BiProfile Time Traces",
-                    "TRANSP Profiles", "TRANSP Time Traces", "Other"]
+                    "TRANSP Profiles", "TRANSP Time Traces",
+                    "Other"]
 
 # Tab types highlighted with accent color in sidebar
 _NEW_TABS = set()  # no accent-colored tabs
@@ -47,6 +49,10 @@ _TAB_TYPE_TO_CATEGORY = {
     'bi_timetrace': "BiProfile Time Traces",
     'transp_profile': "TRANSP Profiles",
     'transp_timetrace': "TRANSP Time Traces",
+    'efit_scalar': "EFIT",
+    'efit_profile': "EFIT",
+    'efit_2d': "EFIT",
+    'efit_pfile': "EFIT",
 }
 
 
@@ -137,94 +143,120 @@ class SidebarNav(QWidget):
         self.tree.itemExpanded.connect(self._on_category_toggled)
         self.tree.itemCollapsed.connect(self._on_category_toggled)
 
+    _ARROW_EXP = '\u25bc'   # ▼
+    _ARROW_COL = '\u25b6'   # ▶
+    _PAD_TAB = '  '          # leaf tab padding
+
     def _build_tree(self):
         """Build categorized tree from tab configs"""
-        if self.mode == 'transp':
+        if self.mode == 'diag':
+            self._build_diag_tree()
+            return
+        if self.mode in ('biprofile', 'transp', 'efit'):
             self._build_bi_tree()
             return
 
-        # Load saved expand states
+        # Full PRISM mode: grouped sidebar with text arrows
         from config.user_settings import get_tab_settings
         saved = get_tab_settings('sidebar')
-        collapsed_cats = saved.get('collapsed_categories', [])
+        collapsed = saved.get('collapsed_categories', [])
+        self._cat_items = {}
 
-        self._cat_items = {}  # {cat_key: QTreeWidgetItem}
-        _roots = {}  # {parent_name: root QTreeWidgetItem}
+        categorized = _categorize_tabs(self.tab_configs)
+        _DIAG = {"Profiles", "Time Traces", "Spectral", "Imaging"}
+        _BI = {"BiProfile Profiles", "BiProfile Time Traces"}
+        _TR = {"TRANSP Profiles", "TRANSP Time Traces"}
+        _EF = {"EFIT"}
 
-        for cat_name, items in _categorize_tabs(self.tab_configs):
-            # Detect parent group (e.g. "BiProfile Profiles" → parent "BiProfile", sub "Profiles")
-            parts = cat_name.split(' ', 1)
-            if len(parts) == 2 and parts[0] in ('BiProfile', 'TRANSP'):
-                parent_name, sub_name = parts
-            else:
-                parent_name, sub_name = None, None
+        diag = [(n, it) for n, it in categorized if n in _DIAG]
+        bi = [(n, it) for n, it in categorized if n in _BI]
+        tr = [(n, it) for n, it in categorized if n in _TR]
+        ef = [(n, it) for n, it in categorized if n in _EF]
 
-            if parent_name:
-                # Create parent root if not yet
-                if parent_name not in _roots:
-                    p_expanded = parent_name not in collapsed_cats
-                    p_arrow = '\u25bc' if p_expanded else '\u25b6'
-                    root = QTreeWidgetItem(self.tree)
-                    root.setText(0, f" {p_arrow} {parent_name}")
-                    root.setFlags(Qt.ItemIsEnabled)
-                    root.setData(0, Qt.UserRole + 1, parent_name)
-                    font = root.font(0)
-                    font.setBold(True); font.setPointSize(10)
-                    root.setFont(0, font)
-                    root.setForeground(0, QColor("#888888"))
-                    root.setExpanded(p_expanded)
-                    self._cat_items[parent_name] = root
-                    _roots[parent_name] = root
+        A_E, A_C, P_T = self._ARROW_EXP, self._ARROW_COL, self._PAD_TAB
 
-                # TRANSP: flat (tabs directly under root)
-                # BiProfile: sub-categories under root
-                if parent_name == 'TRANSP':
-                    for tab_index, tab_name, tab_type in items:
-                        child = QTreeWidgetItem(_roots[parent_name])
-                        child.setText(0, f"    {tab_name}")
-                        child.setData(0, Qt.UserRole, tab_index)
-                else:
-                    cat_key = f"{parent_name}/{cat_name}"
-                    expanded = cat_key not in collapsed_cats
-                    arrow = '\u25bc' if expanded else '\u25b6'
-                    cat_item = QTreeWidgetItem(_roots[parent_name])
-                    cat_item.setText(0, f"  {arrow} {sub_name}")
-                    cat_item.setFlags(Qt.ItemIsEnabled)
-                    cat_item.setData(0, Qt.UserRole + 1, cat_key)
-                    cat_font = cat_item.font(0)
-                    cat_font.setBold(True)
-                    cat_item.setFont(0, cat_font)
-                    cat_item.setForeground(0, QColor("#888888"))
-                    cat_item.setExpanded(expanded)
-                    self._cat_items[cat_key] = cat_item
+        def _add_divider():
+            sep = QTreeWidgetItem(self.tree)
+            sep.setFlags(Qt.NoItemFlags)
+            sep.setDisabled(True)
+            sep.setSizeHint(0, QSize(0, 4))
+            line = QFrame()
+            line.setFrameShape(QFrame.HLine)
+            line.setStyleSheet("color: #444;")
+            line.setFixedHeight(4)
+            line.setContentsMargins(0, 0, 0, 0)
+            self.tree.setItemWidget(sep, 0, line)
 
-                    for tab_index, tab_name, tab_type in items:
-                        child = QTreeWidgetItem(cat_item)
-                        child.setText(0, f"      {tab_name}")
-                        child.setData(0, Qt.UserRole, tab_index)
-            else:
-                # Top-level category (Profiles, Time Traces, etc.)
-                expanded = cat_name not in collapsed_cats
-                arrow = '\u25bc' if expanded else '\u25b6'
-                cat_item = QTreeWidgetItem(self.tree)
-                cat_item.setText(0, f" {arrow} {cat_name}")
-                cat_item.setFlags(Qt.ItemIsEnabled)
-                cat_item.setData(0, Qt.UserRole + 1, cat_name)
-                font = cat_item.font(0)
-                font.setBold(True); font.setPointSize(10)
-                cat_item.setFont(0, font)
-                cat_item.setForeground(0, QColor("#888888"))
-                cat_item.setExpanded(expanded)
-                self._cat_items[cat_name] = cat_item
+        def _add_group(name):
+            exp = name not in collapsed
+            arrow = A_E if exp else A_C
+            g = QTreeWidgetItem(self.tree)
+            g.setText(0, f"{arrow} {name}")
+            g.setFlags(Qt.ItemIsEnabled)
+            g.setData(0, Qt.UserRole + 1, name)
+            f = g.font(0)
+            f.setBold(True); f.setPointSize(10)
+            g.setFont(0, f)
+            g.setForeground(0, QColor("#0d6efd"))
+            g.setExpanded(exp)
+            self._cat_items[name] = g
+            return g
 
-                for tab_index, tab_name, tab_type in items:
-                    child = QTreeWidgetItem(cat_item)
-                    child.setText(0, f"    {tab_name}")
-                    child.setData(0, Qt.UserRole, tab_index)
-            self._cat_items[cat_name] = cat_item
+        def _add_cat(parent, cat_name, items, display_name=None):
+            dn = display_name or cat_name
+            key = f"{parent.data(0, Qt.UserRole+1)}/{cat_name}"
+            exp = key not in collapsed
+            arrow = A_E if exp else A_C
+            c = QTreeWidgetItem(parent)
+            c.setText(0, f"{P_T}{arrow} {dn}")
+            c.setFlags(Qt.ItemIsEnabled)
+            c.setData(0, Qt.UserRole + 1, key)
+            f = c.font(0)
+            f.setBold(True)
+            c.setFont(0, f)
+            c.setForeground(0, QColor("#888"))
+            c.setExpanded(exp)
+            self._cat_items[key] = c
+            for tab_index, tab_name, tab_type in items:
+                ch = QTreeWidgetItem(c)
+                ch.setText(0, f"{P_T}{P_T}{P_T}{tab_name}")
+                ch.setData(0, Qt.UserRole, tab_index)
+
+        def _add_flat(parent, items):
+            for tab_index, tab_name, tab_type in items:
+                ch = QTreeWidgetItem(parent)
+                ch.setText(0, f"{P_T}{tab_name}")
+                ch.setData(0, Qt.UserRole, tab_index)
+
+        # ── Diagnostics ──
+        g = _add_group("Diagnostics")
+        for cat_name, items in diag:
+            _add_cat(g, cat_name, items)
+
+        _add_divider()
+
+        # ── EFIT ──
+        g = _add_group("EFIT")
+        for _, items in ef:
+            _add_flat(g, items)
+
+        _add_divider()
+
+        # ── BiProfile ──
+        g = _add_group("BiProfile")
+        for cat_name, items in bi:
+            sub = cat_name.replace("BiProfile ", "")
+            _add_cat(g, cat_name, items, display_name=sub)
+
+        _add_divider()
+
+        # ── TRANSP ──
+        g = _add_group("TRANSP")
+        for _, items in tr:
+            _add_flat(g, items)
 
     def _on_category_toggled(self, item):
-        """Save category expand/collapse state and update arrow"""
+        """Save category expand/collapse state and update text arrow"""
         cat_key = item.data(0, Qt.UserRole + 1)
         if cat_key is None:
             return
@@ -232,12 +264,12 @@ class SidebarNav(QWidget):
         if '/' in cat_key:
             parent, sub = cat_key.split('/', 1)
             display = sub.replace(f"{parent} ", "") if sub.startswith(parent) else sub
+            pad = self._PAD_TAB
         else:
             display = cat_key
-        # Indent: sub-categories get extra space
-        indent = "  " if '/' in cat_key else " "
-        arrow = '\u25bc' if item.isExpanded() else '\u25b6'
-        item.setText(0, f"{indent}{arrow} {display}")
+            pad = ''
+        arrow = self._ARROW_EXP if item.isExpanded() else self._ARROW_COL
+        item.setText(0, f"{pad}{arrow} {display}")
         # Save state
         from config.user_settings import get_tab_settings, set_tab_settings
         saved = get_tab_settings('sidebar')
@@ -249,8 +281,38 @@ class SidebarNav(QWidget):
         saved['collapsed_categories'] = list(collapsed)
         set_tab_settings('sidebar', saved)
 
+    def _build_diag_tree(self):
+        """Build diagnostic-only sidebar (prism -d)."""
+        from config.user_settings import get_tab_settings
+        saved = get_tab_settings('sidebar')
+        collapsed = saved.get('collapsed_categories', [])
+        self._cat_items = {}
+
+        A_E, A_C, P_T = self._ARROW_EXP, self._ARROW_COL, self._PAD_TAB
+        categorized = _categorize_tabs(self.tab_configs)
+        _DIAG = {"Profiles", "Time Traces", "Spectral", "Imaging"}
+        diag = [(n, it) for n, it in categorized if n in _DIAG]
+
+        for cat_name, items in diag:
+            exp = cat_name not in collapsed
+            arrow = A_E if exp else A_C
+            c = QTreeWidgetItem(self.tree)
+            c.setText(0, f"{arrow} {cat_name}")
+            c.setFlags(Qt.ItemIsEnabled)
+            c.setData(0, Qt.UserRole + 1, cat_name)
+            f = c.font(0)
+            f.setBold(True); f.setPointSize(10)
+            c.setFont(0, f)
+            c.setForeground(0, QColor("#0d6efd"))
+            c.setExpanded(exp)
+            self._cat_items[cat_name] = c
+            for tab_index, tab_name, tab_type in items:
+                ch = QTreeWidgetItem(c)
+                ch.setText(0, f"{P_T}{tab_name}")
+                ch.setData(0, Qt.UserRole, tab_index)
+
     def _build_bi_tree(self):
-        """Build TRANSP viewer sidebar with collapsible root nodes."""
+        """Build standalone mode sidebar with text arrows."""
         from config.user_settings import get_tab_settings
         saved = get_tab_settings('sidebar')
         collapsed_cats = saved.get('collapsed_categories', [])
@@ -260,13 +322,16 @@ class SidebarNav(QWidget):
         categorized = _categorize_tabs(self.tab_configs)
         bi_cats = [(n, items) for n, items in categorized if n.startswith("BiProfile")]
         transp_cats = [(n, items) for n, items in categorized if n.startswith("TRANSP")]
+        efit_cats = [(n, items) for n, items in categorized if n.startswith("EFIT")]
+
+        A_E, A_C, P_T = self._ARROW_EXP, self._ARROW_COL, self._PAD_TAB
 
         def _add_root(label, cats, flat=False):
             expanded = label not in collapsed_cats
-            arrow = '\u25bc' if expanded else '\u25b6'
+            arrow = A_E if expanded else A_C
 
             root = QTreeWidgetItem(self.tree)
-            root.setText(0, f" {arrow} {label}")
+            root.setText(0, f"{arrow} {label}")
             root.setFlags(Qt.ItemIsEnabled)
             root.setData(0, Qt.UserRole + 1, label)
             font = root.font(0)
@@ -277,22 +342,20 @@ class SidebarNav(QWidget):
             self._cat_items[label] = root
 
             if flat:
-                # Tabs directly under root (no sub-categories)
                 for _, items in cats:
                     for tab_index, tab_name, tab_type in items:
                         child = QTreeWidgetItem(root)
-                        child.setText(0, f"    {tab_name}")
+                        child.setText(0, f"{P_T}{tab_name}")
                         child.setData(0, Qt.UserRole, tab_index)
             else:
                 for cat_name, items in cats:
                     cat_key = f"{label}/{cat_name}"
                     cat_expanded = cat_key not in collapsed_cats
-                    cat_arrow = '\u25bc' if cat_expanded else '\u25b6'
+                    cat_arrow = A_E if cat_expanded else A_C
 
                     cat_item = QTreeWidgetItem(root)
-                    # Strip root prefix for display (e.g. "BiProfile Profiles" → "Profiles")
                     display_name = cat_name.replace(f"{label} ", "") if cat_name.startswith(label) else cat_name
-                    cat_item.setText(0, f"  {cat_arrow} {display_name}")
+                    cat_item.setText(0, f"{P_T}{cat_arrow} {display_name}")
                     cat_item.setFlags(Qt.ItemIsEnabled)
                     cat_item.setData(0, Qt.UserRole + 1, cat_key)
                     cat_font = cat_item.font(0)
@@ -303,16 +366,19 @@ class SidebarNav(QWidget):
 
                     for tab_index, tab_name, tab_type in items:
                         child = QTreeWidgetItem(cat_item)
-                        child.setText(0, f"      {tab_name}")
+                        child.setText(0, f"{P_T}{P_T}{P_T}{tab_name}")
                         child.setData(0, Qt.UserRole, tab_index)
 
                     cat_item.setExpanded(cat_expanded)
 
             root.setExpanded(expanded)
 
-        _add_root("BiProfile", bi_cats)
+        if bi_cats:
+            _add_root("BiProfile", bi_cats)
         if transp_cats:
             _add_root("TRANSP", transp_cats, flat=True)
+        if efit_cats:
+            _add_root("EFIT", efit_cats, flat=True)
 
     def _on_click(self, item, _col):
         tab_index = item.data(0, Qt.UserRole)
@@ -344,10 +410,27 @@ class SidebarNav(QWidget):
                 if cat and cat.childCount() > 0:
                     self.tree.setCurrentItem(cat.child(0))
             return
-        first_cat = self.tree.topLevelItem(0)
-        if first_cat and first_cat.childCount() > 0:
-            first_child = first_cat.child(0)
-            self.tree.setCurrentItem(first_child)
+        if self.mode == 'efit':
+            # flat: EFIT > tab items directly
+            root = self.tree.topLevelItem(0)
+            if root and root.childCount() > 0:
+                self.tree.setCurrentItem(root.child(0))
+            return
+        # Full mode: find first leaf (tab) item
+        def _find_first_leaf(item):
+            for i in range(item.childCount()):
+                child = item.child(i)
+                if child.data(0, Qt.UserRole) is not None:
+                    return child
+                leaf = _find_first_leaf(child)
+                if leaf:
+                    return leaf
+            return None
+        root = self.tree.topLevelItem(0)
+        if root:
+            leaf = _find_first_leaf(root)
+            if leaf:
+                self.tree.setCurrentItem(leaf)
 
 
 class PRISMApp(QMainWindow):
@@ -356,6 +439,7 @@ class PRISMApp(QMainWindow):
     mode='':       Full PRISM with sidebar
     mode='select': Tab selector screen (button grid)
     mode='transp':     TRANSP viewer (transport analysis profiles)
+    mode='efit':       EFIT viewer
     """
 
     def __init__(self, mode=''):
@@ -377,15 +461,28 @@ class PRISMApp(QMainWindow):
         self.tab_cache = {}
         self.tab_widgets = {}
 
-        if self.mode == 'transp':
+        if self.mode == 'diag':
+            self._build_diag_tab_configs()
+        elif self.mode == 'biprofile':
+            self._build_biprofile_tab_configs()
+        elif self.mode == 'transp':
             self._build_bi_tab_configs()
+        elif self.mode == 'efit':
+            self._build_efit_tab_configs()
         else:
             self._build_tab_configs()
 
         # Print startup message for all modes
         self._print_startup_message()
 
-        if self.mode == 'select':
+        if self.mode == 'diag':
+            # Diagnostic data viewer (no BiProfile/TRANSP/EFIT)
+            self.setWindowTitle(f'PRISM v{VERSION} - Diagnostic Data Viewer')
+            self.resize(1500, 700)
+            self._create_widgets()
+            ThemeManager.on_theme_changed(self._on_theme_changed)
+            QTimer.singleShot(0, self._deferred_startup)
+        elif self.mode == 'select':
             # Tab selector mode
             self._child_windows = []
             self.setWindowTitle(f'PRISM v{VERSION} - Select Viewer')
@@ -393,6 +490,14 @@ class PRISMApp(QMainWindow):
             self.setFixedWidth(360)
             self.adjustSize()
             QTimer.singleShot(0, lambda: show_update_popup(self))
+        elif self.mode == 'biprofile':
+            # BiProfile viewer mode
+            self._bi_shot_data = {}
+            self.setWindowTitle(f'PRISM v{VERSION} - BiProfile Viewer')
+            self.resize(1500, 700)
+            self._create_widgets()
+            ThemeManager.on_theme_changed(self._on_theme_changed)
+            QTimer.singleShot(0, self._deferred_startup_bi)
         elif self.mode == 'transp':
             # TRANSP viewer mode
             self._bi_shot_data = {}
@@ -401,8 +506,16 @@ class PRISMApp(QMainWindow):
             self._create_widgets()
             ThemeManager.on_theme_changed(self._on_theme_changed)
             QTimer.singleShot(0, self._deferred_startup_bi)
+        elif self.mode == 'efit':
+            # EFIT viewer mode
+            self.setWindowTitle(f'PRISM v{VERSION} - EFIT Viewer')
+            self.resize(1500, 700)
+            self._create_widgets()
+            ThemeManager.on_theme_changed(self._on_theme_changed)
+            QTimer.singleShot(0, self._deferred_startup_efit)
         else:
             # Full PRISM mode
+            self._bi_shot_data = {}
             self.setWindowTitle(f'PRISM v{VERSION} - Plasma Research Integrated System for Multi-diagnostics')
             self.resize(1500, 700)
             self._create_widgets()
@@ -428,12 +541,19 @@ class PRISMApp(QMainWindow):
             self.sidebar.select_first()
             self._switch_tab(0)
 
+    def _deferred_startup_efit(self):
+        """EFIT viewer mode startup"""
+        show_update_popup(self)
+        if self.tab_configs:
+            self.sidebar.select_first()
+            self._switch_tab(0)
+
     # ------------------------------------------------------------------
     # BiProfile mode
     # ------------------------------------------------------------------
 
-    def _build_bi_tab_configs(self):
-        """Build tab configs for TRANSP viewer mode"""
+    def _build_biprofile_tab_configs(self):
+        """Build tab configs for BiProfile viewer mode"""
         self.tab_configs = [
             {'diagnostic': None, 'tab_type': 'bi_profile',
              'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
@@ -443,16 +563,35 @@ class PRISMApp(QMainWindow):
              'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
             {'diagnostic': None, 'tab_type': 'bi_timetrace',
              'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
+        ]
+
+    def _build_bi_tab_configs(self):
+        """Build tab configs for TRANSP CDF viewer mode"""
+        self.tab_configs = [
             {'diagnostic': None, 'tab_type': 'transp_profile',
              'tab_name': 'Profiles'},
             {'diagnostic': None, 'tab_type': 'transp_timetrace',
              'tab_name': 'Time Traces'},
         ]
 
-    def fetch_biprofile_shot(self, shot):
-        """Load all biprofile data for a shot (parallel). Cached.
+    def _build_efit_tab_configs(self):
+        """Build tab configs for EFIT viewer mode"""
+        self.tab_configs = [
+            {'diagnostic': None, 'tab_type': 'efit_profile',
+             'tab_name': 'Profiles'},
+            {'diagnostic': None, 'tab_type': 'efit_scalar',
+             'tab_name': 'Time Traces'},
+            {'diagnostic': None, 'tab_type': 'efit_2d',
+             'tab_name': '2D'},
+            {'diagnostic': None, 'tab_type': 'efit_pfile',
+             'tab_name': 'p-File'},
+        ]
 
-        Two-phase: BIPROFILE + DIAG_PARAMS + CES + Thomson in parallel,
+    def fetch_biprofile_shot(self, shot, params=None):
+        """Load biprofile data for a shot (parallel). Cached.
+
+        params: tuple of param names to load, e.g. ('Ti','vT'). None = all.
+        Two-phase: BIPROFILE + DIAG_PARAMS + raw in parallel,
         then EFIT using tree from BIPROFILE metadata.
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -460,6 +599,11 @@ class PRISMApp(QMainWindow):
             load_biprofile, load_diag_params,
             load_efit_psin, load_ces_raw, load_thomson_raw,
         )
+
+        if params is None:
+            params = ('Ti', 'vT', 'Te', 'ne')
+        load_ces = any(p in ('Ti', 'vT') for p in params)
+        load_thomson = any(p in ('Te', 'ne') for p in params)
 
         self.statusBar().showMessage(f"Loading #{shot}...")
         self.progress.setRange(0, 0)
@@ -472,11 +616,13 @@ class PRISMApp(QMainWindow):
         thomson = None
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {}
-            for param in ['Ti', 'vT', 'Te', 'ne']:
+            for param in params:
                 futures[executor.submit(load_biprofile, shot, param)] = param
             futures[executor.submit(load_diag_params, shot)] = 'DIAG_PARAMS'
-            futures[executor.submit(load_ces_raw, shot)] = 'CES'
-            futures[executor.submit(load_thomson_raw, shot)] = 'Thomson'
+            if load_ces:
+                futures[executor.submit(load_ces_raw, shot)] = 'CES'
+            if load_thomson:
+                futures[executor.submit(load_thomson_raw, shot)] = 'Thomson'
 
             for future in as_completed(futures):
                 key = futures[future]
@@ -535,6 +681,30 @@ class PRISMApp(QMainWindow):
             self._plot_manager = PlotManager(self.config)
         return self._plot_manager
 
+    def _build_diag_tab_configs(self):
+        """Build diagnostic-only tab configs (no BiProfile/TRANSP/EFIT)"""
+        enabled_diagnostics = get_enabled_diagnostics()
+        for diag in enabled_diagnostics:
+            for tab_type in ['profile', 'timetrace']:
+                if not TabFactory.should_create_tab(diag, tab_type):
+                    continue
+                self.tab_configs.append({
+                    'diagnostic': diag,
+                    'tab_type': tab_type,
+                    'tab_name': TabFactory.get_tab_name(diag, tab_type)
+                })
+        import socket as _socket
+        _host = _socket.gethostname()
+        _nkstar_only = {'tv', 'tv_startup', 'irvb'}
+        for special_type in ['spectrogram', 'nmode', 'tv', 'tv_startup', 'irvb', 'neutron']:
+            if special_type in _nkstar_only and not _host.startswith('nkstar'):
+                continue
+            self.tab_configs.append({
+                'diagnostic': None,
+                'tab_type': special_type,
+                'tab_name': TabFactory.get_tab_name(None, special_type)
+            })
+
     def _build_tab_configs(self):
         """Build full tab configuration list"""
         enabled_diagnostics = get_enabled_diagnostics()
@@ -585,6 +755,18 @@ class PRISMApp(QMainWindow):
             'diagnostic': None, 'tab_type': 'transp_timetrace',
             'tab_name': 'Time Traces'})
 
+        # EFIT tabs
+        self.tab_configs.extend([
+            {'diagnostic': None, 'tab_type': 'efit_profile',
+             'tab_name': 'Profiles'},
+            {'diagnostic': None, 'tab_type': 'efit_scalar',
+             'tab_name': 'Time Traces'},
+            {'diagnostic': None, 'tab_type': 'efit_2d',
+             'tab_name': '2D'},
+            {'diagnostic': None, 'tab_type': 'efit_pfile',
+             'tab_name': 'p-File'},
+        ])
+
     # ------------------------------------------------------------------
     # Tab Selector Mode (prism select)
     # ------------------------------------------------------------------
@@ -615,78 +797,110 @@ class PRISMApp(QMainWindow):
 
         title = QLabel(
             f'<span style="font-size:22px; font-weight:bold; color:#0d6efd;">PRISM</span>'
-            f'  <span style="font-size:10px; color:#888;">v{VERSION}</span>'
+            f'  <span style="font-size:10px; color:#888;">v{VERSION} ({UPDATE_DATE})</span>'
         )
         header_layout.addWidget(title)
         header_layout.addStretch()
         layout.addWidget(header)
 
         # Categorized buttons
-        _HEADER_STYLE = ("color: #0d6efd; font-size: 11px; font-weight: bold; "
-                         "padding: 6px 0 1px 0;")
+        from PySide6.QtWidgets import QGroupBox
         _SUB_STYLE = ("color: #888; font-size: 10px; font-weight: bold; "
-                      "padding: 2px 0 1px 8px;")
+                      "padding: 2px 0 1px 0;")
+        _GROUP_STYLE = ("QGroupBox { font-size: 11px; font-weight: bold; "
+                        "color: #0d6efd; border: 1px solid #666; "
+                        "border-radius: 4px; margin-top: 8px; padding-top: 10px; } "
+                        "QGroupBox::title { subcontrol-origin: margin; left: 8px; }")
+
         def _lbl(text, style):
             l = QLabel(text); l.setStyleSheet(style); return l
 
+        def _btn(tab_index, tab_name):
+            btn = QPushButton(tab_name)
+            btn.setFixedHeight(26)
+            btn.setStyleSheet("font-size: 11px; padding: 2px 8px;")
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(partial(self._launch_single_tab, tab_index))
+            return btn
+
         categorized = _categorize_tabs(self.tab_configs)
-        last_parent = None
-        # Collect TRANSP items to merge into one row
-        _transp_items = []
 
+        # Separate into groups: Diagnostics, EFIT, BiProfile, TRANSP
+        _DIAG = {"Profiles", "Time Traces", "Spectral", "Imaging"}
+        diag_cats = [(n, it) for n, it in categorized if n in _DIAG]
+        efit_items = []
+        bi_cats = []
+        transp_items = []
         for cat_name, items in categorized:
-            parts = cat_name.split(' ', 1)
-            if len(parts) == 2 and parts[0] in ('BiProfile', 'TRANSP'):
-                parent, sub = parts
-            else:
-                parent, sub = None, cat_name
+            if cat_name == "EFIT":
+                efit_items.extend(items)
+            elif cat_name.startswith("BiProfile"):
+                bi_cats.append((cat_name, items))
+            elif cat_name.startswith("TRANSP"):
+                transp_items.extend(items)
 
-            # TRANSP: collect all items, render later as one row
-            if parent == 'TRANSP':
-                if parent != last_parent:
-                    _transp_items = []
-                _transp_items.extend(items)
-                last_parent = parent
-                continue
+        # Diagnostics
+        if diag_cats:
+            grp = QGroupBox("Diagnostics")
+            grp.setStyleSheet(_GROUP_STYLE)
+            glayout = QVBoxLayout(grp)
+            glayout.setSpacing(3)
+            for cat_name, items in diag_cats:
+                glayout.addWidget(_lbl(cat_name, _SUB_STYLE))
+                btn_row = QHBoxLayout()
+                btn_row.setSpacing(4)
+                for tab_index, tab_name, tab_type in items:
+                    btn_row.addWidget(_btn(tab_index, tab_name), 1)
+                glayout.addLayout(btn_row)
+            layout.addWidget(grp)
 
-            # Show parent header (BiProfile)
-            if parent and parent != last_parent:
-                layout.addWidget(_lbl(parent, _HEADER_STYLE))
-            last_parent = parent
-
-            if parent:
-                # Sub-category label (indented)
-                layout.addWidget(_lbl(f"  {sub}", _SUB_STYLE))
-            else:
-                # Top-level category
-                layout.addWidget(_lbl(cat_name, _HEADER_STYLE))
-
+        # EFIT
+        if efit_items:
+            grp = QGroupBox("EFIT")
+            grp.setStyleSheet(_GROUP_STYLE)
+            glayout = QVBoxLayout(grp)
             btn_row = QHBoxLayout()
             btn_row.setSpacing(4)
-            for tab_index, tab_name, tab_type in items:
-                btn = QPushButton(tab_name)
-                btn.setFixedHeight(26)
-                btn.setStyleSheet("font-size: 11px; padding: 2px 8px;")
-                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                btn.setCursor(Qt.PointingHandCursor)
-                btn.clicked.connect(partial(self._launch_single_tab, tab_index))
-                btn_row.addWidget(btn, 1)
-            layout.addLayout(btn_row)
+            for tab_index, tab_name, tab_type in efit_items:
+                btn_row.addWidget(_btn(tab_index, tab_name), 1)
+            glayout.addLayout(btn_row)
+            layout.addWidget(grp)
 
-        # TRANSP: header + single row of buttons
-        if _transp_items:
-            layout.addWidget(_lbl("TRANSP", _HEADER_STYLE))
+        # BiProfile
+        if bi_cats:
+            grp = QGroupBox("BiProfile")
+            grp.setStyleSheet(_GROUP_STYLE)
+            glayout = QVBoxLayout(grp)
+            glayout.setSpacing(3)
+            for cat_name, items in bi_cats:
+                sub = cat_name.replace("BiProfile ", "")
+                glayout.addWidget(_lbl(sub, _SUB_STYLE))
+                btn_row = QHBoxLayout()
+                btn_row.setSpacing(4)
+                for tab_index, tab_name, tab_type in items:
+                    btn_row.addWidget(_btn(tab_index, tab_name), 1)
+                glayout.addLayout(btn_row)
+            layout.addWidget(grp)
+
+        # TRANSP
+        if transp_items:
+            grp = QGroupBox("TRANSP")
+            grp.setStyleSheet(_GROUP_STYLE)
+            glayout = QVBoxLayout(grp)
             btn_row = QHBoxLayout()
             btn_row.setSpacing(4)
-            for tab_index, tab_name, tab_type in _transp_items:
-                btn = QPushButton(tab_name)
-                btn.setFixedHeight(26)
-                btn.setStyleSheet("font-size: 11px; padding: 2px 8px;")
-                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-                btn.setCursor(Qt.PointingHandCursor)
-                btn.clicked.connect(partial(self._launch_single_tab, tab_index))
-                btn_row.addWidget(btn, 1)
-            layout.addLayout(btn_row)
+            for tab_index, tab_name, tab_type in transp_items:
+                btn_row.addWidget(_btn(tab_index, tab_name), 1)
+            glayout.addLayout(btn_row)
+            layout.addWidget(grp)
+
+        # Footer
+        layout.addStretch()
+        footer = QLabel(f'Developed by {AUTHOR_NAME} ({CONTACT_EMAIL})')
+        footer.setAlignment(Qt.AlignCenter)
+        footer.setStyleSheet("color: #888; font-size: 9px; padding-top: 4px;")
+        layout.addWidget(footer)
 
         self.setCentralWidget(central)
 
@@ -719,6 +933,14 @@ class PRISMApp(QMainWindow):
             title = f"TRANSP Profile"
         elif tab_type == 'transp_timetrace':
             title = f"TRANSP Time Trace"
+        elif tab_type == 'efit_scalar':
+            title = f"EFIT Time Traces"
+        elif tab_type == 'efit_profile':
+            title = f"EFIT Profiles"
+        elif tab_type == 'efit_2d':
+            title = f"EFIT 2D"
+        elif tab_type == 'efit_pfile':
+            title = f"EFIT p-File"
         elif tab_type == 'profile':
             title = f"{tab_name} Profile"
         elif tab_type == 'timetrace':
@@ -858,6 +1080,8 @@ class PRISMApp(QMainWindow):
             tab = self._create_bi_tab(config)
         elif config['tab_type'] in ('transp_profile', 'transp_timetrace'):
             tab = self._create_transp_tab(config)
+        elif config['tab_type'] in ('efit_scalar', 'efit_profile', 'efit_2d', 'efit_pfile'):
+            tab = self._create_efit_tab(config)
         else:
             tab = TabFactory.create_tab(
                 None,
@@ -892,6 +1116,22 @@ class PRISMApp(QMainWindow):
         else:
             from ui.transp_timetrace_tab import TranspTimeTraceTab
             return TranspTimeTraceTab(self)
+
+    def _create_efit_tab(self, config):
+        """Create an EFIT viewer tab instance"""
+        tt = config['tab_type']
+        if tt == 'efit_scalar':
+            from ui.efit_scalar_tab import EfitScalarTab
+            return EfitScalarTab(self)
+        elif tt == 'efit_profile':
+            from ui.efit_profile_tab import EfitProfileTab
+            return EfitProfileTab(self)
+        elif tt == 'efit_pfile':
+            from ui.efit_pfile_tab import EfitPfileTab
+            return EfitPfileTab(self)
+        else:
+            from ui.efit_2d_tab import Efit2DTab
+            return Efit2DTab(self)
 
     def _update_toolbar(self, tab_index):
         """Update toolbar for the current tab"""
@@ -959,10 +1199,13 @@ class PRISMApp(QMainWindow):
         print("|" + " " * 62 + "|")
         print("+" + "=" * 62 + "+")
         print()
-        print("  * prism       Launch full PRISM with all diagnostics")
-        print("  * prism -s    Select and launch individual diagnostic viewers")
-        print("  * prism -t    Launch TRANSP viewer")
-        print("  * prism -h    Show help")
+        print("  * prism              Full PRISM (Diagnostics + EFIT + BiProfile + TRANSP)")
+        print("  * prism -d           Diagnostic data viewer")
+        print("  * prism -e           EFIT viewer")
+        print("  * prism -b           BiProfile viewer")
+        print("  * prism -t           TRANSP CDF viewer")
+        print("  * prism -s           Select and launch individual viewers")
+        print("  * prism -h           Show help")
         print()
 
     def closeEvent(self, event):
@@ -1038,6 +1281,19 @@ class _SingleTabWindow(QMainWindow):
             else:
                 from ui.transp_timetrace_tab import TranspTimeTraceTab
                 self.tab = TranspTimeTraceTab(self)
+        elif tt in ('efit_scalar', 'efit_profile', 'efit_2d', 'efit_pfile'):
+            if tt == 'efit_scalar':
+                from ui.efit_scalar_tab import EfitScalarTab
+                self.tab = EfitScalarTab(self)
+            elif tt == 'efit_profile':
+                from ui.efit_profile_tab import EfitProfileTab
+                self.tab = EfitProfileTab(self)
+            elif tt == 'efit_pfile':
+                from ui.efit_pfile_tab import EfitPfileTab
+                self.tab = EfitPfileTab(self)
+            else:
+                from ui.efit_2d_tab import Efit2DTab
+                self.tab = Efit2DTab(self)
         else:
             self.tab = TabFactory.create_tab(
                 None, app_config, tab_config['diagnostic'],
@@ -1062,7 +1318,7 @@ class _SingleTabWindow(QMainWindow):
         # Register theme callback
         ThemeManager.on_theme_changed(self._on_theme_changed)
 
-    def fetch_biprofile_shot(self, shot):
+    def fetch_biprofile_shot(self, shot, params=None):
         """Delegate BiProfile loading (same as PRISMApp)"""
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from data_loaders.biprofile_loader import (
@@ -1072,16 +1328,23 @@ class _SingleTabWindow(QMainWindow):
         if shot in self._bi_shot_data:
             return self._bi_shot_data[shot]
 
+        if params is None:
+            params = ('Ti', 'vT', 'Te', 'ne')
+        load_ces = any(p in ('Ti', 'vT') for p in params)
+        load_thomson = any(p in ('Te', 'ne') for p in params)
+
         bi_data = {}
         diag = None; efit = None; ces = None; thomson = None
 
         with ThreadPoolExecutor(max_workers=6) as executor:
             futures = {}
-            for param in ['Ti', 'vT', 'Te', 'ne']:
+            for param in params:
                 futures[executor.submit(load_biprofile, shot, param)] = param
             futures[executor.submit(load_diag_params, shot)] = 'diag'
-            futures[executor.submit(load_ces_raw, shot)] = 'ces'
-            futures[executor.submit(load_thomson_raw, shot)] = 'thomson'
+            if load_ces:
+                futures[executor.submit(load_ces_raw, shot)] = 'ces'
+            if load_thomson:
+                futures[executor.submit(load_thomson_raw, shot)] = 'thomson'
 
             for future in as_completed(futures):
                 key = futures[future]
