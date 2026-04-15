@@ -489,9 +489,11 @@ class PRISMApp(QMainWindow):
                     elif key == 'Thomson':
                         thomson = result
                     else:
-                        bi_data[key] = result
+                        if result is not None:
+                            bi_data[key] = result
                 except Exception as e:
-                    print(f"[Loader] BiProfile {key} failed: {e}")
+                    if 'no data' not in str(e).lower():
+                        print(f"[Loader] BiProfile {key} failed: {e}")
 
         if not bi_data:
             self.progress.hide()
@@ -1095,7 +1097,8 @@ class _SingleTabWindow(QMainWindow):
                     elif key == 'thomson':
                         thomson = result
                 except Exception as e:
-                    print(f"[Loader] BiProfile {key} failed: {e}")
+                    if 'no data' not in str(e).lower():
+                        print(f"[Loader] BiProfile {key} failed: {e}")
 
         if bi_data:
             ref = next(iter(bi_data.values()))
