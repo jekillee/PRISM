@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 """
-PRISM v2.5.0
+PRISM v2.5.2
 Main entry point
 
 Plasma Research Integrated System for Multi-diagnostics
@@ -98,10 +98,42 @@ def create_app():
     return app
 
 
+def _print_startup():
+    from config.app_config import VERSION, UPDATE_DATE
+    v = f"v{VERSION} ({UPDATE_DATE})"
+    print(f"""
+\033[91m  ██████╗ \033[33m██████╗ \033[93m██╗\033[92m███████╗\033[94m███╗   ███╗\033[0m
+\033[91m  ██╔══██╗\033[33m██╔══██╗\033[93m██║\033[92m██╔════╝\033[94m████╗ ████║\033[0m
+\033[91m  ██████╔╝\033[33m██████╔╝\033[93m██║\033[92m███████╗\033[94m██╔████╔██║\033[0m
+\033[91m  ██╔═══╝ \033[33m██╔══██╗\033[93m██║\033[92m╚════██║\033[94m██║╚██╔╝██║\033[0m
+\033[91m  ██║     \033[33m██║  ██║\033[93m██║\033[92m███████║\033[94m██║ ╚═╝ ██║\033[0m
+\033[91m  ╚═╝     \033[33m╚═╝  ╚═╝\033[93m╚═╝\033[92m╚══════╝\033[94m╚═╝     ╚═╝\033[0m
+  {v}
+
+  Plasma Research Integrated System for Multi-diagnostics:
+  A unified visualization and data analysis platform for KSTAR tokamak.
+
+  Developed by Jekil Lee (jklee@kfe.re.kr)
+
+\033[90m  Modes:
+    prism              Full PRISM (Diagnostics + EFIT + BiProfile + TRANSP)
+    prism -d           Diagnostic data viewer
+    prism -e           EFIT viewer
+    prism -b           BiProfile viewer
+    prism -t           TRANSP CDF viewer
+
+  Options:
+    prism -s           Select and launch individual viewers
+    prism -h           Show help\033[0m
+""")
+
+
 def main():
     """Main entry point with mode selection"""
     # Parse command line argument
     arg = sys.argv[1] if len(sys.argv) > 1 else ''
+
+    _print_startup()
 
     app = create_app()
 

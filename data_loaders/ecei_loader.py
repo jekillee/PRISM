@@ -66,14 +66,35 @@ class ECEILoader:
         
         try:
             # Load device parameters from MDS+
-            Bt_raw = mds.get('\\ECEI_I_TF').data() * 0.0995556
-            Bt = round(Bt_raw, 1)  # Round to 1 decimal place
-            
-            mode = mds.get(f'\\{device}_MODE').data()
-            LO = mds.get(f'\\{device}_LOFREQ').data()
-            sz = mds.get(f'\\{device}_LENSZOOM').data()
-            sf = mds.get(f'\\{device}_LENSFOCUS').data()
-            
+            param_nodes = {
+                'Bt': '\\ECEI_I_TF',
+                'mode': f'\\{device}_MODE',
+                'LO': f'\\{device}_LOFREQ',
+                'sz': f'\\{device}_LENSZOOM',
+                'sf': f'\\{device}_LENSFOCUS',
+            }
+
+            missing = []
+            params = {}
+            for key, node in param_nodes.items():
+                try:
+                    params[key] = mds.get(node).data()
+                except Exception:
+                    missing.append(node)
+
+            if missing:
+                print(f"[ECEI] Missing nodes for {device} position calculation:")
+                for node in missing:
+                    print(f"[ECEI]   {node} → NODATA")
+                raise RuntimeError(f"Missing parameter nodes: {', '.join(missing)}")
+
+            Bt_raw = params['Bt'] * 0.0995556
+            Bt = round(Bt_raw, 1)
+            mode = params['mode']
+            LO = params['LO']
+            sz = params['sz']
+            sf = params['sf']
+
             mds.closeTree('kstar', shot_number)
             
             # Calculate R positions for 8 radial channels [cm]

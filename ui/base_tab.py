@@ -664,6 +664,8 @@ class BaseTab(ABC):
             modes.append("Averaged Data")
         if has_fit_results:
             modes.extend(["Fitted Profile", "Fit Parameters"])
+            if hasattr(self, '_get_pfile_lines'):
+                modes.append("p-File Format")
         mode_combo.addItems(modes)
         mode_row.addWidget(mode_combo)
         mode_row.addStretch()
@@ -695,6 +697,9 @@ class BaseTab(ABC):
             elif mode == "Fitted Profile":
                 lines = self._get_fit_profile_lines(selected_entries)
                 widget = self._create_preview_table(lines)
+            elif mode == "p-File Format":
+                lines = self._get_pfile_lines(selected_entries)
+                widget = self._create_text_preview(lines)
             else:
                 lines = self._get_fit_params_lines(selected_entries)
                 widget = self._create_text_preview(lines)
@@ -712,13 +717,16 @@ class BaseTab(ABC):
         save_btn = QPushButton("Save as .csv")
 
         def _update_save_label(mode_text):
-            save_btn.setText("Save as .txt" if mode_text == "Fit Parameters" else "Save as .csv")
+            if mode_text in ("Fit Parameters", "p-File Format"):
+                save_btn.setText("Save as .txt")
+            else:
+                save_btn.setText("Save as .csv")
 
         mode_combo.currentTextChanged.connect(_update_save_label)
 
         def _save_current_mode():
             mode = mode_combo.currentText()
-            if mode == "Fit Parameters":
+            if mode in ("Fit Parameters", "p-File Format"):
                 ext_filter = "Text files (*.txt);;All files (*.*)"
                 default_ext = ".txt"
             else:
@@ -745,6 +753,10 @@ class BaseTab(ABC):
                     lines = self._get_fit_profile_lines(selected_entries)
                     with open(file_path, 'w') as f:
                         f.writelines(lines)
+                elif mode == "p-File Format":
+                    lines = self._get_pfile_lines(selected_entries)
+                    with open(file_path, 'w') as f:
+                        f.writelines(lines)
                 else:  # Fit Parameters
                     lines = self._get_fit_params_lines(selected_entries)
                     with open(file_path, 'w') as f:
@@ -767,6 +779,8 @@ class BaseTab(ABC):
                 lines = self._get_averaged_data_lines(selected_entries)
             elif mode == "Fitted Profile":
                 lines = self._get_fit_profile_lines(selected_entries)
+            elif mode == "p-File Format":
+                lines = self._get_pfile_lines(selected_entries)
             else:
                 lines = self._get_fit_params_lines(selected_entries)
             QApplication.clipboard().setText("".join(lines))

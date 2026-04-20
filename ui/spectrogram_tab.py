@@ -751,14 +751,14 @@ class SpectrogramTab:
             self._update_channel_dropdown_ecei(info, device)
             return
 
+        print(f"[Spectrogram] Loading ECEI-{device} channel info for #{shot_number}...")
+
+        # GR excluded vertical channels
+        excluded_v = ECEILoader.GR_EXCLUDED_VERTICAL if device == 'GR' else []
+
         try:
-            print(f"[Spectrogram] Loading ECEI-{device} channel info for #{shot_number}...")
-
-            # Use ECEILoader to get channel positions
+            # Try to get channel positions (requires device params from MDS+)
             positions = self.ecei_loader.get_channel_positions(shot_number, device)
-
-            # GR excluded vertical channels
-            excluded_v = ECEILoader.GR_EXCLUDED_VERTICAL if device == 'GR' else []
 
             # Build channel list with positions (flattened from 2D arrays)
             channels = []
@@ -792,16 +792,40 @@ class SpectrogramTab:
             print(f"[Spectrogram]   R range: {min(R_values):.3f} - {max(R_values):.3f} m")
             print(f"[Spectrogram]   {len(channels)} channels loaded")
 
-            self._update_channel_dropdown_ecei(self.ecei_info[cache_key], device)
-
         except Exception as e:
-            QMessageBox.critical(self.frame, "Error", f"Failed to load ECEI-{device} info: {str(e)}")
+            # Fallback: create channel list without position info
+            print(f"[Spectrogram] Warning: Could not load ECEI-{device} positions: {e}")
+            print(f"[Spectrogram]   Using channel list without R, Z positions")
+
+            channels = []
+            for v in range(1, 25):
+                if v in excluded_v:
+                    continue
+                for r in range(1, 9):
+                    channels.append(f'{device}{v:02d}{r:02d}')
+
+            self.ecei_info[cache_key] = {
+                'channels': channels,
+                'R': np.zeros(len(channels)),
+                'Z': np.zeros(len(channels)),
+                'Bt': None,
+                'mode': None,
+                'LO': None
+            }
+
+            print(f"[Spectrogram]   {len(channels)} channels loaded (no position info)")
+
+        self._update_channel_dropdown_ecei(self.ecei_info[cache_key], device)
 
     def _update_channel_dropdown_ecei(self, info, device):
         """Update channel dropdown with ECEI channels (R, Z)"""
+        has_positions = info.get('Bt') is not None
         channel_list = []
         for ch, R, Z in zip(info['channels'], info['R'], info['Z']):
-            channel_list.append(f"{ch} (R={R:.3f}m, Z={Z:.3f}m)")
+            if has_positions:
+                channel_list.append(f"{ch} (R={R:.3f}m, Z={Z:.3f}m)")
+            else:
+                channel_list.append(ch)
 
         self.channel_dropdown.clear()
         self.channel_dropdown.addItems(channel_list)

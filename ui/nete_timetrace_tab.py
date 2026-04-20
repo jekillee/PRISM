@@ -25,6 +25,7 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
         self.ece_data_cache = {}
         self.tci_loader = None
         self.tci_data_cache = {}
+        self.ts_ne_avg_cache = {}  # {shot: {'time': ndarray, 'data': ndarray}}
 
     def _create_shot_input(self, parent):
         """Create data loading section with diagnostic selection"""
@@ -156,6 +157,22 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
                         })
 
                     print(f"[Thomson] Data loaded: {len(ts_data.radius)} channels")
+
+                    # Add TS_NE_AVG if available from loader
+                    if 'ne_avg' in ts_data.measurements:
+                        ne_avg = ts_data.measurements['ne_avg']
+                        self.ts_ne_avg_cache[shot_number] = {
+                            'time': ne_avg['time'],
+                            'data': ne_avg['data']
+                        }
+                        all_channels.append({
+                            'R': 0,
+                            'label': f'{shot_number:06d} (TS_NE_AVG)',
+                            'source': 'TS_NE_AVG',
+                            'channel_idx': 0,
+                            'ch_label': 'TS_NE_AVG'
+                        })
+
                 except Exception as e:
                     print(f"[Thomson] Not available: {str(e)}")
 
@@ -268,6 +285,9 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
             source = 'ECE'
             radius = float(parts[1]) / 1e3  # mm to m
             return shot_number, radius, source, diag_label, sampling_key
+        elif diag_label == 'TS_NE_AVG':
+            source = 'TS_NE_AVG'
+            return shot_number, 0, source, diag_label, sampling_key
         elif diag_label.startswith('TCI'):
             source = 'TCI'
             channel = int(diag_label.replace('TCI', ''))
@@ -408,6 +428,34 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
                                      alpha=0.5, markeredgewidth=1.5,
                                      label=label, zorder=5)
 
+                elif source == 'TS_NE_AVG':
+                    # Plot TS_NE_AVG time trace (line-averaged ne)
+                    if shot_number not in self.ts_ne_avg_cache:
+                        # Re-load Thomson data to get ne_avg
+                        ts_data = self.data_loader.load_data(shot_number)
+                        cache_key = f'{shot_number}_TS'
+                        self.data[cache_key] = ts_data
+                        if 'ne_avg' in ts_data.measurements:
+                            ne_avg = ts_data.measurements['ne_avg']
+                            self.ts_ne_avg_cache[shot_number] = {
+                                'time': ne_avg['time'],
+                                'data': ne_avg['data']
+                            }
+
+                    cached = self.ts_ne_avg_cache.get(shot_number)
+                    if cached is None:
+                        continue
+                    x_data = cached['time']
+                    ne_trace = cached['data']
+
+                    ne_max = max(ne_max, np.nanmax(ne_trace))
+
+                    label = f'#{shot_number} (TS_NE_AVG)'
+
+                    # TS_NE_AVG: solid line on ne axis
+                    self.ax2.plot(x_data, ne_trace, '-', color=color,
+                                 linewidth=1.5, label=label, zorder=5)
+
                 elif source == 'TCI':
                     # Plot TCI time trace with specific sampling rate
                     cache_key = f'{shot_number}_TCI_{sampling_key}'
@@ -517,6 +565,15 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
                             shot_number, ece_data.time[i], actual_R,
                             Te_trace[i], 'NaN', 'NaN', 'NaN', 'NaN', 'NaN', 'ECE'
                         ))
+
+                elif source == 'TS_NE_AVG':
+                    if shot_number in self.ts_ne_avg_cache:
+                        cached = self.ts_ne_avg_cache[shot_number]
+                        for i in range(len(cached['time'])):
+                            f.write(" %10d,%10.3f,%10s,%10s,%10s,%10s,%10.3f,%10s,%10s,%10s\n" % (
+                                shot_number, cached['time'][i], 'NaN',
+                                'NaN', 'NaN', 'NaN', cached['data'][i], 'NaN', 'NaN', 'TS_AVG'
+                            ))
 
                 elif source == 'TCI':
                     cache_key = f'{shot_number}_TCI_{sampling_key}'

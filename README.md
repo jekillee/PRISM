@@ -6,7 +6,7 @@
 
 **Plasma Research Integrated System for Multi-diagnostics**
 
-A modular diagnostic data visualization platform for KSTAR tokamak at Korea Institute of Fusion Energy (KFE).
+A unified visualization and data analysis platform for KSTAR tokamak.
 
 ## Features
 
@@ -26,7 +26,7 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 - **X-axis Selection**: R/ψN/ρpol/ρtor radio buttons in profile plot section
 - **Interactive Channel Toggle**: Double-click data points to exclude/include channels from fitting
 - **Dark/Light Theme**: Runtime theme switching with persistence
-- **Data Preview & Save**: Spreadsheet-style preview before exporting data
+- **Data Preview & Save**: Spreadsheet-style preview before exporting data, with p-file (PEQDSK) format export for fitted profiles
 - **Profile Browse**: Slider-based data browsing with playback before selecting time points
 - **Time Averaging**: dt-based profile averaging for fitting and visualization
 - **Collapsible Sidebar**: Expand/collapse category groups with state persistence
@@ -40,7 +40,7 @@ A modular diagnostic data visualization platform for KSTAR tokamak at Korea Inst
 |------------|-------------|------------|
 | CES | Charge Exchange Spectroscopy | Ti, vT |
 | XICS | X-ray Imaging Crystal Spectrometer | Ti, vT |
-| Thomson | Thomson Scattering | Te, ne |
+| Thomson | Thomson Scattering | Te, ne, ne_avg |
 | ECE | Electron Cyclotron Emission | Te |
 | ECEI | ECE Imaging | 2D Te fluctuation |
 | MSE | Motional Stark Effect | gamma, q, j |

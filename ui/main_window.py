@@ -95,7 +95,15 @@ class SidebarNav(QWidget):
         self._update_logo()
         title_layout.addWidget(self.logo_label, alignment=Qt.AlignVCenter)
 
-        title = QLabel(f'<span style="font-size:24px; font-weight:bold; color:#0d6efd;">PRISM</span>')
+        title = QLabel(
+            '<span style="font-size:24px; font-weight:bold;">'
+            '<span style="color:#ff4444;">P</span>'
+            '<span style="color:#ff8c00;">R</span>'
+            '<span style="color:#ffd700;">I</span>'
+            '<span style="color:#22c55e;">S</span>'
+            '<span style="color:#3b82f6;">M</span>'
+            '</span>'
+        )
         title_layout.addWidget(title, alignment=Qt.AlignVCenter)
         title_layout.addStretch()
         layout.addWidget(title_row)
@@ -796,7 +804,13 @@ class PRISMApp(QMainWindow):
         header_layout.addWidget(self._selector_logo)
 
         title = QLabel(
-            f'<span style="font-size:22px; font-weight:bold; color:#0d6efd;">PRISM</span>'
+            '<span style="font-size:22px; font-weight:bold;">'
+            '<span style="color:#ff4444;">P</span>'
+            '<span style="color:#ff8c00;">R</span>'
+            '<span style="color:#ffd700;">I</span>'
+            '<span style="color:#22c55e;">S</span>'
+            '<span style="color:#3b82f6;">M</span>'
+            '</span>'
             f'  <span style="font-size:10px; color:#888;">v{VERSION} ({UPDATE_DATE})</span>'
         )
         header_layout.addWidget(title)
@@ -1185,28 +1199,8 @@ class PRISMApp(QMainWindow):
             QMessageBox.critical(self, "Error", f"Error opening docs: {str(e)}")
 
     def _print_startup_message(self):
-        """Print startup message to console"""
-        print("\n")
-        print("+" + "=" * 62 + "+")
-        print("|" + " " * 62 + "|")
-        print("|" + f"PRISM v{VERSION} ({UPDATE_DATE})".center(62) + "|")
-        print("|" + "Plasma Research Integrated System for Multi-diagnostics".center(62) + "|")
-        print("|" + " " * 62 + "|")
-        print("+" + "=" * 62 + "+")
-        print("|" + " " * 62 + "|")
-        print("|" + f"Developed by {AUTHOR_NAME}".center(62) + "|")
-        print("|" + CONTACT_EMAIL.center(62) + "|")
-        print("|" + " " * 62 + "|")
-        print("+" + "=" * 62 + "+")
-        print()
-        print("  * prism              Full PRISM (Diagnostics + EFIT + BiProfile + TRANSP)")
-        print("  * prism -d           Diagnostic data viewer")
-        print("  * prism -e           EFIT viewer")
-        print("  * prism -b           BiProfile viewer")
-        print("  * prism -t           TRANSP CDF viewer")
-        print("  * prism -s           Select and launch individual viewers")
-        print("  * prism -h           Show help")
-        print()
+        """Print startup message to console (handled by main.py)"""
+        pass
 
     def closeEvent(self, event):
         """Handle window close event"""

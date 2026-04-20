@@ -327,7 +327,16 @@ def show_update_popup(parent):
         logo_label.setPixmap(pixmap)
         header_layout.addWidget(logo_label)
 
-    version_label = QLabel(f"PRISM v{VERSION} ({date})")
+    version_label = QLabel(
+        '<span style="font-weight:bold;">'
+        '<span style="color:#ff4444;">P</span>'
+        '<span style="color:#ff8c00;">R</span>'
+        '<span style="color:#ffd700;">I</span>'
+        '<span style="color:#22c55e;">S</span>'
+        '<span style="color:#3b82f6;">M</span>'
+        '</span>'
+        f' v{VERSION} ({date})'
+    )
     version_label.setFont(font_normal)
     header_layout.addWidget(version_label)
     header_layout.addStretch()

@@ -1206,6 +1206,100 @@ class ProfileBaseTab(BaseTab):
 
         return lines
 
+    # ===== p-File format export =====
+
+    # Mapping from PRISM param types to p-file variable names and units
+    _PFILE_VARNAMES = {
+        'Te': ('te', 'keV', 'dte'),
+        'ne': ('ne', '10^20/m^3', 'dne'),
+        'Ti': ('ti', 'keV', 'dti'),
+        'vT': ('vtor1', 'km/s', 'dvtor'),
+    }
+
+    # ne scale: PRISM uses 10^19/m^3 internally, p-file uses 10^20/m^3
+    _PFILE_NE_SCALE = 0.1
+
+    def _get_pfile_lines(self, selected_entries):
+        """Generate p-file (PEQDSK) format text from fitted profiles"""
+        from core.fitting import FIT_FUNCTIONS
+
+        if not hasattr(self, 'fit_results') or not self.fit_results:
+            return ["# No fit results available\n"]
+
+        param_types = self._get_fit_param_types() if hasattr(self, '_get_fit_param_types') else []
+        psi_n_grid = np.linspace(0.0, 1.0, 401)
+        npts = len(psi_n_grid)
+
+        lines = []
+
+        for entry in selected_entries:
+            if entry not in self.fit_results:
+                continue
+
+            try:
+                shot, time_s = self._parse_entry_for_efit(entry)
+                time_ms = int(round(time_s * 1e3))
+            except Exception:
+                shot, time_ms = 0, 0
+
+            lines.append(f"# p-file format: shot={shot}, time={time_ms}ms\n")
+
+            entry_results = self.fit_results[entry]
+
+            # Evaluate each param on psi_N grid
+            x_axis = self._get_selected_x_axis()
+            eval_x = psi_n_grid
+            if x_axis != "psi_N" and entry in self.efit_data:
+                efit_entry = self.efit_data[entry]
+                try:
+                    psi_to_R = interp1d(efit_entry['psi_N'], efit_entry['R'], fill_value='extrapolate')
+                    R_vals = psi_to_R(psi_n_grid)
+                    coord_interp = interp1d(efit_entry['R'], efit_entry[x_axis], fill_value='extrapolate')
+                    eval_x = coord_interp(R_vals)
+                except Exception:
+                    pass
+
+            for ptype in param_types:
+                if ptype not in entry_results or not entry_results[ptype].success:
+                    continue
+
+                result = entry_results[ptype]
+                varname, unit, dname = self._PFILE_VARNAMES.get(ptype, (ptype.lower(), '', 'd' + ptype.lower()))
+
+                # Evaluate fit on grid
+                func_info = FIT_FUNCTIONS.get(result.func_name)
+                if func_info and func_info['func'] is not None:
+                    func = func_info['func']
+                    param_vals = [result.params[pn] for pn in func_info['param_names']]
+                    try:
+                        y_vals = func(eval_x, *param_vals)
+                    except Exception:
+                        continue
+                else:
+                    try:
+                        spl = interp1d(result.x_fit, result.y_fit, fill_value='extrapolate')
+                        y_vals = spl(eval_x)
+                    except Exception:
+                        continue
+
+                # Convert ne from 10^19/m^3 to 10^20/m^3
+                if ptype == 'ne':
+                    y_vals = y_vals * self._PFILE_NE_SCALE
+
+                # Compute derivative d(var)/d(psiN)
+                dy_dpsi = np.gradient(y_vals, psi_n_grid)
+
+                # Write block header
+                lines.append(f" {npts} psinorm {varname}({unit}) {dname}/dpsiN\n")
+
+                # Write data rows: 1 space + psiN + 3 spaces + value + 3 spaces + derivative
+                for j in range(npts):
+                    lines.append(f" {psi_n_grid[j]:.6f}   {y_vals[j]:.6f}   {dy_dpsi[j]:.6f}\n")
+
+            lines.append("\n")
+
+        return lines
+
     # ===== Canvas click-toggle for channel enable/disable =====
 
     def _clear_click_points(self) -> None:

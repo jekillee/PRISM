@@ -5,6 +5,28 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.2] - 2026-04-20
+
+### Added
+- **p-File Export**: Preview & Save dialog now includes "p-File Format" mode after profile fitting. Exports fitted profiles in PEQDSK format (401-point psi_N grid) with Copy to Clipboard and Save as .txt
+- **Startup Banner**: Rainbow-colored ASCII art PRISM logo with version info and usage guide printed at launch
+- **Rainbow PRISM Title**: Sidebar, Select Viewer, and What's New dialog display PRISM in rainbow colors
+
+### Changed
+- **Startup Banner**: Removed old box-style banner from main_window, replaced with ASCII art in main.py
+
+### Fixed
+- **ne/Te Raw Data Preview**: Fixed `NameError: actual_time` when previewing Thomson raw data after fitting
+
+## [2.5.1] - 2026-04-17
+
+### Added
+- **TS_NE_AVG**: Line-averaged electron density along TCI02 chord (`\TS_NE_AVG`) in Thomson loader and ne/Te Time Trace tab
+
+### Fixed
+- **ECEI Spectrogram**: Graceful fallback when ECEI device parameter nodes are missing (TREE-E-NODATA). Channel list loads without R, Z positions
+- **ECEI Position Diagnostics**: Log specific missing MDS+ nodes for ECEI position calculation
+
 ## [2.5.0] - 2026-04-15
 
 ### Added

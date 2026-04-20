@@ -988,6 +988,7 @@ class NeTeProfileTab(ProfileBaseTab):
 
             for entry in selected_entries:
                 shot_number, time_point, source = self._parse_entry(entry)
+                actual_time = time_point
 
                 if source in ['TS', 'TS+ECE']:
                     cache_key = f'{shot_number}_TS'

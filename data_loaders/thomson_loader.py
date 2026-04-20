@@ -172,20 +172,38 @@ class ThomsonLoader(BaseDiagnosticLoader):
             
             measurements = {
                 'Te': {
-                    'data': temperature, 
+                    'data': temperature,
                     'error': (temp_error_upper + temp_error_lower) / 2,
                     'error_upper': temp_error_upper,
                     'error_lower': temp_error_lower
                 },
                 'ne': {
-                    'data': density, 
+                    'data': density,
                     'error': (density_error_upper + density_error_lower) / 2,
                     'error_upper': density_error_upper,
                     'error_lower': density_error_lower
                 }
             }
-            
-            return DiagnosticData(times, ts_position, measurements, 
+
+            # Load TS_NE_AVG (line-averaged ne along TCI02 chord)
+            try:
+                mds2 = self._connect_mds(shot_number)
+                ne_avg_raw = mds2.get('\\TS_NE_AVG').data()
+                ne_avg_time = mds2.get('dim_of(\\TS_NE_AVG)').data()
+                self._close_mds(mds2, shot_number)
+
+                ne_avg_time = self._squeeze_if_needed(ne_avg_time)
+                ne_avg_raw = self._squeeze_if_needed(ne_avg_raw)
+
+                measurements['ne_avg'] = {
+                    'time': ne_avg_time,
+                    'data': ne_avg_raw * self.app_config.NE_SCALE
+                }
+                print(f"[Thomson] TS_NE_AVG loaded: {len(ne_avg_time)} points")
+            except Exception as e:
+                print(f"[Thomson] TS_NE_AVG not available: {str(e)}")
+
+            return DiagnosticData(times, ts_position, measurements,
                                  source='mdsplus', analysis_type=None)
             
         except Exception as e:
