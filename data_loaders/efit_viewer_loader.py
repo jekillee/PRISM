@@ -53,22 +53,22 @@ AEQDSK_LABELS = {
     'QSTAR':  r'$q^*$ (diamag)',
     'QOUT':   r'$q_{edge}$',
     'IPMEAS': r'$I_p$ (meas) [A]',
-    'RCEN':   r'$R_{cen}$ [cm]',
-    'RMAXIS': r'$R_{axis}$ [cm]',
-    'ZMAXIS': r'$Z_{axis}$ [cm]',
-    'RCUR':   r'$R_{cur}$ [cm]',
-    'ZCUR':   r'$Z_{cur}$ [cm]',
-    'ROUT':   r'$R_{out}$ [cm]',
-    'ZOUT':   r'$Z_{out}$ [cm]',
+    'RCEN':   r'$R_{cen}$ [m]',
+    'RMAXIS': r'$R_{axis}$ [m]',
+    'ZMAXIS': r'$Z_{axis}$ [m]',
+    'RCUR':   r'$R_{cur}$ [m]',
+    'ZCUR':   r'$Z_{cur}$ [m]',
+    'ROUT':   r'$R_{out}$ [m]',
+    'ZOUT':   r'$Z_{out}$ [m]',
     'ELONGM': r'$\kappa_{mid}$',
     'BETAPD': r'$\beta_p$ (diamag)',
     'BETATD': r'$\beta_T$ (diamag)',
     'WDIA':   r'$W_{dia}$ [J]',
     'SHEARB': r'Shear$_b$',
-    'GAPIN':  r'Gap$_{in}$ [cm]',
-    'GAPOUT': r'Gap$_{out}$ [cm]',
-    'GAPTOP': r'Gap$_{top}$ [cm]',
-    'GAPBOT': r'Gap$_{bot}$ [cm]',
+    'GAPIN':  r'Gap$_{in}$ [m]',
+    'GAPOUT': r'Gap$_{out}$ [m]',
+    'GAPTOP': r'Gap$_{top}$ [m]',
+    'GAPBOT': r'Gap$_{bot}$ [m]',
     'VERTN':  r'Vert. stab. index',
     'BTM':    r'$B_{T,mid}$ [T]',
     'BTVAC':  r'$B_{T,vac}$ [T]',
@@ -92,6 +92,10 @@ AEQDSK_LABELS = {
     'WBDOT':  r'$dW/dt$ [W]',
     'QMERCI': r'$q_{Mercier}$',
     'CHISQ':  r'$\chi^2$',
+    'RXPT1':  r'$R_{X,lower}$ [m]',
+    'ZXPT1':  r'$Z_{X,lower}$ [m]',
+    'RXPT2':  r'$R_{X,upper}$ [m]',
+    'ZXPT2':  r'$Z_{X,upper}$ [m]',
 }
 
 # Human-readable labels for GEQDSK profiles
@@ -185,12 +189,34 @@ def load_efit_mds(shot: int, tree: str = 'efit01',
     # ---- Load AEQDSK scalars ----
     if not load_scalars:
         print("[EFIT]   Skipping AEQDSK scalars")
+
+    # Length variables that may be stored as cm in some MDS+ EFIT trees
+    LENGTH_VARS = {
+        'RCEN', 'ROUT', 'ZOUT', 'AMINOR', 'RCUR', 'ZCUR',
+        'GAPIN', 'GAPOUT', 'GAPTOP', 'GAPBOT',
+        'RXPT1', 'ZXPT1', 'RXPT2', 'ZXPT2',
+        'RMAXIS', 'ZMAXIS', 'AOUT', 'DRSEP',
+    }
+    AREA_VARS = {'AREA', 'AREAO'}
+    VOLUME_VARS = {'VOLUME'}
+
     for node in (AEQDSK_SCALAR_NODES if load_scalars else []):
         data = _mds_get_safe(mds, tree, node, section='AEQDSK')
         if data is not None and atime is not None:
+            arr = np.asarray(data, dtype=np.float64)
+            # Auto-detect cgs units (some KSTAR EFIT trees store length in cm)
+            valid = arr[np.isfinite(arr)]
+            if len(valid) > 0:
+                peak = np.max(np.abs(valid))
+                if node in LENGTH_VARS and peak > 10.0:
+                    arr = arr * 0.01  # cm → m
+                elif node in AREA_VARS and peak > 100.0:
+                    arr = arr * 1e-4  # cm² → m²
+                elif node in VOLUME_VARS and peak > 1000.0:
+                    arr = arr * 1e-6  # cm³ → m³
             result['scalars'][node] = {
                 'time': atime,
-                'data': np.asarray(data, dtype=np.float64),
+                'data': arr,
                 'label': AEQDSK_LABELS.get(node, node),
             }
 
@@ -711,6 +737,16 @@ def load_afile(filepath: str) -> Dict[str, Any]:
 
     AFILE_POS_MAP = {**BLOCK1_MAP, **BLOCK2_MAP}
 
+    # Unit conversions for AEQDSK (KSTAR cgs → SI)
+    LENGTH_VARS_CM_TO_M = {
+        'RCEN', 'ROUT', 'ZOUT', 'AMINOR', 'RCUR', 'ZCUR',
+        'GAPIN', 'GAPOUT', 'GAPTOP', 'GAPBOT',
+        'RXPT1', 'ZXPT1', 'RXPT2', 'ZXPT2',
+        'RMAXIS', 'ZMAXIS',
+    }
+    AREA_VARS_CM2_TO_M2 = {'AREA', 'AREAO'}
+    VOLUME_VARS_CM3_TO_M3 = {'VOLUME'}
+
     n_total = len(all_values)
 
     result = {
@@ -728,9 +764,17 @@ def load_afile(filepath: str) -> Dict[str, Any]:
 
     for pos, node in AFILE_POS_MAP.items():
         if pos < n_total:
+            value = all_values[pos]
+            # Convert cgs → SI to match MDS+ EFIT data
+            if node in LENGTH_VARS_CM_TO_M:
+                value *= 0.01
+            elif node in AREA_VARS_CM2_TO_M2:
+                value *= 1e-4
+            elif node in VOLUME_VARS_CM3_TO_M3:
+                value *= 1e-6
             result['scalars'][node] = {
                 'time': time_arr,
-                'data': np.array([all_values[pos]]),
+                'data': np.array([value]),
                 'label': AEQDSK_LABELS.get(node, node),
             }
 

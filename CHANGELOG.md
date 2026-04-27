@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Toolbar After Tab Switch**: Pan/zoom now works after switching tabs and returning. Previously, an active pan/zoom mode left the canvas widgetlock held by the destroyed toolbar, preventing the new toolbar from operating
 - **g-File Available List**: Opening g-files no longer mixes them with previously fetched MDS+ trees in the Available list; only the just-opened files are shown while cache is preserved for already-selected entries
+- **EFIT a-File Units**: Length quantities (RCEN, RMAXIS, AMINOR, GAPIN, GAPOUT, etc.) converted from cm to m, area (AREA, AREAO) cm² to m², volume (VOLUME) cm³ to m³. Labels updated to be uniformly SI. X-point labels (RXPT1/2, ZXPT1/2) added
+- **EFIT MDS+ Scalar Units**: Auto-detect cgs storage in MDS+ AEQDSK scalars (e.g., ROUT in EFIT01) and convert to SI based on value magnitude
+- **EFIT Time Traces Shot Persistence**: Shot number now saved/restored across sessions (matches Profiles and 2D tabs)
 
 ## [2.5.2] - 2026-04-20
 

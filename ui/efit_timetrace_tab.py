@@ -733,6 +733,9 @@ class EfitScalarTab:
         saved_var = s.get("variable", "")
         if saved_var:
             self._pending_variable = saved_var
+        saved_shot = s.get("shot", "")
+        if saved_shot and hasattr(self, 'shot_entry'):
+            self.shot_entry.setText(str(saved_shot))
 
     def save_settings(self):
         from config.user_settings import get_tab_settings, set_tab_settings
@@ -742,4 +745,6 @@ class EfitScalarTab:
         s["legend_fontsize"] = self.legend_fontsize
         s["tick_fontsize"] = self.tick_fontsize
         s["variable"] = self.var_combo.currentData() or ""
+        if hasattr(self, 'shot_entry'):
+            s["shot"] = self.shot_entry.text().strip()
         set_tab_settings(self._settings_key, s)
