@@ -5,6 +5,21 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.3] - 2026-04-27
+
+### Added
+- **EFIT Multi-tree Selection**: EFIT Profiles and 2D tabs now accumulate fetched trees instead of replacing them. Multiple EFIT trees (efitrt1, efit01, etc.) can be loaded together for cross-comparison
+- **"Or" Label**: EFIT Profiles, Time Traces, 2D tabs and Ti/vT Profiles, Time Traces tabs show "Or" prefix before Open File buttons for clarity
+
+### Changed
+- **EFIT Profiles/2D Layout**: EFIT tree dropdown moved between up/down buttons and Fetch button (matches Time Traces layout). Dropdown shows plain tree names with consistent width across all EFIT tabs
+- **EFIT Profiles Browse Button**: "Load EFIT data to browse" → "Load data to browse" (consistent with other EFIT tabs)
+- **File Rename**: `ui/efit_scalar_tab.py` → `ui/efit_timetrace_tab.py`
+
+### Fixed
+- **Toolbar After Tab Switch**: Pan/zoom now works after switching tabs and returning. Previously, an active pan/zoom mode left the canvas widgetlock held by the destroyed toolbar, preventing the new toolbar from operating
+- **g-File Available List**: Opening g-files no longer mixes them with previously fetched MDS+ trees in the Available list; only the just-opened files are shown while cache is preserved for already-selected entries
+
 ## [2.5.2] - 2026-04-20
 
 ### Added

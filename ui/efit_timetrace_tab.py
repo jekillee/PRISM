@@ -120,12 +120,15 @@ class EfitScalarTab:
         fetch_btn.setFixedWidth(70)
         fetch_btn.clicked.connect(self._fetch)
         grid.addWidget(fetch_btn, 0, 4)
-        layout.addLayout(grid)
 
-        # Open a-File
+        # Open a-File row with "Or" prefix
+        or_label = QLabel("Or")
+        grid.addWidget(or_label, 1, 0)
         open_btn = QPushButton("Open a-File...")
         open_btn.clicked.connect(self._open_file)
-        layout.addWidget(open_btn)
+        grid.addWidget(open_btn, 1, 1, 1, 4)
+
+        layout.addLayout(grid)
 
         self.load_status = QLabel("")
         self.load_status.setWordWrap(True)

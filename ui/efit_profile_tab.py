@@ -276,29 +276,30 @@ class EfitProfileTab:
         dn.clicked.connect(lambda: self._adjust_shot(-1)); bl.addWidget(dn)
         grid.addWidget(btn_updown, 0, 2)
 
+        # EFIT tree dropdown (between up/down and Fetch)
+        self.tree_combo = QComboBox()
+        cfg = AppConfig()
+        for display, tree in cfg.EFIT_TREES.items():
+            self.tree_combo.addItem(tree, tree)
+        grid.addWidget(self.tree_combo, 0, 3)
+
         # Fetch button
         self.fetch_button = QPushButton("Fetch")
         self.fetch_button.setFixedWidth(70)
         self.fetch_button.clicked.connect(self._fetch)
-        grid.addWidget(self.fetch_button, 0, 3)
+        grid.addWidget(self.fetch_button, 0, 4)
 
-        # EFIT tree dropdown
-        grid.addWidget(QLabel("EFIT Tree"), 1, 0)
-        self.tree_combo = QComboBox()
-        cfg = AppConfig()
-        for display, tree in cfg.EFIT_TREES.items():
-            self.tree_combo.addItem(display, tree)
-        grid.addWidget(self.tree_combo, 1, 1, 1, 3)
-
-        # Open g-file button
+        # Open g-file button row with "Or" prefix
+        or_label = QLabel("Or")
+        grid.addWidget(or_label, 1, 0)
         gfile_btn = QPushButton("Open g-File...")
         gfile_btn.clicked.connect(self._open_gfile)
-        grid.addWidget(gfile_btn, 2, 0, 1, 4)
+        grid.addWidget(gfile_btn, 1, 1, 1, 4)
 
         # Status label
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
-        grid.addWidget(self.status_label, 3, 0, 1, 4)
+        grid.addWidget(self.status_label, 2, 0, 1, 5)
 
         parent.layout().addWidget(group)
 
@@ -311,7 +312,7 @@ class EfitProfileTab:
         layout = QVBoxLayout(group)
 
         # Preview / Browse button
-        self.preview_button = QPushButton("Load EFIT data to browse")
+        self.preview_button = QPushButton("Load data to browse")
         self.preview_button.setEnabled(False)
         self.preview_button.clicked.connect(self._open_preview)
         layout.addWidget(self.preview_button)
@@ -458,8 +459,6 @@ class EfitProfileTab:
         if key in self._efit_cache:
             self._current_key = key
         else:
-            self._efit_cache.clear()
-            self.available_listbox.clear()
             QApplication.setOverrideCursor(Qt.WaitCursor)
             try:
                 from config.app_config import AppConfig
@@ -508,15 +507,16 @@ class EfitProfileTab:
             return
         self._last_gfile_dir = os.path.dirname(paths[0])
 
+        new_keys = []
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             for path in paths:
                 efit = _load_gfile(path)
                 key = self._cache_key(efit['shot'], efit['tree'], efit['time'][0])
-                if key in self._efit_cache:
-                    continue
                 self._efit_cache[key] = efit
                 self._current_key = key
+                if key not in new_keys:
+                    new_keys.append(key)
         except Exception as e:
             self.status_label.setStyleSheet(
                 "color: red; font-weight: bold; font-size: 9pt;")
@@ -527,7 +527,15 @@ class EfitProfileTab:
         self._rebuild_var_index()
         self._update_var_combo()
         self._update_status('green')
-        self._populate_available()
+        # Show only the just-opened g-files in Available list
+        self.available_listbox.clear()
+        for key in new_keys:
+            efit = self._efit_cache[key]
+            shot = efit['shot']
+            tree = efit['tree']
+            for t in efit['time']:
+                ms = int(round(t * 1000))
+                self.available_listbox.addItem(f"{shot}_{ms:06d} ({tree})")
         self._select_group.setEnabled(True)
         self._var_group.setEnabled(True)
 

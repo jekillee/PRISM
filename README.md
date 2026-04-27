@@ -163,7 +163,7 @@ PRISM/
 │   ├── biprofile_timetrace_tab.py # BiProfile time trace tab
 │   ├── transp_profile_tab.py   # TRANSP CDF profile tab
 │   ├── transp_timetrace_tab.py # TRANSP CDF time trace tab
-│   ├── efit_scalar_tab.py      # EFIT time traces (AEQDSK scalars)
+│   ├── efit_timetrace_tab.py   # EFIT time traces (AEQDSK scalars)
 │   ├── efit_profile_tab.py     # EFIT profiles (GEQDSK)
 │   ├── efit_2d_tab.py          # EFIT 2D equilibrium contours
 │   ├── efit_pfile_tab.py       # EFIT p-file viewer

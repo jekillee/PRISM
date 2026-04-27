@@ -74,9 +74,11 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
         self.fetch_button.clicked.connect(self.load_shot_data)
         grid.addWidget(self.fetch_button, 0, 4)
 
+        or_label = QLabel("Or")
+        grid.addWidget(or_label, 1, 0)
         file_button = QPushButton("Open CES Result File...")
         file_button.clicked.connect(self.load_file_data)
-        grid.addWidget(file_button, 1, 0, 1, 5)
+        grid.addWidget(file_button, 1, 1, 1, 4)
 
         parent.layout().addWidget(group)
 

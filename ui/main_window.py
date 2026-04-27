@@ -1135,7 +1135,7 @@ class PRISMApp(QMainWindow):
         """Create an EFIT viewer tab instance"""
         tt = config['tab_type']
         if tt == 'efit_scalar':
-            from ui.efit_scalar_tab import EfitScalarTab
+            from ui.efit_timetrace_tab import EfitScalarTab
             return EfitScalarTab(self)
         elif tt == 'efit_profile':
             from ui.efit_profile_tab import EfitProfileTab
@@ -1151,6 +1151,23 @@ class PRISMApp(QMainWindow):
         """Update toolbar for the current tab"""
         # Disconnect and remove existing toolbar
         if self.toolbar is not None:
+            # Deactivate active pan/zoom so widgetlock on the canvas is released
+            try:
+                from matplotlib.backend_bases import _Mode
+                mode = getattr(self.toolbar, 'mode', None)
+                if mode == _Mode.PAN:
+                    self.toolbar.pan()
+                elif mode == _Mode.ZOOM:
+                    self.toolbar.zoom()
+            except Exception:
+                # Force-release the canvas widgetlock as fallback
+                try:
+                    canvas = self.toolbar.canvas
+                    if canvas.widgetlock.locked():
+                        canvas.widgetlock._owner = None
+                except Exception:
+                    pass
+
             # Disconnect matplotlib callbacks before destroying
             if hasattr(self.toolbar, '_id_press'):
                 self.toolbar.canvas.mpl_disconnect(self.toolbar._id_press)
@@ -1277,7 +1294,7 @@ class _SingleTabWindow(QMainWindow):
                 self.tab = TranspTimeTraceTab(self)
         elif tt in ('efit_scalar', 'efit_profile', 'efit_2d', 'efit_pfile'):
             if tt == 'efit_scalar':
-                from ui.efit_scalar_tab import EfitScalarTab
+                from ui.efit_timetrace_tab import EfitScalarTab
                 self.tab = EfitScalarTab(self)
             elif tt == 'efit_profile':
                 from ui.efit_profile_tab import EfitProfileTab
