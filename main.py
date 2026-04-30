@@ -110,17 +110,22 @@ def _print_startup():
 \033[91m  ╚═╝     \033[33m╚═╝  ╚═╝\033[93m╚═╝\033[92m╚══════╝\033[94m╚═╝     ╚═╝\033[0m
   {v}
 
-  Plasma Research Integrated System for Multi-diagnostics:
+  \033[91mP\033[0mlasma \033[33mR\033[0mesearch \033[93mI\033[0mntegrated \033[92mS\033[0mystem for \033[94mM\033[0multi-diagnostics:
   A unified visualization and data analysis platform for KSTAR tokamak.
 
   Developed by Jekil Lee (jklee@kfe.re.kr)
 
-\033[90m  Modes:
+\033[37m  Cite:
+    J.K. Lee, An integrated multi-diagnostic visualization platform for
+    KSTAR tokamak, Fusion Engineering and Design, Vol. 228, 2026, 115786.
+    https://doi.org/10.1016/j.fusengdes.2026.115786\033[0m
+
+\033[37m  Modes:
     prism              Full PRISM (Diagnostics + EFIT + BiProfile + TRANSP)
     prism -d           Diagnostic data viewer
     prism -e           EFIT viewer
     prism -b           BiProfile viewer
-    prism -t           TRANSP CDF viewer
+    prism -t           TRANSP viewer (UFILE input + CDF output)
 
   Options:
     prism -s           Select and launch individual viewers

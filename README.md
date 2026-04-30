@@ -8,6 +8,29 @@
 
 A unified visualization and data analysis platform for KSTAR tokamak.
 
+## Citation
+
+If you use PRISM in your work, please cite:
+
+> J.K. Lee, *An integrated multi-diagnostic visualization platform for KSTAR tokamak*,
+> **Fusion Engineering and Design**, Volume 228 (2026), 115786.
+> ISSN 0920-3796.
+> https://doi.org/10.1016/j.fusengdes.2026.115786
+
+BibTeX:
+```bibtex
+@article{Lee2026PRISM,
+  author  = {J. K. Lee},
+  title   = {An integrated multi-diagnostic visualization platform for KSTAR tokamak},
+  journal = {Fusion Engineering and Design},
+  volume  = {228},
+  pages   = {115786},
+  year    = {2026},
+  issn    = {0920-3796},
+  doi     = {10.1016/j.fusengdes.2026.115786}
+}
+```
+
 ## Features
 
 - **Modular Architecture**: Easily extensible for new diagnostics
@@ -22,16 +45,17 @@ A unified visualization and data analysis platform for KSTAR tokamak.
 - **TV Image Viewer**: Sequential image viewer for visible camera data with line drawing
 - **TV Startup Comparison**: Compare plasma startup sequences across multiple shots
 - **IRVB Viewer**: 2D radiation profile with EFIT overlay and regional Prad analysis
-- **Profile Fitting**: mtanh, ptanh, EPED, spline, RBF, GPR with pedestal analysis
-- **X-axis Selection**: R/ψN/ρpol/ρtor radio buttons in profile plot section
+- **Profile Fitting**: mtanh, ptanh, EPED, spline, RBF, GPR with PRISM-style pedestal output (Height / Top / Foot / Width / Location in normalized + physical units, ± uncertainties)
+- **X-axis Selection**: R / ψ_N / ρ_pol / ρ_tor radio buttons in profile plot section. Fit-overlay tracks the axis it was fit on (no mismatched curves)
 - **Interactive Channel Toggle**: Double-click data points to exclude/include channels from fitting
-- **Dark/Light Theme**: Runtime theme switching with persistence
+- **Dark/Light Theme**: Runtime theme switching with persistence (now covering QSpinBox/QDoubleSpinBox)
 - **Data Preview & Save**: Spreadsheet-style preview before exporting data, with p-file (PEQDSK) format export for fitted profiles
-- **Profile Browse**: Slider-based data browsing with playback before selecting time points
-- **Time Averaging**: dt-based profile averaging for fitting and visualization
+- **Figure Save**: Custom matplotlib toolbar with PNG / SVG / EPS save buttons
+- **Profile Browse**: 2D / 3D toggle (mpl_toolkits surface) with slider playback. ELM detection (DoG + prominence-filtered `find_peaks`) and adaptive D-α zoom for inter-ELM window selection
+- **Time Averaging**: dt-based profile averaging for fitting and visualization with proper RMS error propagation. Markers reflect the same averaged data used in the fit
 - **Collapsible Sidebar**: Expand/collapse category groups with state persistence
-- **TRANSP CDF Viewer**: Load TRANSP output CDF files for profile and time trace visualization with variable filter/search and cross-run comparison
-- **EFIT Viewer**: Time traces (AEQDSK scalars), profiles (GEQDSK), 2D equilibrium contours, and p-file viewer with MDS+ and file support
+- **TRANSP Viewer**: Two-pane workflow — **Input > UFILE** loads a TRANSP run directory and dispatches by UFILE type (1D time traces, profile×time with 2D/3D radio, NBI/ECP heating multi-channel, MMX Fourier-reconstructed flux surfaces, LIM auto-overlay); **Output** tabs handle CDF files for profiles and time traces with variable filter/search and cross-run comparison
+- **EFIT Viewer**: Time traces (AEQDSK scalars), profiles (GEQDSK), 2D equilibrium contours with rational-surface overlay (q = 1, 3/2, 2, 5/2, 3, 4, 5), and p-file viewer with MDS+ and file support. Multi-tree accumulation across efitrt1/efit01/...; cgs↔SI auto-detection
 - **Grouped Sidebar**: Collapsible groups (Diagnostics/EFIT/BiProfile/TRANSP) with expand/collapse state persistence
 
 ## Supported Diagnostics
@@ -51,7 +75,7 @@ A unified visualization and data analysis platform for KSTAR tokamak.
 | TV | Visible Camera (IVIS) | Image sequence |
 | IRVB | Infra-Red Video Bolometer | 2D Prad |
 | EFIT | Equilibrium Fitting | Scalars, profiles, 2D ψ, p-file |
-| TRANSP | Transport Analysis (BiProfile + CDF) | Ti, vT, Te, ne, CDF profiles/traces |
+| TRANSP | Transport Analysis (BiProfile + UFILE input + CDF output) | Ti, vT, Te, ne, UFILE profiles/traces/2D, CDF profiles/traces |
 
 ## Usage
 
@@ -161,8 +185,9 @@ PRISM/
 │   ├── neutron_timetrace_tab.py # Neutron time trace tab
 │   ├── biprofile_profile_tab.py # BiProfile profile tab
 │   ├── biprofile_timetrace_tab.py # BiProfile time trace tab
-│   ├── transp_profile_tab.py   # TRANSP CDF profile tab
-│   ├── transp_timetrace_tab.py # TRANSP CDF time trace tab
+│   ├── transp_profile_tab.py   # TRANSP CDF (output) profile tab
+│   ├── transp_timetrace_tab.py # TRANSP CDF (output) time trace tab
+│   ├── transp_ufile_tab.py     # TRANSP UFILE (input) — single tab dispatching by class
 │   ├── efit_timetrace_tab.py   # EFIT time traces (AEQDSK scalars)
 │   ├── efit_profile_tab.py     # EFIT profiles (GEQDSK)
 │   ├── efit_2d_tab.py          # EFIT 2D equilibrium contours

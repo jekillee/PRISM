@@ -35,9 +35,9 @@ def _get_parser_map():
 
 def _get_profile_tab_map():
     """Lazily import and return the profile tab class map"""
-    from ui.nete_profile_tab import NeTeProfileTab
-    from ui.tivt_profile_tab import TiVTProfileTab
-    from ui.mse_profile_tab import MSEProfileTab
+    from ui.tabs.diagnostics.profiles.nete_profile_tab import NeTeProfileTab
+    from ui.tabs.diagnostics.profiles.tivt_profile_tab import TiVTProfileTab
+    from ui.tabs.diagnostics.profiles.mse_profile_tab import MSEProfileTab
     return {
         'Thomson': NeTeProfileTab,
         'CES': TiVTProfileTab,
@@ -47,9 +47,9 @@ def _get_profile_tab_map():
 
 def _get_timetrace_tab_map():
     """Lazily import and return the timetrace tab class map"""
-    from ui.nete_timetrace_tab import NeTeTimeTraceTab
-    from ui.tivt_timetrace_tab import TiVTTimeTraceTab
-    from ui.mse_timetrace_tab import MSETimeTraceTab
+    from ui.tabs.diagnostics.timetraces.nete_timetrace_tab import NeTeTimeTraceTab
+    from ui.tabs.diagnostics.timetraces.tivt_timetrace_tab import TiVTTimeTraceTab
+    from ui.tabs.diagnostics.timetraces.mse_timetrace_tab import MSETimeTraceTab
     return {
         'Thomson': NeTeTimeTraceTab,
         'CES': TiVTTimeTraceTab,
@@ -143,7 +143,7 @@ class TabFactory:
         """Create a diagnostic tab"""
         # Special case: Spectrogram tab
         if tab_type == 'spectrogram':
-            from ui.spectrogram_tab import SpectrogramTab
+            from ui.tabs.diagnostics.spectral.spectrogram_tab import SpectrogramTab
             tab = SpectrogramTab(
                 parent=notebook,
                 app_config=app_config,
@@ -154,7 +154,7 @@ class TabFactory:
 
         # Special case: n-Mode Spectrum tab
         if tab_type == 'nmode':
-            from ui.nmode_spectrum_tab import NModeSpectrumTab
+            from ui.tabs.diagnostics.spectral.nmode_spectrum_tab import NModeSpectrumTab
             tab = NModeSpectrumTab(
                 parent=notebook,
                 app_config=app_config,
@@ -165,7 +165,7 @@ class TabFactory:
 
         # Special case: TV tab
         if tab_type == 'tv':
-            from ui.tv_tab import TVTab
+            from ui.tabs.diagnostics.imaging.tv_tab import TVTab
             tab = TVTab(
                 parent=notebook,
                 app_config=app_config,
@@ -176,7 +176,7 @@ class TabFactory:
 
         # Special case: IRVB tab
         if tab_type == 'irvb':
-            from ui.irvb_tab import IRVBTab
+            from ui.tabs.diagnostics.imaging.irvb_tab import IRVBTab
             tab = IRVBTab(
                 parent=notebook,
                 app_config=app_config,
@@ -188,7 +188,7 @@ class TabFactory:
 
         # Special case: TV Startup tab
         if tab_type == 'tv_startup':
-            from ui.tv_startup_tab import TVStartupTab
+            from ui.tabs.diagnostics.imaging.tv_startup_tab import TVStartupTab
             tab = TVStartupTab(
                 parent=notebook,
                 app_config=app_config,
@@ -199,7 +199,7 @@ class TabFactory:
 
         # Special case: Neutron tab
         if tab_type == 'neutron':
-            from ui.neutron_timetrace_tab import NeutronTimeTraceTab
+            from ui.tabs.diagnostics.timetraces.neutron_timetrace_tab import NeutronTimeTraceTab
             tab = NeutronTimeTraceTab(
                 parent=notebook,
                 app_config=app_config,

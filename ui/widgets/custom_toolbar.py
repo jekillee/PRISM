@@ -38,6 +38,7 @@ class QuietNavigationToolbar(NavigationToolbar2QT):
                 self._original_icons[child] = child.icon()
         self._add_png_save_button()
         self._add_svg_save_button()
+        self._add_eps_save_button()
         self._add_theme_toggle()
         # Set initial icon and colorize toolbar icons
         self._update_theme_icon(ThemeManager.current_theme)
@@ -172,6 +173,53 @@ class QuietNavigationToolbar(NavigationToolbar2QT):
         else:
             self.addWidget(self.svg_btn)
 
+    def _save_eps(self):
+        """Save figure as EPS with white background"""
+        initial_dir = os.path.expanduser("~")
+
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save figure (EPS)",
+            initial_dir,
+            "EPS files (*.eps);;All files (*.*)"
+        )
+
+        if not filepath:
+            return
+
+        base_path = os.path.splitext(filepath)[0]
+        eps_path = f"{base_path}.eps"
+
+        try:
+            fig = self.canvas.figure
+            fig.savefig(eps_path, format='eps',
+                       facecolor='white', edgecolor='none')
+
+            QMessageBox.information(
+                self, "Save Complete", f"Saved:\n\n{eps_path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Failed to save figure:\n{str(e)}")
+
+    def _add_eps_save_button(self):
+        """Add EPS save button right after the SVG save button"""
+        self.eps_btn = QPushButton("EPS")
+        self.eps_btn.setFixedSize(QSize(38, 32))
+        self.eps_btn.setToolTip("Save figure as EPS")
+        self.eps_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; font-size: 11px; padding: 0; }"
+            "QPushButton:hover { background: rgba(128,128,128,0.3); border-radius: 4px; }"
+        )
+        self.eps_btn.clicked.connect(self._save_eps)
+
+        # Insert right after the SVG button (before coordinate label)
+        actions = self.actions()
+        if len(actions) >= 2:
+            loc_action = actions[-1]
+            self.insertWidget(loc_action, self.eps_btn)
+        else:
+            self.addWidget(self.eps_btn)
+
     def _add_theme_toggle(self):
         """Add theme toggle button (sun/moon) right after SVG button in toolbar"""
         self.theme_btn = QPushButton()
@@ -210,6 +258,7 @@ class QuietNavigationToolbar(NavigationToolbar2QT):
             )
             self.png_btn.setStyleSheet(dark_btn_style)
             self.svg_btn.setStyleSheet(dark_btn_style)
+            self.eps_btn.setStyleSheet(dark_btn_style)
             # Colorize toolbar icons to white
             self._colorize_toolbar_icons('#ffffff')
         else:
@@ -227,5 +276,6 @@ class QuietNavigationToolbar(NavigationToolbar2QT):
             )
             self.png_btn.setStyleSheet(light_btn_style)
             self.svg_btn.setStyleSheet(light_btn_style)
+            self.eps_btn.setStyleSheet(light_btn_style)
             # Colorize toolbar icons to black
             self._colorize_toolbar_icons('#000000')

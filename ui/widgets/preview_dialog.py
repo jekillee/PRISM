@@ -21,7 +21,69 @@ from PySide6.QtCore import Qt, QTimer
 from ui.ui_constants import apply_dark_figure_style, get_icon
 from ui.theme import ThemeManager
 
-_ZERO_BOTTOM = {'Ti', 'Te', 'ne'}
+_ZERO_BOTTOM = {'Ti', 'Te', 'ne', 'q', 'j'}
+_VT_YMIN = -30.0  # Fixed lower bound for vT [km/s] to avoid edge-noise outliers
+
+
+def _robust_zmax(arr, edge_skip_frac=0.10, percentile=99.0):
+    """Compute a robust upper bound for z-axis ignoring edge noise.
+
+    arr: 2D ndarray with the radial axis as axis 0.
+    edge_skip_frac: drop this fraction of points from the outer end of axis 0.
+    percentile: take this percentile of remaining finite values.
+    """
+    a = np.asarray(arr, dtype=float)
+    if a.ndim == 2 and a.shape[0] > 4:
+        n_keep = max(1, int(round(a.shape[0] * (1.0 - edge_skip_frac))))
+        a = a[:n_keep, :]
+    finite = a[np.isfinite(a)]
+    if finite.size == 0:
+        return None
+    return float(np.percentile(finite, percentile))
+
+
+def _shrink_3d_box(ax, zoom=0.78):
+    """Set 3D cube zoom relative to its axes bbox."""
+    try:
+        ax.set_box_aspect(None, zoom=zoom)        # matplotlib >= 3.6
+    except TypeError:
+        try:
+            ax.dist = 10.0 / max(zoom, 0.1)        # legacy fallback
+        except Exception:
+            pass
+
+
+def _layout_3d_axes(ax, col, n_cols, top_frac=0.92, bottom_frac=0.04,
+                    shift_frac=0.30, shrink_frac=0.10):
+    """Position a 3D axes so the cube anchors to the left of its panel
+    region, leaving room on the right for the z-axis label.
+
+    shift_frac: shift bbox left by this fraction of panel width.
+    shrink_frac: reduce bbox width by this fraction so zlabel has clear
+                 margin from the figure right edge.
+    """
+    panel_w = 1.0 / max(n_cols, 1)
+    new_left = col * panel_w - panel_w * shift_frac
+    new_w = panel_w * (1.0 - shrink_frac)
+    height = max(0.05, top_frac - bottom_frac)
+    ax.set_position([new_left, bottom_frac, new_w, height])
+
+
+def _robust_zrange(arr, edge_skip_frac=0.10, low_pct=1.0, high_pct=99.0):
+    """Compute robust (min, max) range for z-axis ignoring edge noise.
+
+    Uses percentiles to suppress outliers (e.g. vT noise that produces
+    extreme negative values at the plasma edge).
+    """
+    a = np.asarray(arr, dtype=float)
+    if a.ndim == 2 and a.shape[0] > 4:
+        n_keep = max(1, int(round(a.shape[0] * (1.0 - edge_skip_frac))))
+        a = a[:n_keep, :]
+    finite = a[np.isfinite(a)]
+    if finite.size == 0:
+        return None, None
+    return (float(np.percentile(finite, low_pct)),
+            float(np.percentile(finite, high_pct)))
 
 
 # ============================================================
@@ -39,6 +101,7 @@ class _PreviewBase(QDialog):
         self._axes = []
         self._fix_axes = False
         self._n_items = max(1, n_items)
+        self._view_mode = '2D'
 
         self._play_timer = QTimer()
         self._play_timer.timeout.connect(self._play_step)
@@ -96,6 +159,25 @@ class _PreviewBase(QDialog):
         cl = QVBoxLayout(ctrl)
         cl.setContentsMargins(4, 0, 4, 4)
 
+        # View mode (top): 2D / 3D
+        from PySide6.QtWidgets import QRadioButton, QButtonGroup
+        view_group = QGroupBox("View")
+        view_layout = QHBoxLayout(view_group)
+        self._view_btn_group = QButtonGroup(self)
+        self.view_2d_radio = QRadioButton("2D")
+        self.view_3d_radio = QRadioButton("3D")
+        self.view_2d_radio.setChecked(True)
+        self._view_btn_group.addButton(self.view_2d_radio)
+        self._view_btn_group.addButton(self.view_3d_radio)
+        view_layout.addWidget(self.view_2d_radio)
+        view_layout.addWidget(self.view_3d_radio)
+        view_layout.addStretch()
+        self.view_2d_radio.toggled.connect(
+            lambda c: c and self._on_view_changed("2D"))
+        self.view_3d_radio.toggled.connect(
+            lambda c: c and self._on_view_changed("3D"))
+        cl.addWidget(view_group)
+
         # Navigation (subclass-specific)
         nav_group = QGroupBox("Navigation")
         nav_layout = QVBoxLayout(nav_group)
@@ -119,7 +201,36 @@ class _PreviewBase(QDialog):
         play_layout.addWidget(stop_btn)
         cl.addWidget(play_group)
 
-        # Options
+        # ELM (only for diagnostic Browse — TRANSP CDF dialogs opt out)
+        if getattr(self, '_HAS_ELM', True):
+            from PySide6.QtWidgets import QDoubleSpinBox
+            elm_group = QGroupBox("ELM")
+            elm_layout = QVBoxLayout(elm_group)
+            elm_row = QHBoxLayout()
+            self.elm_detect_toggle = ToggleSwitch()
+            self.elm_detect_toggle.toggled.connect(self._on_elm_detect)
+            elm_row.addWidget(self.elm_detect_toggle)
+            elm_row.addWidget(QLabel("Find ELM peaks"))
+            elm_row.addStretch()
+            elm_layout.addLayout(elm_row)
+            dz_row = QHBoxLayout()
+            self.dalpha_zoom_toggle = ToggleSwitch()
+            self.dalpha_zoom_toggle.toggled.connect(self._on_dalpha_zoom)
+            dz_row.addWidget(self.dalpha_zoom_toggle)
+            dz_row.addWidget(QLabel("Dα Zoom  ±"))
+            self.dalpha_zoom_spin = QDoubleSpinBox()
+            self.dalpha_zoom_spin.setRange(0.05, 5.0)
+            self.dalpha_zoom_spin.setDecimals(2)
+            self.dalpha_zoom_spin.setSingleStep(0.05)
+            self.dalpha_zoom_spin.setSuffix(" s")
+            self.dalpha_zoom_spin.setFixedWidth(80)
+            self.dalpha_zoom_spin.valueChanged.connect(self._on_dalpha_zoom_changed)
+            dz_row.addWidget(self.dalpha_zoom_spin)
+            dz_row.addStretch()
+            elm_layout.addLayout(dz_row)
+            cl.addWidget(elm_group)
+
+        # Options (Fix Axes — generic, kept at the bottom)
         opt_group = QGroupBox("Options")
         opt_layout = QHBoxLayout(opt_group)
         self.fix_axes_toggle = ToggleSwitch()
@@ -143,7 +254,10 @@ class _PreviewBase(QDialog):
     # ---- Navigation / Playback (shared) ----
 
     def _on_slider(self, value):
-        self._update_plot(value)
+        if self._view_mode == '3D':
+            self._render_3d_highlight(value)
+        else:
+            self._update_plot(value)
 
     def _step(self, delta):
         self.slider.setValue(
@@ -152,6 +266,41 @@ class _PreviewBase(QDialog):
     def _on_fix_axes(self, checked):
         self._fix_axes = checked
         if not checked:
+            self._update_plot(self.slider.value())
+
+    def _on_dalpha_zoom(self, checked):
+        self._dalpha_zoom = bool(checked)
+        ax = getattr(self, '_ax_dalpha', None)
+        if ax is not None and not checked:
+            full = getattr(self, '_dalpha_full_xlim', None)
+            if full is not None:
+                ax.set_xlim(*full)
+        if self._view_mode == '2D':
+            self._update_plot(self.slider.value())
+
+    def _on_dalpha_zoom_changed(self, value):
+        self._dalpha_zoom_half = float(value)
+        if self._dalpha_zoom and self._view_mode == '2D':
+            self._update_plot(self.slider.value())
+
+    def _on_elm_detect(self, checked):
+        """Run / clear ELM peak detection on demand."""
+        if self._dalpha_t is None or self._dalpha_v is None:
+            return
+        if checked:
+            ip_start, ip_end = getattr(self, '_dalpha_window', (None, None))
+            self._dalpha_peaks = self._detect_elm_peaks(
+                self._dalpha_t, self._dalpha_v,
+                tmin=ip_start, tmax=ip_end)
+            wstr = (f" (Ip window {ip_start:.2f}-{ip_end:.2f}s)"
+                    if ip_start is not None else "")
+            print(f"[Dalpha] #{self.shot_number}: "
+                  f"{len(self._dalpha_peaks)} ELM peaks{wstr}")
+        else:
+            self._dalpha_peaks = np.array([])
+        # Rebuild figure so ELM peak overlays update
+        if self._view_mode == '2D':
+            self._init_plot()
             self._update_plot(self.slider.value())
 
     def _get_fps(self):
@@ -180,6 +329,38 @@ class _PreviewBase(QDialog):
     def _on_close(self):
         self._stop_play()
         self.accept()
+
+    # ---- View mode (2D / 3D) ----
+
+    def _on_view_changed(self, mode):
+        self._view_mode = mode
+        # Fix Axes only meaningful in 2D
+        if hasattr(self, 'fix_axes_toggle'):
+            self.fix_axes_toggle.setEnabled(mode == '2D')
+
+        if mode == '3D':
+            self._render_3d()
+            # Show highlight at current slider position
+            if hasattr(self, 'slider'):
+                self._render_3d_highlight(self.slider.value())
+        else:
+            self._init_plot()
+            self._update_plot(self.slider.value() if hasattr(self, 'slider') else 0)
+
+    def _render_3d(self):
+        """Render full dataset as 3D surface. Override in subclasses."""
+        self.figure.clear()
+        ax = self.figure.add_subplot(1, 1, 1)
+        ax.text(0.5, 0.5, "3D view not available for this dialog",
+                ha='center', va='center', fontsize=14, color='gray',
+                transform=ax.transAxes)
+        ax.axis('off')
+        apply_dark_figure_style(self.figure)
+        self.canvas.draw_idle()
+
+    def _render_3d_highlight(self, idx):
+        """Draw a highlight on the 3D surface at slider index. Override."""
+        pass
 
     # ---- Abstract (override in subclasses) ----
 
@@ -210,6 +391,8 @@ class ProfilePreviewDialog(_PreviewBase):
         self.param2_label = param2_label
         self._is_ece_only = (source == 'ECE')
         self.time_arr = getattr(data, 'time_prof', data.time)
+        # D-alpha for ELM context (loaded once per dialog)
+        self._dalpha_t, self._dalpha_v, self._dalpha_peaks = self._load_dalpha()
 
         super().__init__(parent, len(self.time_arr),
                          f"Browse  #{shot_number} ({source})",
@@ -217,6 +400,117 @@ class ProfilePreviewDialog(_PreviewBase):
         self._build_ui()
         self._init_plot()
         self._update_plot(0)
+
+    # --- D-alpha helpers (inline ELM context) ---
+
+    @staticmethod
+    def _detect_elm_peaks(time, signal, dacrit=2.0, prom_factor=2.0,
+                          tmin=None, tmax=None,
+                          mild_ms=0.15, heavy_factor=15.0,
+                          min_spacing_ms=0.2):
+        """ELM peak detection via DoG + prominence-filtered find_peaks.
+
+        Steps:
+          1. DoG: mild gaussian − heavy gaussian removes slow baseline.
+          2. Robust noise estimate via MAD on the Ip-active window.
+          3. scipy.signal.find_peaks with two filters:
+               • height     ≥ median + dacrit · noise      (amplitude)
+               • prominence ≥ prom_factor · noise          (sharpness)
+             Prominence rejects small ripples on a rising slope while
+             keeping isolated grassy peaks intact.
+          4. Minimum peak-to-peak distance min_spacing_ms.
+        """
+        from scipy.ndimage import gaussian_filter1d
+        from scipy.signal import find_peaks
+
+        time = np.asarray(time, dtype=float)
+        signal = np.asarray(signal, dtype=float)
+        if time.size < 8 or signal.size != time.size:
+            return np.array([])
+        dt = float(time[4] - time[3])
+        if dt <= 0:
+            return np.array([])
+
+        mild_sig = max(1.0, (mild_ms * 1e-3) / dt)
+        heavy_sig = mild_sig * heavy_factor
+        S1 = gaussian_filter1d(signal, mild_sig)
+        S2 = gaussian_filter1d(signal, heavy_sig)
+        DS = S1 - S2
+
+        win_mask = np.ones_like(time, dtype=bool)
+        if tmin is not None:
+            win_mask &= (time >= tmin)
+        if tmax is not None:
+            win_mask &= (time <= tmax)
+        if not np.any(win_mask):
+            return np.array([])
+        DS_win = DS[win_mask]
+        if DS_win.size < 10:
+            return np.array([])
+
+        med = float(np.median(DS_win))
+        mad = float(np.median(np.abs(DS_win - med)))
+        noise = 1.4826 * mad
+        if noise <= 0:
+            noise = float(np.std(DS_win))
+            if noise <= 0:
+                return np.array([])
+
+        height = med + dacrit * noise
+        prominence = prom_factor * noise
+        distance = max(1, int(round((min_spacing_ms * 1e-3) / dt)))
+
+        # Only consider points within the window
+        DS_scan = DS.copy()
+        DS_scan[~win_mask] = -np.inf
+
+        peaks_idx, _ = find_peaks(DS_scan,
+                                  height=height,
+                                  prominence=prominence,
+                                  distance=distance)
+        return time[peaks_idx]
+
+    @staticmethod
+    def _load_ip_window(mds, shot, threshold_a=1.0e5):
+        """Return (t_start, t_end) of |Ip| > threshold, or (None, None)."""
+        try:
+            ip = np.asarray(mds.get('\\PCRC03').data(), dtype=np.float32)
+            ip_t = np.asarray(mds.get('dim_of(\\PCRC03)').data(), dtype=np.float32)
+            m = np.abs(ip) > threshold_a
+            if np.any(m):
+                return float(ip_t[m][0]), float(ip_t[m][-1])
+        except Exception:
+            pass
+        return None, None
+
+    def _load_dalpha(self):
+        """Load \\tor_ha11 + \\PCRC03 (Ip). ELM detection is *not* run here;
+        the user toggles it on demand from the Browse dialog.
+        """
+        try:
+            from MDSplus import Connection
+            from config.app_config import AppConfig
+            mds = Connection(AppConfig().MDS_IP)
+            mds.openTree('kstar', int(self.shot_number))
+            try:
+                v = np.asarray(mds.get('\\tor_ha11').data(), dtype=np.float32)
+                t = np.asarray(mds.get('dim_of(\\tor_ha11)').data(), dtype=np.float32)
+                ip_start, ip_end = self._load_ip_window(mds, int(self.shot_number))
+            finally:
+                mds.closeTree('kstar', int(self.shot_number))
+            if t.size == 0 or v.size == 0:
+                self._dalpha_window = (None, None)
+                return None, None, np.array([])
+            self._dalpha_window = (ip_start, ip_end)
+            wstr = (f" (Ip window {ip_start:.2f}-{ip_end:.2f}s)"
+                    if ip_start is not None else "")
+            print(f"[Dalpha] #{self.shot_number} loaded{wstr}; "
+                  f"toggle ELM detection in the Browse dialog to find peaks.")
+            return t, v, np.array([])
+        except Exception as e:
+            print(f"[Dalpha] not available for #{self.shot_number}: {e}")
+            self._dalpha_window = (None, None)
+            return None, None, np.array([])
 
     def _build_ui(self):
         main_layout = QHBoxLayout(self)
@@ -272,12 +566,22 @@ class ProfilePreviewDialog(_PreviewBase):
     def _init_plot(self):
         self.figure.clear()
         self._axes = []
+        self._ax_dalpha = None
+        self._dalpha_vline = None
         zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
+
+        has_dalpha = self._dalpha_t is not None
+        if has_dalpha:
+            gs = self.figure.add_gridspec(
+                2, 2, height_ratios=[3, 1], hspace=0.35)
+        else:
+            gs = self.figure.add_gridspec(1, 2)
+
         for col, (pname, plabel) in enumerate([
             (self.param1_name, self.param1_label),
             (self.param2_name, self.param2_label),
         ]):
-            ax = self.figure.add_subplot(1, 2, col + 1)
+            ax = self.figure.add_subplot(gs[0, col])
             ax.set_xlabel('R [m]', fontsize=12)
             ax.set_ylabel(plabel, fontsize=12)
             ax.tick_params(labelsize=10)
@@ -285,8 +589,48 @@ class ProfilePreviewDialog(_PreviewBase):
             if 'v' in pname.lower():
                 ax.axhline(y=0, color=zc, ls='--', gid='zero_ref')
             self._axes.append(ax)
+
+        if has_dalpha:
+            ax_da = self.figure.add_subplot(gs[1, :])
+            ax_da.plot(self._dalpha_t, self._dalpha_v,
+                       '-', color='#888', lw=0.8)
+            for pk in self._dalpha_peaks:
+                ax_da.axvline(pk, color='#cc4444', lw=0.5, alpha=0.4)
+            ax_da.set_xlabel('Time [s]', fontsize=10)
+            ax_da.set_ylabel(r'D$_\alpha$', fontsize=10)
+            ax_da.tick_params(labelsize=9)
+            ax_da.grid(ls='--', lw=0.3, color='#444444')
+            # Default x-range = Ip-active window if available
+            ip_start, ip_end = getattr(self, '_dalpha_window', (None, None))
+            if ip_start is not None and ip_end is not None:
+                ax_da.set_xlim(ip_start, ip_end)
+            else:
+                ax_da.set_xlim(float(self.time_arr[0]),
+                               float(self.time_arr[-1]))
+            self._ax_dalpha = ax_da
+            self._dalpha_full_xlim = ax_da.get_xlim()
+            # Adaptive zoom window: 5% of Ip-active duration, clamped to a
+            # reasonable absolute range so neither very short nor very long
+            # shots produce a useless window.
+            if ip_start is not None and ip_end is not None:
+                duration = max(0.0, float(ip_end - ip_start))
+                self._dalpha_zoom_half = float(np.clip(0.05 * duration, 0.1, 1.0))
+            else:
+                self._dalpha_zoom_half = 0.3
+            self._dalpha_zoom = True
+            try:
+                self.dalpha_zoom_toggle.setChecked(True, animate=False)
+            except Exception:
+                pass
+            # Sync spinbox to the adaptive default (without re-triggering
+            # the valueChanged signal during initialization).
+            if hasattr(self, 'dalpha_zoom_spin'):
+                self.dalpha_zoom_spin.blockSignals(True)
+                self.dalpha_zoom_spin.setValue(self._dalpha_zoom_half)
+                self.dalpha_zoom_spin.blockSignals(False)
+
         self.figure.subplots_adjust(
-            left=0.12, right=0.97, top=0.90, bottom=0.14, wspace=0.30)
+            left=0.10, right=0.97, top=0.92, bottom=0.10, wspace=0.30)
         apply_dark_figure_style(self.figure)
 
     def _get_param_data(self, pname, t_actual):
@@ -311,6 +655,20 @@ class ProfilePreviewDialog(_PreviewBase):
             f"#{self.shot_number}  {ms:06d}ms  ({self.source})", fontsize=12)
         self.frame_entry.setText(str(t_idx + 1))
         self.time_entry.setText(f"{t_actual:.4f}")
+
+        # Sync D-alpha vertical line to the current time
+        if self._ax_dalpha is not None:
+            if self._dalpha_vline is not None:
+                try:
+                    self._dalpha_vline.remove()
+                except Exception:
+                    pass
+            self._dalpha_vline = self._ax_dalpha.axvline(
+                t_actual, color='red', lw=1.5, zorder=20)
+            # In zoom mode, slide the x-axis to follow current time
+            if getattr(self, '_dalpha_zoom', False):
+                half = getattr(self, '_dalpha_zoom_half', 0.5)
+                self._ax_dalpha.set_xlim(t_actual - half, t_actual + half)
 
         for a in self._artists:
             a.remove()
@@ -348,9 +706,117 @@ class ProfilePreviewDialog(_PreviewBase):
                 margin = (y_max - y_min) * 0.1 if y_max > y_min else 0.1
                 if pname in _ZERO_BOTTOM:
                     ax.set_ylim(0, y_max + margin)
+                elif pname == 'vT':
+                    ax.set_ylim(_VT_YMIN, y_max + margin)
                 else:
                     ax.set_ylim(y_min - margin, y_max + margin)
 
+        self.canvas.draw_idle()
+
+    def _render_3d(self):
+        """Surface plot of param1 and param2 vs (R, time)."""
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+        self.figure.clear()
+        self._axes = []
+        self._3d_highlight = []   # store highlight artists per axis
+        self._3d_data = []        # per-axis (R, time, Z, pname) for highlight redraw
+        time = np.asarray(self.time_arr)
+        R = np.asarray(self.data.radius)
+        for col, (pname, plabel) in enumerate([
+            (self.param1_name, self.param1_label),
+            (self.param2_name, self.param2_label),
+        ]):
+            ax = self.figure.add_subplot(1, 2, col + 1, projection='3d')
+            self._axes.append(ax)
+            if pname not in self.data.measurements:
+                ax.text2D(0.5, 0.5, f"{pname} not available",
+                          ha='center', va='center', transform=ax.transAxes,
+                          color='gray')
+                self._3d_data.append(None)
+                self._3d_highlight.append(None)
+                continue
+            try:
+                pdata, _, _ = self.data.get_parameter_asymmetric(pname)
+            except Exception:
+                self._3d_data.append(None)
+                self._3d_highlight.append(None)
+                continue
+            n_R = min(pdata.shape[0], len(R))
+            n_t = min(pdata.shape[1], len(time))
+            if n_R == 0 or n_t == 0:
+                self._3d_data.append(None)
+                self._3d_highlight.append(None)
+                continue
+            Rv = R[:n_R]
+            Tv = time[:n_t]
+            Z = pdata[:n_R, :n_t]
+            R_grid, T_grid = np.meshgrid(Rv, Tv, indexing='ij')
+            try:
+                ax.plot_surface(R_grid, T_grid, Z, cmap='viridis',
+                                edgecolor='none', alpha=0.6)
+            except Exception:
+                ax.plot_wireframe(R_grid, T_grid, Z, color='#1f77b4', lw=0.5)
+            ax.set_xlabel('R [m]', fontsize=10, labelpad=2)
+            ax.set_ylabel('Time [s]', fontsize=10, labelpad=2)
+            ax.set_zlabel(plabel, fontsize=10, labelpad=2)
+            ax.tick_params(labelsize=8, pad=2)
+            _shrink_3d_box(ax)
+            _layout_3d_axes(ax, col, 2)
+            # Robust z-axis bounds (suppress edge-noise outliers)
+            z_lo, z_hi = _robust_zrange(Z)
+            if z_hi is not None and np.isfinite(z_hi):
+                if pname in _ZERO_BOTTOM:
+                    z_lo_use = 0.0
+                elif pname == 'vT':
+                    z_lo_use = _VT_YMIN
+                else:
+                    margin = (z_hi - z_lo) * 0.05 if z_lo is not None else 0
+                    z_lo_use = (z_lo - margin) if z_lo is not None else 0
+                ax.set_zlim(z_lo_use, z_hi * 1.05 if z_hi > 0 else z_hi * 0.95)
+            self._3d_data.append((Rv, Tv, Z, pname))
+            self._3d_highlight.append(None)
+        self.figure.suptitle(
+            f"#{self.shot_number}  ({self.source})  3D view", fontsize=12)
+        # Wider margins so 3D axis labels/ticks don't clip
+        self.figure.subplots_adjust(left=0.0, right=1.0, top=0.94, bottom=0.0,
+                                    wspace=0.05)
+        apply_dark_figure_style(self.figure)
+        self.canvas.draw_idle()
+
+    def _render_3d_highlight(self, t_idx):
+        """Draw a profile slice at the current time index on each 3D axis."""
+        if not getattr(self, '_3d_data', None):
+            return
+        time = np.asarray(self.time_arr)
+        if t_idx >= len(time):
+            return
+        t_actual = float(time[t_idx])
+        ms = int(round(t_actual * 1000))
+        # Sync navigation widgets
+        if hasattr(self, 'frame_entry'):
+            self.frame_entry.setText(str(t_idx + 1))
+        if hasattr(self, 'time_entry'):
+            self.time_entry.setText(f"{t_actual:.4f}")
+        for col, dataset in enumerate(self._3d_data):
+            ax = self._axes[col]
+            old = self._3d_highlight[col]
+            if old is not None:
+                try:
+                    old.remove()
+                except Exception:
+                    pass
+            if dataset is None:
+                continue
+            Rv, Tv, Z, _ = dataset
+            ti = min(t_idx, Z.shape[1] - 1)
+            t_val = float(Tv[ti])
+            line, = ax.plot(Rv, np.full_like(Rv, t_val), Z[:, ti],
+                            color='red', lw=2.5, zorder=20)
+            self._3d_highlight[col] = line
+        self.figure.suptitle(
+            f"#{self.shot_number}  {ms:06d}ms  ({self.source})  3D view",
+            fontsize=12)
         self.canvas.draw_idle()
 
     def _overlay_extra(self, ax, pname, t_actual):
@@ -510,6 +976,8 @@ class TimeTracePreviewDialog(_PreviewBase):
                     param_key = ''.join(c for c in self.param1_label if c.isalpha())
                     if any(k in param_key for k in ('Ti', 'Te', 'ne')):
                         ax1.set_ylim(0, np.nanmax(y) + margin)
+                    elif 'vT' in param_key or 'vt' in param_key:
+                        ax1.set_ylim(_VT_YMIN, np.nanmax(y) + margin)
                     else:
                         ax1.set_ylim(np.nanmin(y) - margin, np.nanmax(y) + margin)
 
@@ -524,11 +992,143 @@ class TimeTracePreviewDialog(_PreviewBase):
                 if not self._fix_axes:
                     y = p2[valid]
                     margin = (np.nanmax(y) - np.nanmin(y)) * 0.1 or 0.1
-                    ax2.set_ylim(np.nanmin(y) - margin, np.nanmax(y) + margin)
+                    param_key2 = ''.join(c for c in self.param2_label if c.isalpha())
+                    if 'vT' in param_key2 or 'vt' in param_key2:
+                        ax2.set_ylim(_VT_YMIN, np.nanmax(y) + margin)
+                    else:
+                        ax2.set_ylim(np.nanmin(y) - margin, np.nanmax(y) + margin)
 
         if not self._fix_axes:
             ax1.set_xlim(time[0], time[-1])
 
+        self.canvas.draw_idle()
+
+    def _render_3d(self):
+        """Surface plot: param vs (time, channel index/R)."""
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+        self.figure.clear()
+        self._axes = []
+        self._3d_highlight = []
+        self._3d_data = []
+        if not self.channels:
+            return
+
+        # Prefer R-based y-axis. Use only channels that have R; fall back to
+        # channel index only if NO channel has an R value.
+        any_R = any(ch.get('R') is not None for ch in self.channels)
+        if any_R:
+            channels_use = [(i, ch) for i, ch in enumerate(self.channels)
+                            if ch.get('R') is not None]
+            channels_use.sort(key=lambda p: float(p[1]['R']))
+            y_label = 'R [m]'
+        else:
+            channels_use = list(enumerate(self.channels))
+            y_label = 'Channel index'
+
+        ref_time = np.asarray(channels_use[0][1]['time'])
+        n_t = len(ref_time)
+        n_ch = len(channels_use)
+        y_vals = np.asarray([float(ch.get('R')) if ch.get('R') is not None else j
+                             for j, (_, ch) in enumerate(channels_use)])
+        # Map sorted-position → original channel index for slider highlight
+        self._3d_ch_order = [orig_i for orig_i, _ in channels_use]
+
+        for col, (key, plabel) in enumerate([
+            ('param1', self.param1_label), ('param2', self.param2_label)
+        ]):
+            ax = self.figure.add_subplot(1, 2, col + 1, projection='3d')
+            self._axes.append(ax)
+            Z = np.full((n_ch, n_t), np.nan)
+            for i, (_orig_i, ch) in enumerate(channels_use):
+                arr = ch.get(key)
+                t = np.asarray(ch['time'])
+                if arr is None:
+                    continue
+                arr = np.asarray(arr, dtype=float)
+                if len(t) == n_t:
+                    Z[i, :] = arr[:n_t]
+                else:
+                    try:
+                        Z[i, :] = np.interp(ref_time, t, arr)
+                    except Exception:
+                        pass
+            T_grid, Y_grid = np.meshgrid(ref_time, y_vals, indexing='xy')
+            try:
+                ax.plot_surface(T_grid, Y_grid, Z, cmap='viridis',
+                                edgecolor='none', alpha=0.6)
+            except Exception:
+                ax.plot_wireframe(T_grid, Y_grid, Z, color='#1f77b4', lw=0.5)
+            ax.set_xlabel('Time [s]', fontsize=10, labelpad=2)
+            ax.set_ylabel(y_label, fontsize=10, labelpad=2)
+            ax.set_zlabel(plabel, fontsize=10, labelpad=2)
+            ax.tick_params(labelsize=8, pad=2)
+            _shrink_3d_box(ax)
+            _layout_3d_axes(ax, col, 2)
+            # Robust z-axis bounds. Z shape: (n_ch_along_R, n_time);
+            # transpose so that the radial axis becomes axis 0 for edge skipping.
+            param_key = ''.join(c for c in plabel if c.isalpha())
+            is_zero_bottom = any(k in param_key for k in _ZERO_BOTTOM)
+            is_vt = ('vT' in param_key) or ('vt' in param_key)
+            z_lo, z_hi = _robust_zrange(Z)
+            if z_hi is not None and np.isfinite(z_hi):
+                if is_zero_bottom:
+                    z_lo_use = 0.0
+                elif is_vt:
+                    z_lo_use = _VT_YMIN
+                else:
+                    z_lo_use = z_lo if z_lo is not None else 0
+                ax.set_zlim(z_lo_use, z_hi * 1.05 if z_hi > 0 else z_hi * 0.95)
+            self._3d_data.append((ref_time, y_vals, Z))
+            self._3d_highlight.append(None)
+
+        self.figure.suptitle(
+            f"#{self.shot_number}  ({self.source})  3D view", fontsize=12)
+        self.figure.subplots_adjust(left=0.0, right=1.0, top=0.94, bottom=0.0,
+                                    wspace=0.05)
+        apply_dark_figure_style(self.figure)
+        self.canvas.draw_idle()
+
+    def _render_3d_highlight(self, ch_idx):
+        """Highlight time-trace at the current channel slice on each 3D axis."""
+        if not getattr(self, '_3d_data', None):
+            return
+        if ch_idx >= len(self.channels):
+            return
+        label = self.channels[ch_idx].get('label', f'idx {ch_idx}')
+        # Sync navigation widgets
+        if hasattr(self, 'idx_entry'):
+            self.idx_entry.setText(str(ch_idx))
+        if hasattr(self, 'ch_info_label'):
+            self.ch_info_label.setText(label)
+        # Map slider index (original channel order) → sorted-by-R position
+        order = getattr(self, '_3d_ch_order', None)
+        if order is None:
+            sorted_pos = ch_idx
+        else:
+            try:
+                sorted_pos = order.index(ch_idx)
+            except ValueError:
+                sorted_pos = None
+        for col, dataset in enumerate(self._3d_data):
+            ax = self._axes[col]
+            old = self._3d_highlight[col]
+            if old is not None:
+                try:
+                    old.remove()
+                except Exception:
+                    pass
+            if dataset is None or sorted_pos is None:
+                continue
+            ref_time, y_vals, Z = dataset
+            ci = min(sorted_pos, Z.shape[0] - 1)
+            y_val = float(y_vals[ci])
+            line, = ax.plot(ref_time, np.full_like(ref_time, y_val), Z[ci, :],
+                            color='red', lw=2.5, zorder=20)
+            self._3d_highlight[col] = line
+        self.figure.suptitle(
+            f"#{self.shot_number}  {label}  ({self.source})  3D view",
+            fontsize=12)
         self.canvas.draw_idle()
 
     # ---- Add to Selected ----
@@ -557,6 +1157,8 @@ class TimeTracePreviewDialog(_PreviewBase):
 
 class TranspProfilePreviewDialog(_PreviewBase):
     """Preview TRANSP CDF profiles: filter + variable selector + time slider."""
+
+    _HAS_ELM = False  # TRANSP CDF data has no Dα → no ELM detection
 
     def __init__(self, parent, cdf, shot, run, selected_listbox=None):
         self.cdf = cdf
@@ -604,8 +1206,11 @@ class TranspProfilePreviewDialog(_PreviewBase):
             var_layout.addLayout(frow)
 
             self.var_combo = _QCB()
+            self.var_combo.setMaxVisibleItems(20)
             self.var_combo.setSizeAdjustPolicy(_QCB.AdjustToMinimumContentsLengthWithIcon)
             self.var_combo.setMinimumContentsLength(8)
+            self.var_combo.setStyleSheet("QComboBox { combobox-popup: 0; }")
+            self.var_combo.view().setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
             for vn, display in self._all_var_items:
                 self.var_combo.addItem(display, vn)
             self.var_combo.currentIndexChanged.connect(self._on_var_changed)
@@ -673,7 +1278,13 @@ class TranspProfilePreviewDialog(_PreviewBase):
         self.slider.setMaximum(max(0, n - 1))
         self.frame_max_label.setText(f"/ {n}")
         self.slider.setValue(0)
-        self._update_plot(0)
+        # Re-render surface in 3D mode; otherwise just update the 2D slice
+        if getattr(self, '_view_mode', '2D') == '3D':
+            self._render_3d()
+            self._render_3d_highlight(0)
+            self.canvas.draw_idle()
+        else:
+            self._update_plot(0)
 
     def _goto_frame(self):
         try:
@@ -747,6 +1358,82 @@ class TranspProfilePreviewDialog(_PreviewBase):
             ax.set_ylim(np.nanmin(yv) - margin, np.nanmax(yv) + margin)
             ax.set_xlim(x[0], x[-1])
 
+        self.canvas.draw_idle()
+
+    def _render_3d(self):
+        """Surface plot of variable vs (rho, time) for the selected variable."""
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+        self.figure.clear()
+        self._axes = []
+        self._3d_highlight = None
+        self._3d_data = None
+        prof = self._current_prof
+        if prof is None:
+            return
+
+        ax = self.figure.add_subplot(1, 1, 1, projection='3d')
+        self._axes.append(ax)
+        x = np.asarray(prof['x'])
+        time = np.asarray(prof['time'])
+        Z = np.asarray(prof['data'])  # (n_time, n_x)
+        X_grid, T_grid = np.meshgrid(x, time, indexing='xy')
+        try:
+            ax.plot_surface(X_grid, T_grid, Z, cmap='viridis',
+                            edgecolor='none', alpha=0.6)
+        except Exception:
+            ax.plot_wireframe(X_grid, T_grid, Z, color='#1f77b4', lw=0.5)
+        ax.set_xlabel(r'$\rho_{tor}$', fontsize=10, labelpad=2)
+        ax.set_ylabel('Time [s]', fontsize=10, labelpad=2)
+        vn = self.var_combo.currentData() or ''
+        units = prof.get('units', '')
+        ax.set_zlabel(f"{vn} [{units}]" if units else vn,
+                      fontsize=10, labelpad=2)
+        ax.tick_params(labelsize=8, pad=2)
+        _shrink_3d_box(ax)
+        _layout_3d_axes(ax, 0, 1)
+        # Robust z-axis bounds (TRANSP profiles: time on axis 0; transpose for edge skip)
+        is_zero_bottom = any(k in vn for k in ('NE', 'TE', 'TI', 'NH', 'ND', 'NT', 'PRES', 'Q'))
+        z_lo, z_hi = _robust_zrange(Z.T)  # radial axis becomes axis 0
+        if z_hi is not None and np.isfinite(z_hi):
+            if is_zero_bottom:
+                z_lo_use = 0.0
+            else:
+                z_lo_use = z_lo if z_lo is not None else 0
+            ax.set_zlim(z_lo_use, z_hi * 1.05 if z_hi > 0 else z_hi * 0.95)
+        self._3d_data = (x, time, Z)
+        self.figure.suptitle(f"#{self.shot} ({self.run})  3D view  —  {vn}",
+                             fontsize=12)
+        self.figure.subplots_adjust(left=0.0, right=1.0, top=0.94, bottom=0.0)
+        apply_dark_figure_style(self.figure)
+        self.canvas.draw_idle()
+
+    def _render_3d_highlight(self, t_idx):
+        """Highlight profile slice at time t_idx on the 3D surface."""
+        if not self._axes or self._3d_data is None:
+            return
+        ax = self._axes[0]
+        if self._3d_highlight is not None:
+            try:
+                self._3d_highlight.remove()
+            except Exception:
+                pass
+        x, time, Z = self._3d_data
+        ti = min(t_idx, Z.shape[0] - 1)
+        t_val = float(time[ti])
+        line, = ax.plot(x, np.full_like(x, t_val), Z[ti, :],
+                        color='red', lw=2.5, zorder=20)
+        self._3d_highlight = line
+        ms = int(round(t_val * 1000))
+        vn = self.var_combo.currentData() or ''
+        # Sync navigation widgets
+        if hasattr(self, 'frame_entry'):
+            self.frame_entry.setText(str(t_idx + 1))
+        if hasattr(self, 'time_entry'):
+            self.time_entry.setText(f"{t_val:.4f}")
+        self.figure.suptitle(
+            f"#{self.shot} ({self.run})  {ms:06d}ms  3D view  —  {vn}",
+            fontsize=12)
         self.canvas.draw_idle()
 
     def _add_current(self):
@@ -852,8 +1539,11 @@ class TranspTimeTracePreviewDialog(QDialog):
         var_layout.addLayout(frow)
 
         self.var_combo = _QCB()
+        self.var_combo.setMaxVisibleItems(20)
         self.var_combo.setSizeAdjustPolicy(_QCB.AdjustToMinimumContentsLengthWithIcon)
         self.var_combo.setMinimumContentsLength(8)
+        self.var_combo.setStyleSheet("QComboBox { combobox-popup: 0; }")
+        self.var_combo.view().setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         for vn, display in self._all_var_items:
             self.var_combo.addItem(display, vn)
         self.var_combo.currentIndexChanged.connect(self._on_var_changed)
@@ -1070,6 +1760,26 @@ class BiProfilePreviewDialog(QDialog):
         cl = QVBoxLayout(ctrl)
         cl.setContentsMargins(4, 0, 4, 4)
 
+        # View mode (top)
+        from PySide6.QtWidgets import QRadioButton, QButtonGroup
+        view_group = QGroupBox("View")
+        view_layout = QHBoxLayout(view_group)
+        self._view_mode = '2D'
+        self._view_btn_group = QButtonGroup(self)
+        self.view_2d_radio = QRadioButton("2D")
+        self.view_3d_radio = QRadioButton("3D")
+        self.view_2d_radio.setChecked(True)
+        self._view_btn_group.addButton(self.view_2d_radio)
+        self._view_btn_group.addButton(self.view_3d_radio)
+        view_layout.addWidget(self.view_2d_radio)
+        view_layout.addWidget(self.view_3d_radio)
+        view_layout.addStretch()
+        self.view_2d_radio.toggled.connect(
+            lambda c: c and self._on_view_changed("2D"))
+        self.view_3d_radio.toggled.connect(
+            lambda c: c and self._on_view_changed("3D"))
+        cl.addWidget(view_group)
+
         nav_group = QGroupBox("Navigation")
         nav_layout = QVBoxLayout(nav_group)
         idx_row = QHBoxLayout()
@@ -1211,6 +1921,8 @@ class BiProfilePreviewDialog(QDialog):
                         margin = (y_max - y_min) * 0.1 if y_max > y_min else 0.1
                         if param in _ZERO_BOTTOM:
                             ax.set_ylim(0, y_max + margin)
+                        elif param == 'vT':
+                            ax.set_ylim(_VT_YMIN, y_max + margin)
                         else:
                             ax.set_ylim(y_min - margin, y_max + margin)
                 if self.sdata:
@@ -1234,6 +1946,8 @@ class BiProfilePreviewDialog(QDialog):
                         margin = (y_max - y_min) * 0.1 if y_max > y_min else 0.1
                         if param in _ZERO_BOTTOM:
                             ax.set_ylim(0, y_max + margin)
+                        elif param == 'vT':
+                            ax.set_ylim(_VT_YMIN, y_max + margin)
                         else:
                             ax.set_ylim(y_min - margin, y_max + margin)
                     ax.set_xlim(time[0], time[-1])
@@ -1243,7 +1957,10 @@ class BiProfilePreviewDialog(QDialog):
     # ---- Navigation ----
 
     def _on_slider(self, value):
-        self._update_plot(value)
+        if getattr(self, '_view_mode', '2D') == '3D':
+            self._render_3d_highlight(value)
+        else:
+            self._update_plot(value)
 
     def _step(self, delta):
         self.slider.setValue(
@@ -1267,6 +1984,116 @@ class BiProfilePreviewDialog(QDialog):
         self._fix_axes = checked
         if not checked:
             self._update_plot(self.slider.value())
+
+    # ---- View mode (2D / 3D) ----
+
+    def _on_view_changed(self, mode):
+        self._view_mode = mode
+        if hasattr(self, 'fix_axes_toggle'):
+            self.fix_axes_toggle.setEnabled(mode == '2D')
+        if mode == '3D':
+            self._render_3d()
+            self._render_3d_highlight(self.slider.value())
+        else:
+            self._init_plot()
+            self._update_plot(self.slider.value())
+
+    def _render_3d(self):
+        """Surface plot of param vs (psi_N, time)."""
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+        self.figure.clear()
+        self._axes = []
+        self._3d_highlight = []
+        self._3d_data = []
+        bi = self.bi_data
+
+        for col, param in enumerate(self.params):
+            ax = self.figure.add_subplot(1, len(self.params), col + 1,
+                                          projection='3d')
+            self._axes.append(ax)
+            if param not in bi:
+                self._3d_data.append(None)
+                self._3d_highlight.append(None)
+                continue
+            d = bi[param]
+            psin = np.asarray(d['psin'])
+            time = np.asarray(d['time'])
+            Z = np.asarray(d['mean'])  # shape (n_psin, n_time)
+            X, Y = np.meshgrid(psin, time, indexing='ij')
+            try:
+                ax.plot_surface(X, Y, Z, cmap='viridis',
+                                edgecolor='none', alpha=0.6)
+            except Exception:
+                ax.plot_wireframe(X, Y, Z, color='#1f77b4', lw=0.5)
+            ax.set_xlabel(r'$\psi_N$', fontsize=10, labelpad=2)
+            ax.set_ylabel('Time [s]', fontsize=10, labelpad=2)
+            ax.set_zlabel(
+                f'{_BI_LABELS.get(param, param)} [{_BI_UNITS.get(param, "")}]',
+                fontsize=10, labelpad=2)
+            ax.tick_params(labelsize=8, pad=2)
+            _shrink_3d_box(ax)
+            _layout_3d_axes(ax, col, len(self.params))
+            # Robust z-axis bounds (skip outer 10%, percentile-based)
+            z_lo, z_hi = _robust_zrange(Z)
+            if z_hi is not None and np.isfinite(z_hi):
+                if param in _ZERO_BOTTOM:
+                    z_lo_use = 0.0
+                elif param == 'vT':
+                    z_lo_use = _VT_YMIN
+                else:
+                    z_lo_use = z_lo if z_lo is not None else 0
+                ax.set_zlim(z_lo_use, z_hi * 1.05 if z_hi > 0 else z_hi * 0.95)
+            self._3d_data.append((psin, time, Z))
+            self._3d_highlight.append(None)
+
+        self.figure.suptitle(f"#{self.shot_number}  3D view", fontsize=12)
+        self.figure.subplots_adjust(left=0.0, right=1.0, top=0.94, bottom=0.0,
+                                    wspace=0.05)
+        apply_dark_figure_style(self.figure)
+        self.canvas.draw_idle()
+
+    def _render_3d_highlight(self, idx):
+        """Highlight a slice (time or psi_N) on the 3D surface."""
+        if not getattr(self, '_3d_data', None):
+            return
+        if idx >= len(self.browse_arr):
+            return
+        val = float(self.browse_arr[idx])
+        # Sync navigation widgets
+        if hasattr(self, 'idx_entry'):
+            self.idx_entry.setText(str(idx))
+        if hasattr(self, 'val_entry'):
+            self.val_entry.setText(f"{val:.4f}")
+        if self.mode == 'profile':
+            ms = int(round(val * 1000))
+            title = f"#{self.shot_number}  {ms:06d}ms  3D view"
+        else:
+            title = f"#{self.shot_number}  ψₙ={val:.4f}  3D view"
+
+        for col, dataset in enumerate(self._3d_data):
+            ax = self._axes[col]
+            old = self._3d_highlight[col]
+            if old is not None:
+                try:
+                    old.remove()
+                except Exception:
+                    pass
+            if dataset is None:
+                continue
+            psin, time, Z = dataset
+            if self.mode == 'profile':
+                ti = int(np.argmin(np.abs(time - val)))
+                line, = ax.plot(psin, np.full_like(psin, float(time[ti])),
+                                Z[:, ti], color='red', lw=2.5, zorder=20)
+            else:
+                pi = int(np.argmin(np.abs(psin - val)))
+                line, = ax.plot(np.full_like(time, float(psin[pi])), time,
+                                Z[pi, :], color='red', lw=2.5, zorder=20)
+            self._3d_highlight[col] = line
+
+        self.figure.suptitle(title, fontsize=12)
+        self.canvas.draw_idle()
 
     # ---- Playback ----
 

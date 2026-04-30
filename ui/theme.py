@@ -151,6 +151,29 @@ QLineEdit:disabled {
     border: 1px solid #3c3c3c;
 }
 
+QSpinBox, QDoubleSpinBox {
+    background: #3c3f41;
+    color: #ccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 2px 4px;
+}
+QSpinBox:disabled, QDoubleSpinBox:disabled {
+    background: #2b2b2b;
+    color: #555;
+    border: 1px solid #3c3c3c;
+}
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: #4a4d4f;
+    border: 1px solid #555;
+    width: 14px;
+}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: #5a5d5f;
+}
+
 QCheckBox { color: #ccc; spacing: 6px; }
 QCheckBox::indicator {
     width: 16px; height: 16px;
@@ -408,6 +431,29 @@ QLineEdit:disabled {
     background: #e8e8e8;
     color: #aaa;
     border: 1px solid #ddd;
+}
+
+QSpinBox, QDoubleSpinBox {
+    background: #ffffff;
+    color: #333;
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+    padding: 2px 4px;
+}
+QSpinBox:disabled, QDoubleSpinBox:disabled {
+    background: #e8e8e8;
+    color: #aaa;
+    border: 1px solid #ddd;
+}
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: #f0f0f0;
+    border: 1px solid #cccccc;
+    width: 14px;
+}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: #e0e0e0;
 }
 
 QCheckBox { color: #333; spacing: 6px; }

@@ -30,7 +30,8 @@ _ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
 _CATEGORY_ORDER = ["Profiles", "Time Traces", "Spectral", "Imaging",
                     "EFIT",
                     "BiProfile Profiles", "BiProfile Time Traces",
-                    "TRANSP Profiles", "TRANSP Time Traces",
+                    "TRANSP Input",
+                    "TRANSP Output Profiles", "TRANSP Output Time Traces",
                     "Other"]
 
 # Tab types highlighted with accent color in sidebar
@@ -47,8 +48,9 @@ _TAB_TYPE_TO_CATEGORY = {
     'neutron': "Time Traces",
     'bi_profile': "BiProfile Profiles",
     'bi_timetrace': "BiProfile Time Traces",
-    'transp_profile': "TRANSP Profiles",
-    'transp_timetrace': "TRANSP Time Traces",
+    'transp_profile': "TRANSP Output Profiles",
+    'transp_timetrace': "TRANSP Output Time Traces",
+    'transp_ufile': "TRANSP Input",
     'efit_scalar': "EFIT",
     'efit_profile': "EFIT",
     'efit_2d': "EFIT",
@@ -173,12 +175,14 @@ class SidebarNav(QWidget):
         categorized = _categorize_tabs(self.tab_configs)
         _DIAG = {"Profiles", "Time Traces", "Spectral", "Imaging"}
         _BI = {"BiProfile Profiles", "BiProfile Time Traces"}
-        _TR = {"TRANSP Profiles", "TRANSP Time Traces"}
+        _TR_UFILE = {"TRANSP Input"}
+        _TR_CDF = {"TRANSP Output Profiles", "TRANSP Output Time Traces"}
         _EF = {"EFIT"}
 
         diag = [(n, it) for n, it in categorized if n in _DIAG]
         bi = [(n, it) for n, it in categorized if n in _BI]
-        tr = [(n, it) for n, it in categorized if n in _TR]
+        tr_ufile = [(n, it) for n, it in categorized if n in _TR_UFILE]
+        tr_cdf = [(n, it) for n, it in categorized if n in _TR_CDF]
         ef = [(n, it) for n, it in categorized if n in _EF]
 
         A_E, A_C, P_T = self._ARROW_EXP, self._ARROW_COL, self._PAD_TAB
@@ -260,8 +264,32 @@ class SidebarNav(QWidget):
 
         # ── TRANSP ──
         g = _add_group("TRANSP")
-        for _, items in tr:
-            _add_flat(g, items)
+
+        def _add_tr_subgroup(label, key_suffix, cats):
+            """Add a UFILE or CDF subgroup under TRANSP root."""
+            if not cats:
+                return
+            key = f"TRANSP/{key_suffix}"
+            exp = key not in collapsed
+            arrow = A_E if exp else A_C
+            sub = QTreeWidgetItem(g)
+            sub.setText(0, f"{P_T}{arrow} {label}")
+            sub.setFlags(Qt.ItemIsEnabled)
+            sub.setData(0, Qt.UserRole + 1, key)
+            f2 = sub.font(0)
+            f2.setBold(True)
+            sub.setFont(0, f2)
+            sub.setForeground(0, QColor("#888"))
+            sub.setExpanded(exp)
+            self._cat_items[key] = sub
+            for _, items in cats:
+                for tab_index, tab_name, tab_type in items:
+                    ch = QTreeWidgetItem(sub)
+                    ch.setText(0, f"{P_T}{P_T}{P_T}{tab_name}")
+                    ch.setData(0, Qt.UserRole, tab_index)
+
+        _add_tr_subgroup("Input", "Input", tr_ufile)
+        _add_tr_subgroup("Output", "Output", tr_cdf)
 
     def _on_category_toggled(self, item):
         """Save category expand/collapse state and update text arrow"""
@@ -574,8 +602,10 @@ class PRISMApp(QMainWindow):
         ]
 
     def _build_bi_tab_configs(self):
-        """Build tab configs for TRANSP CDF viewer mode"""
+        """Build tab configs for TRANSP viewer mode (UFILE + CDF)"""
         self.tab_configs = [
+            {'diagnostic': None, 'tab_type': 'transp_ufile',
+             'tab_name': 'UFILE'},
             {'diagnostic': None, 'tab_type': 'transp_profile',
              'tab_name': 'Profiles'},
             {'diagnostic': None, 'tab_type': 'transp_timetrace',
@@ -703,7 +733,9 @@ class PRISMApp(QMainWindow):
                 })
         import socket as _socket
         _host = _socket.gethostname()
-        _nkstar_only = {'tv', 'tv_startup', 'irvb'}
+        # TV image dirs (/Diag_TV) are nkstar-only; IRVB HTTP server
+        # (172.17.112.125) is reachable from ukstar too.
+        _nkstar_only = {'tv', 'tv_startup'}
         for special_type in ['spectrogram', 'nmode', 'tv', 'tv_startup', 'irvb', 'neutron']:
             if special_type in _nkstar_only and not _host.startswith('nkstar'):
                 continue
@@ -732,7 +764,9 @@ class PRISMApp(QMainWindow):
         # Tabs that require nkstar-local resources (TV images, IRVB HTTP server)
         import socket as _socket
         _host = _socket.gethostname()
-        _nkstar_only = {'tv', 'tv_startup', 'irvb'}
+        # TV image dirs (/Diag_TV) are nkstar-only; IRVB HTTP server
+        # (172.17.112.125) is reachable from ukstar too.
+        _nkstar_only = {'tv', 'tv_startup'}
 
         for special_type in ['spectrogram', 'nmode', 'tv', 'tv_startup', 'irvb', 'neutron']:
             if special_type in _nkstar_only and not _host.startswith('nkstar'):
@@ -755,7 +789,12 @@ class PRISMApp(QMainWindow):
              'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
         ])
 
-        # TRANSP CDF tabs
+        # TRANSP UFILE tab (single — handles all classes via dropdown)
+        self.tab_configs.append({
+            'diagnostic': None, 'tab_type': 'transp_ufile',
+            'tab_name': 'UFILE'})
+
+        # TRANSP CDF tabs (bottom group): Profiles, Time Traces
         self.tab_configs.append({
             'diagnostic': None, 'tab_type': 'transp_profile',
             'tab_name': 'Profiles'})
@@ -845,14 +884,17 @@ class PRISMApp(QMainWindow):
         diag_cats = [(n, it) for n, it in categorized if n in _DIAG]
         efit_items = []
         bi_cats = []
-        transp_items = []
+        transp_ufile_items = []
+        transp_cdf_items = []
         for cat_name, items in categorized:
             if cat_name == "EFIT":
                 efit_items.extend(items)
             elif cat_name.startswith("BiProfile"):
                 bi_cats.append((cat_name, items))
-            elif cat_name.startswith("TRANSP"):
-                transp_items.extend(items)
+            elif cat_name.startswith("TRANSP Input"):
+                transp_ufile_items.extend(items)
+            elif cat_name.startswith("TRANSP Output"):
+                transp_cdf_items.extend(items)
 
         # Diagnostics
         if diag_cats:
@@ -897,16 +939,26 @@ class PRISMApp(QMainWindow):
                 glayout.addLayout(btn_row)
             layout.addWidget(grp)
 
-        # TRANSP
-        if transp_items:
+        # TRANSP — UFILE on top, CDF on bottom
+        if transp_ufile_items or transp_cdf_items:
             grp = QGroupBox("TRANSP")
             grp.setStyleSheet(_GROUP_STYLE)
             glayout = QVBoxLayout(grp)
-            btn_row = QHBoxLayout()
-            btn_row.setSpacing(4)
-            for tab_index, tab_name, tab_type in transp_items:
-                btn_row.addWidget(_btn(tab_index, tab_name), 1)
-            glayout.addLayout(btn_row)
+            glayout.setSpacing(3)
+            if transp_ufile_items:
+                glayout.addWidget(_lbl("Input", _SUB_STYLE))
+                btn_row = QHBoxLayout()
+                btn_row.setSpacing(4)
+                for tab_index, tab_name, tab_type in transp_ufile_items:
+                    btn_row.addWidget(_btn(tab_index, tab_name), 1)
+                glayout.addLayout(btn_row)
+            if transp_cdf_items:
+                glayout.addWidget(_lbl("Output", _SUB_STYLE))
+                btn_row = QHBoxLayout()
+                btn_row.setSpacing(4)
+                for tab_index, tab_name, tab_type in transp_cdf_items:
+                    btn_row.addWidget(_btn(tab_index, tab_name), 1)
+                glayout.addLayout(btn_row)
             layout.addWidget(grp)
 
         # Footer
@@ -944,9 +996,11 @@ class PRISMApp(QMainWindow):
         elif tab_type == 'bi_timetrace':
             title = f"BiProfile {tab_name} Time Trace"
         elif tab_type == 'transp_profile':
-            title = f"TRANSP Profile"
+            title = f"TRANSP CDF Profile"
         elif tab_type == 'transp_timetrace':
-            title = f"TRANSP Time Trace"
+            title = f"TRANSP CDF Time Trace"
+        elif tab_type == 'transp_ufile':
+            title = f"TRANSP UFILE"
         elif tab_type == 'efit_scalar':
             title = f"EFIT Time Traces"
         elif tab_type == 'efit_profile':
@@ -1092,7 +1146,9 @@ class PRISMApp(QMainWindow):
         # BiProfile / TRANSP tabs (custom, not via TabFactory)
         if config['tab_type'] in ('bi_profile', 'bi_timetrace'):
             tab = self._create_bi_tab(config)
-        elif config['tab_type'] in ('transp_profile', 'transp_timetrace'):
+        elif config['tab_type'] in (
+            'transp_profile', 'transp_timetrace', 'transp_ufile',
+        ):
             tab = self._create_transp_tab(config)
         elif config['tab_type'] in ('efit_scalar', 'efit_profile', 'efit_2d', 'efit_pfile'):
             tab = self._create_efit_tab(config)
@@ -1116,35 +1172,40 @@ class PRISMApp(QMainWindow):
     def _create_bi_tab(self, config):
         """Create a BiProfile tab instance"""
         if config['tab_type'] == 'bi_profile':
-            from ui.biprofile_profile_tab import BiProfileTab
+            from ui.tabs.biprofile.biprofile_profile_tab import BiProfileTab
             return BiProfileTab(self, config['bi_params'])
         else:
-            from ui.biprofile_timetrace_tab import BiTimeTraceTab
+            from ui.tabs.biprofile.biprofile_timetrace_tab import BiTimeTraceTab
             return BiTimeTraceTab(self, config['bi_params'])
 
     def _create_transp_tab(self, config):
-        """Create a TRANSP CDF tab instance"""
-        if config['tab_type'] == 'transp_profile':
-            from ui.transp_profile_tab import TranspProfileTab
+        """Create a TRANSP tab instance (UFILE or CDF)"""
+        tt = config['tab_type']
+        if tt == 'transp_profile':
+            from ui.tabs.transp.transp_profile_tab import TranspProfileTab
             return TranspProfileTab(self)
-        else:
-            from ui.transp_timetrace_tab import TranspTimeTraceTab
+        if tt == 'transp_timetrace':
+            from ui.tabs.transp.transp_timetrace_tab import TranspTimeTraceTab
             return TranspTimeTraceTab(self)
+        if tt == 'transp_ufile':
+            from ui.tabs.transp.transp_ufile_tab import TranspUFileTab
+            return TranspUFileTab(self)
+        raise ValueError(f"Unknown TRANSP tab type: {tt}")
 
     def _create_efit_tab(self, config):
         """Create an EFIT viewer tab instance"""
         tt = config['tab_type']
         if tt == 'efit_scalar':
-            from ui.efit_timetrace_tab import EfitScalarTab
+            from ui.tabs.efit.efit_timetrace_tab import EfitScalarTab
             return EfitScalarTab(self)
         elif tt == 'efit_profile':
-            from ui.efit_profile_tab import EfitProfileTab
+            from ui.tabs.efit.efit_profile_tab import EfitProfileTab
             return EfitProfileTab(self)
         elif tt == 'efit_pfile':
-            from ui.efit_pfile_tab import EfitPfileTab
+            from ui.tabs.efit.efit_pfile_tab import EfitPfileTab
             return EfitPfileTab(self)
         else:
-            from ui.efit_2d_tab import Efit2DTab
+            from ui.tabs.efit.efit_2d_tab import Efit2DTab
             return Efit2DTab(self)
 
     def _update_toolbar(self, tab_index):
@@ -1280,30 +1341,33 @@ class _SingleTabWindow(QMainWindow):
         tt = tab_config['tab_type']
         if tt in ('bi_profile', 'bi_timetrace'):
             if tt == 'bi_profile':
-                from ui.biprofile_profile_tab import BiProfileTab
+                from ui.tabs.biprofile.biprofile_profile_tab import BiProfileTab
                 self.tab = BiProfileTab(self, tab_config['bi_params'])
             else:
-                from ui.biprofile_timetrace_tab import BiTimeTraceTab
+                from ui.tabs.biprofile.biprofile_timetrace_tab import BiTimeTraceTab
                 self.tab = BiTimeTraceTab(self, tab_config['bi_params'])
-        elif tt in ('transp_profile', 'transp_timetrace'):
+        elif tt in ('transp_profile', 'transp_timetrace', 'transp_ufile'):
             if tt == 'transp_profile':
-                from ui.transp_profile_tab import TranspProfileTab
+                from ui.tabs.transp.transp_profile_tab import TranspProfileTab
                 self.tab = TranspProfileTab(self)
-            else:
-                from ui.transp_timetrace_tab import TranspTimeTraceTab
+            elif tt == 'transp_timetrace':
+                from ui.tabs.transp.transp_timetrace_tab import TranspTimeTraceTab
                 self.tab = TranspTimeTraceTab(self)
+            else:
+                from ui.tabs.transp.transp_ufile_tab import TranspUFileTab
+                self.tab = TranspUFileTab(self)
         elif tt in ('efit_scalar', 'efit_profile', 'efit_2d', 'efit_pfile'):
             if tt == 'efit_scalar':
-                from ui.efit_timetrace_tab import EfitScalarTab
+                from ui.tabs.efit.efit_timetrace_tab import EfitScalarTab
                 self.tab = EfitScalarTab(self)
             elif tt == 'efit_profile':
-                from ui.efit_profile_tab import EfitProfileTab
+                from ui.tabs.efit.efit_profile_tab import EfitProfileTab
                 self.tab = EfitProfileTab(self)
             elif tt == 'efit_pfile':
-                from ui.efit_pfile_tab import EfitPfileTab
+                from ui.tabs.efit.efit_pfile_tab import EfitPfileTab
                 self.tab = EfitPfileTab(self)
             else:
-                from ui.efit_2d_tab import Efit2DTab
+                from ui.tabs.efit.efit_2d_tab import Efit2DTab
                 self.tab = Efit2DTab(self)
         else:
             self.tab = TabFactory.create_tab(

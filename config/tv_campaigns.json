@@ -1,0 +1,31 @@
+{
+    "_comment": "TV (Visible Camera) campaign shot range and /Diag_TV directory mapping. Used by data_loaders/tv_loader.py.",
+    "_updated": "2026-04-29",
+    "_format": "campaigns ordered chronologically. shot_max=null means open range (current campaign).",
+
+    "base_path": "/Diag_TV",
+
+    "campaigns": [
+        {"name": "2008C01", "shot_min": 0,     "shot_max": 1283},
+        {"name": "2009C02", "shot_min": 1284,  "shot_max": 2342},
+        {"name": "2010C03", "shot_min": 2343,  "shot_max": 4468},
+        {"name": "2011C04", "shot_min": 4469,  "shot_max": 6470},
+        {"name": "2012C05", "shot_min": 6471,  "shot_max": 8354},
+        {"name": "2013C06", "shot_min": 8355,  "shot_max": 9427},
+        {"name": "2014C07", "shot_min": 9428,  "shot_max": 11724},
+        {"name": "2015C08", "shot_min": 11725, "shot_max": 14407},
+        {"name": "2016C09", "shot_min": 14408, "shot_max": 17376},
+        {"name": "2017C10", "shot_min": 17377, "shot_max": 19396},
+        {"name": "2018C11", "shot_min": 19397, "shot_max": 21758},
+        {"name": "2019C12", "shot_min": 21759, "shot_max": 24081},
+        {"name": "2020C13", "shot_min": 24082, "shot_max": 27400},
+        {"name": "2021C14", "shot_min": 27401, "shot_max": 30445},
+        {"name": "2022C15", "shot_min": 30446, "shot_max": 32768},
+        {"name": "2023C16", "shot_min": 32769, "shot_max": 34836},
+        {"name": "2024C17", "shot_min": 34837, "shot_max": 37741},
+        {"name": "2025C17", "shot_min": 37742, "shot_max": 37859},
+        {"name": "2025C18", "shot_min": 37860, "shot_max": 40463},
+        {"name": "2026C18", "shot_min": 40466, "shot_max": 41375},
+        {"name": "2026C19", "shot_min": 41376, "shot_max": null}
+    ]
+}

@@ -5,6 +5,79 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.4] - 2026-04-30
+
+### Added — TRANSP UFILE Tab (single, dispatches by class)
+- **TRANSP UFILE Tab**: New tab under `TRANSP > Input > UFILE`. Open any TRANSP run directory; all UFILEs appear in one dropdown, sorted by physical category (equilibrium → profile → heating → history). Plot dispatches by class:
+  - 1D time traces (BDI, CUR, VSF, ...) → single line
+  - profile×time (NER/TER/TIO/OME/VTR/QRA/ZFC/GRB/PRS/QPR/...) → all-times overlay with Time colorbar
+  - multi-channel heating (NBI/NB2/ECP/ECA/ECB) → per-source lines
+  - geometry (LIM/MMX/...) → EFIT 2D-style (R, Z) layout
+- **U-File parser** (`core/ufile_parser.py`): dependency-free TRANSP U-File reader; TIME may be on X0 or X1 (name-first detection, data-pattern fallback)
+- **Directory loader** (`data_loaders/transp_ufile_loader.py`): regex `^([A-Za-z]+)(\d+)\.([A-Za-z0-9]{2,4})$` accepts any prefix (F / OMF / OMFXP / ...). Auto-classifies via NDIM + axis name/units
+- **NBI 4-quant rendering**: 2-panel Pinj + Vacc. Source count resolved from NBEAM/NGYRO/NSOURCE scalar, or auto-detected from data pattern (last quarter of columns in [0, 1] = Cfull/Chalf fractions). Pinj legend shows mean (Cfull, Chalf, Cthird) per source
+- **MMX flux surfaces**: Fourier reconstruction `R(θ, x), Z(θ, x)` from 4-block scaled moments (`[Rcm | Rsm | Zcm | Zsm]` with x^m radial scaling). ~20 nested surfaces from magnetic axis to boundary, viridis-colored by `x = √(φ/φ_lim)`, with right-side colorbar
+- **LIM auto-overlay**: Limiter contour drawn in gray on every geometry plot as a static reference frame; not separately selectable
+- **Profile 2D / 3D radio**: 2D = lines + Time colorbar + legend (ellipsis for >20 items); 3D = `plot_surface(x, time, value)`
+- **Time slider**: Activated only for 3D UFILEs (MMX). Live-updates on drag
+- **UFILE catalog** (`config/transp_ufiles.json`): label/category mapping (history/equilibrium/profile/heating); unknown extensions fall back to the file's own `F.name` header
+
+### Added — Browse Dialog enhancements
+- **2D / 3D View toggle**: Added to ProfilePreviewDialog, TimeTracePreviewDialog, TranspProfilePreviewDialog, BiProfilePreviewDialog. 3D uses `mpl_toolkits.mplot3d` surface plot with cube-shifted layout so the z-axis label doesn't clip
+- **ELM detection**: New `Find ELM peaks` toggle. Difference-of-Gaussians (mild=0.15ms, heavy=15× scale) + scipy `find_peaks` with prominence/distance filtering catches grassy ELMs. Adaptive D-α zoom (5% of Ip duration, clamped [0.1, 1.0] s)
+- **Fix Axes** option for stable axis ranges across slider drags
+- **Browse Time Trace channel list**: Now also includes ECE and TCI channels (was: Thomson only)
+
+### Added — EFIT enhancements
+- **EFIT 2D rational surfaces**: New toggle showing q = 1, 3/2, 2, 5/2, 3, 4, 5 surfaces as dashed contours over the equilibrium
+- **EFIT Profiles X-axis = R**: R [m] is now selectable alongside ψ_N / ρ_pol / ρ_tor
+- **EFIT multi-tree accumulation**: Profiles and 2D tabs accumulate fetched trees (efitrt1, efit01, ...) for direct cross-tree comparison instead of replacing the cache
+- **g-File auto-detect**: Opening g-files no longer mixes them with previously fetched MDS+ trees
+- **EFIT 2D limiter** rendered uniformly in gray
+- **EFIT tree saved to settings**, persisted across sessions
+
+### Added — Profile fitting (PRISM-style pedestal output)
+- **Pedestal output (PRISM style)**: After fitting, the console now prints a unified pedestal summary — Height, Top, Foot, Width, Location — with ± uncertainties and both normalized (ψ_N) and physical (cm/m via EFIT) units. mtanh, ptanh, and EPED share the same definitions through `_resolve_ped_position` and `_compute_ped_height` (e.g., EPED implicitly treats position as `1 − a3/2`)
+- **Fit axis tracking** (`fit_x_axis`): Fitting in ψ_N then plotting in ρ_pol no longer overlays the wrong curve — the overlay auto-hides on coordinate mismatch
+- **Fit-dt tracking** (`fit_dt_s`): When fitting with dt averaging, markers now reflect the same averaged data used in the fit (black-edged markers + `±50ms` legend tag); single-slice when only mapping
+- **dt averaging RMS error propagation**: `mean(σ)/√N` → `√(mean(σ²)/N)`
+
+### Added — Toolbar / theme / TV
+- **EPS save button**: Custom matplotlib toolbar now exposes PNG / SVG / EPS save buttons
+- **TV campaign mapping** (`config/tv_campaigns.json`): Per-shot-range campaign directory lookup. JSON-config-first with directory-scan fallback
+- **QSpinBox / QDoubleSpinBox theme styling**: Explicit dark/light theme rules added so spin controls render correctly under both themes (was: time-slice spinbox showed system colors)
+
+### Changed — Reorganization
+- **TRANSP sidebar**: `TRANSP > Input > UFILE` and `TRANSP > Output > Profiles / Time Traces` (was: flat `TRANSP CDF Profiles / Time Traces`)
+- **Directory restructure**: `ui/*.py` flat layout (~30 files) → `ui/tabs/` hierarchy with `base_tab.py`/`profile_base_tab.py`/`timetrace_base_tab.py` at the top, and grouped subfolders `diagnostics/{profiles, timetraces, spectral, imaging}`, `biprofile`, `transp`, `efit`. All tab files moved with `git mv`; `tab_factory.py` lazy-imports updated to new paths
+- **Plot style**: All UFILE plots use `'.-'` (lw=1.5, markersize=3) matching CDF Time Trace
+- **2D plot layout (UFILE)**: EFIT 2D-style — `Figure((10, 6))`, `set_aspect('equal', adjustable='box')`, fixed `xlim=(1.0, 2.5)`, `ylim=(-1.5, 1.5)` for KSTAR (R, Z) plots. Colorbar placed in an explicit cax that auto-snaps to the right edge of the compressed data box (resize-aware) instead of stealing axes width
+- **Status messages**: TRANSP UFILE / CDF tabs now use the bottom status bar (`show_status`) instead of inline labels — consistent with diagnostic tabs
+- **CDF Browse ELM group**: Removed from TRANSP CDF preview dialogs (CDF has no Dα signal)
+- **vT ymin via robust z-range**: 1–99 percentile + edge skipping so noise no longer drives ylim too negative
+- **Time Trace 3D ordering**: 3D Browse for time trace tabs sorts by R value (when available) and maps slider to sorted position, instead of raw channel index
+- **EFIT 2D limiter**: Now rendered all-gray
+- **ECE tqdm**: Uses `sys.stdout` so progress shows even when stderr is redirected (`run_prism.sh` workflow)
+
+### Fixed
+- **Profile×Time UFILE classification**: GRB/PRS/QPR/NER/TER/TIO/OME/VTR/QRA/ZFC where X0 is spatial and X1 is TIME are now correctly classified (name-based time detection wins over the data-pattern heuristic — X0 in [0, 1] no longer false-matches as time)
+- **CDF Browse 3D variable change**: Surface re-renders for the new variable in 3D mode (was: only the highlight line updated, surface stayed stale)
+- **CDF Browse Variable dropdown**: Always-visible scrollbar + max 20 visible items (matches main combo)
+- **U-File parser leading-space**: Some TRANSP U-File writers prepend a space to every line; column-based fallback was reading units `'rm'` instead of `'m'` for LIM. Fixed by `lstrip` before column splitting
+- **AEQDSK length units**: RCEN, RMAXIS, AMINOR, GAPIN, GAPOUT, ... cm → m; AREA / AREAO cm² → m²; VOLUME cm³ → m³. Labels uniformly SI. X-point (RXPT1/2, ZXPT1/2) added
+- **EFIT MDS+ scalar units**: Auto-detect cgs storage (e.g., ROUT in EFIT01) and convert to SI based on value magnitude
+- **EFIT Time Traces shot persistence**: Shot saved/restored across sessions (matches Profiles, 2D)
+- **Toolbar after tab switch**: Active pan/zoom mode held the canvas widgetlock, blocking the new tab's toolbar. Now deactivated before destruction
+- **EPED PED HEIGHT**: Was reading `a2` directly (incorrect for some functions). Now evaluates the function at the resolved position. EPED also infers position implicitly as `1 - a3/2`
+- **Mock vs Prod migration tests**: Time-averaged plot was being drawn even when only EFIT mapping was computed (no fit yet). Single-slice for mapping plots; averaged data only when fit was performed with dt
+- **3D zlabel clipping**: Multi-iteration `_layout_3d_axes(ax, shift_frac=0.30, shrink_frac=0.10)` shifts the cube left so the right-side z-label has room
+- **ECEI partial-node fallback**: Device parameter nodes (`\GT_MODE`, ...) not always uploaded → fallback to channel list without R/Z positions; missing nodes logged but loader doesn't crash
+- **NameError actual_time**: Fixed in nete profile fit raw-data preview path
+- **BiProfile 3D View**: BiProfilePreviewDialog now has its own View toggle and `_render_3d` (didn't inherit from `_PreviewBase`)
+- **Browse dialog ECE/TCI access**: `_get_timetrace_preview_channels` now adds ECE and TCI channels even when only those are loaded (was: Thomson only)
+- **Theme-aware spinbox styling**: Time-slice QSpinBox / QDoubleSpinBox now follow dark/light themes
+- **Settings restore order** (UFILE tab): `_restore_settings()` now runs before `_create_widgets()` so radio buttons / combos reflect persisted values (was: widgets initialized to defaults, then settings overwrote the model only — UI fell out of sync, e.g. 2D radio shown but plot rendered 3D)
+
 ## [2.5.3] - 2026-04-27
 
 ### Added
@@ -233,7 +306,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MSE q/j Selection**: Changed from radio buttons to dropdown (QComboBox) in both profile and timetrace tabs
 - **Select Channels Dialog**: Single-line hint text; added note that unchecked channels are excluded from fitting
 - **Show Nodes**: Checkbox now toggles node annotations immediately (unchecking removes without re-plot)
-- **Fitting Descriptions**: Removed GFIT references from mtanh, ptanh, EPED descriptions
+- **Fitting Descriptions**: Cleaned up mtanh, ptanh, EPED descriptions to remove external-tool references
 - **Pedestal Coordinate**: Width/position conversion now uses actual fitting coordinate instead of hardcoded ψₙ
 - **Formula Color**: LaTeX formula in fit dialogs uses system text color instead of hardcoded gray
 - **Formula Display**: mtanh definition shown as `where,` line; ptanh formula merged to single line; a1 placed first in both

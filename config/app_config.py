@@ -5,8 +5,8 @@ Global application configuration
 
 import os
 
-VERSION = "2.5.3"
-UPDATE_DATE = "2026-04-27"
+VERSION = "2.5.4"
+UPDATE_DATE = "2026-04-30"
 APP_NAME = "PRISM"
 APP_FULL_NAME = "Plasma Research Integrated System for Multi-diagnostics"
 

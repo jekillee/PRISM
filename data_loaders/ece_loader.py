@@ -177,14 +177,18 @@ class ECELoader(BaseDiagnosticLoader):
                 return d
 
             try:
+                import sys
                 from tqdm import tqdm
+                # Force progress bar to stdout — run_prism.sh redirects stderr
+                # (the default tqdm target) to /dev/null, hiding the bar.
                 with ThreadPoolExecutor(max_workers=n_workers) as executor:
                     from concurrent.futures import as_completed
                     future_to_idx = {executor.submit(_load_channel, ch[i]): i
                                      for i in range(len(ch))}
                     results = [None] * len(ch)
                     with tqdm(total=len(ch), desc="[ECE] Loading channels",
-                              unit="ch", ncols=80) as pbar:
+                              unit="ch", ncols=80, file=sys.stdout,
+                              dynamic_ncols=False, mininterval=0.1) as pbar:
                         for future in as_completed(future_to_idx):
                             idx = future_to_idx[future]
                             results[idx] = future.result()
