@@ -31,7 +31,7 @@ from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_ic
 from config.user_settings import get_tab_settings, set_tab_settings
 
 # Load Mirnov coil configuration
-_MIRNOV_CONFIG_PATH = Path(__file__).parent.parent / 'config' / 'mirnov_config.json'
+_MIRNOV_CONFIG_PATH = Path(__file__).parents[4] / 'config' / 'mirnov_config.json'
 with open(_MIRNOV_CONFIG_PATH, 'r') as f:
     _MIRNOV_CONFIG = json.load(f)
 
