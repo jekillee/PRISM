@@ -2,7 +2,14 @@
 Common UI constants for consistent styling across all tabs
 """
 
+import os
+
 from PySide6.QtWidgets import QStyle, QApplication
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QIcon
+
+_ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+_LISTBOX_ARROW_SIZE = QSize(10, 10)
 
 # Control panel dimensions (pixels)
 CONTROL_PANEL_WIDTH = 380
@@ -16,6 +23,22 @@ def get_icon(standard_pixmap):
         button.setIcon(get_icon(QStyle.SP_ArrowUp))
     """
     return QApplication.style().standardIcon(standard_pixmap)
+
+
+def apply_listbox_arrow_icons(add_btn, remove_btn):
+    """Apply white right/left SVG arrow icons to Add/Remove listbox buttons."""
+    add_btn.setIcon(QIcon(os.path.join(_ICONS_DIR, 'arrow-right-white.svg')))
+    add_btn.setIconSize(_LISTBOX_ARROW_SIZE)
+    remove_btn.setIcon(QIcon(os.path.join(_ICONS_DIR, 'arrow-left-white.svg')))
+    remove_btn.setIconSize(_LISTBOX_ARROW_SIZE)
+
+
+def apply_shot_arrow_icons(up_btn, down_btn):
+    """Apply white up/down SVG arrow icons to shot-input up/down buttons."""
+    up_btn.setIcon(QIcon(os.path.join(_ICONS_DIR, 'arrow-up-white.svg')))
+    up_btn.setIconSize(_LISTBOX_ARROW_SIZE)
+    down_btn.setIcon(QIcon(os.path.join(_ICONS_DIR, 'arrow-down-white.svg')))
+    down_btn.setIconSize(_LISTBOX_ARROW_SIZE)
 
 
 def apply_dark_figure_style(figure):

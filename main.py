@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 """
-PRISM v2.5.3
+PRISM v2.6.0
 Main entry point
 
 Plasma Research Integrated System for Multi-diagnostics
@@ -30,33 +30,23 @@ import os
 import sys
 import warnings
 
-# Isolate Python environment for multi-user access:
-# Remove other users' ~/.local site-packages from sys.path to prevent
-# version conflicts, while keeping jklee's packages at highest priority
-import socket as _socket
-_hostname = _socket.gethostname()
-if _hostname.startswith('nkstar'):
-    _JKLEE_SITE = "/home/users/jklee/.local/lib/python3.8/site-packages"
-elif _hostname.startswith('ukstar'):
-    _JKLEE_SITE = "/UKSTAR_HOME/jklee/.local/lib/python3.8/site-packages"
-else:
-    _JKLEE_SITE = os.path.expanduser("~/.local/lib/python3.8/site-packages")
-sys.path = [p for p in sys.path if '/.local/' not in p or _JKLEE_SITE in p]
-if _JKLEE_SITE in sys.path:
-    sys.path.remove(_JKLEE_SITE)
-sys.path.insert(0, _JKLEE_SITE)
+# Sanity-check that the bundled Python is the one running us — i.e. that
+# run_prism.sh launched us via vendor/cpython-3.8/bin/python3.8. If someone
+# invokes main.py with a system Python, the bundled third-party packages
+# (PySide6, numpy, netCDF4, ...) won't be on sys.path and PRISM will silently
+# fall back to whatever the system Python provides. Fail fast instead.
+_PRISM_DIR = os.path.dirname(os.path.abspath(__file__))
+_BUNDLED_PY = os.path.join(_PRISM_DIR, 'vendor', 'cpython-3.8', 'bin', 'python3.8')
+if not os.path.exists(_BUNDLED_PY):
+    sys.stderr.write(
+        f"[PRISM] FATAL: bundled Python missing.\n"
+        f"[PRISM]   expected: {_BUNDLED_PY}\n"
+        f"[PRISM]   fix:      run setup_vendor.ps1 on the office PC, then\n"
+        f"[PRISM]             rsync the PRISM directory (with vendor/) to the server.\n"
+    )
+    sys.exit(1)
 
-# Patch numpy.typing.NDArray if missing (old system numpy < 1.20)
-# Required by system Pillow's _typing module
-try:
-    import numpy.typing as _npt
-    if not hasattr(_npt, 'NDArray'):
-        import numpy as _np
-        _npt.NDArray = _np.ndarray
-except (ImportError, AttributeError):
-    pass
-
-# Suppress numpy compiletime version mismatch warnings (system numpy may differ)
+# Suppress numpy compiletime version mismatch warnings (defensive)
 warnings.filterwarnings("ignore", message=".*compiletime version.*", category=RuntimeWarning)
 warnings.filterwarnings("ignore", message=".*binary incompatibility.*", category=RuntimeWarning)
 
@@ -80,6 +70,11 @@ if 'WAYLAND_DISPLAY' in os.environ:
 # Suppress MDSplus debug messages (buffer_free, etc.)
 os.environ.setdefault('MDSPLUS_DEBUG', '0')
 
+# Force Qt to use a fixed 96 DPI for font metrics so PRISM looks identical
+# across access paths whose X servers report different DPIs (e.g. NoMachine's
+# server-side Xorg = 100 dpi vs MobaXterm SSH X11 forward = 96 dpi).
+os.environ.setdefault('QT_FONT_DPI', '96')
+
 from PySide6.QtWidgets import QApplication
 from ui.theme import ThemeManager
 
@@ -88,6 +83,22 @@ def create_app():
     """Create and configure QApplication with saved theme"""
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+
+    # Pin glyph rendering: load PRISM-bundled DejaVu Sans (shipped with
+    # matplotlib) and force it as the default app font with hinting/AA
+    # hints chosen to eliminate path-dependent variation between NoMachine
+    # direct and SSH X11 forwarded sessions.
+    from PySide6.QtGui import QFontDatabase, QFont
+    _font_path = os.path.join(
+        _PRISM_DIR, 'vendor', 'cpython-3.8', 'lib', 'python3.8',
+        'site-packages', 'matplotlib', 'mpl-data', 'fonts', 'ttf',
+        'DejaVuSans.ttf')
+    if os.path.isfile(_font_path):
+        QFontDatabase.addApplicationFont(_font_path)
+        f = QFont('DejaVu Sans', 10)
+        f.setHintingPreference(QFont.PreferNoHinting)
+        f.setStyleStrategy(QFont.PreferAntialias)
+        app.setFont(f)
 
     # Load saved theme from settings, default to 'dark'
     from config.user_settings import load_settings, get_theme
@@ -113,23 +124,16 @@ def _print_startup():
   \033[91mP\033[0mlasma \033[33mR\033[0mesearch \033[93mI\033[0mntegrated \033[92mS\033[0mystem for \033[94mM\033[0multi-diagnostics:
   A unified visualization and data analysis platform for KSTAR tokamak.
 
-  Developed by Jekil Lee (jklee@kfe.re.kr)
+\033[37m  Developed by Jekil Lee (jklee@kfe.re.kr)
+  Copyright © 2026 Korea Institute of Fusion Energy. All rights reserved.
+  Korea Copyright Commission Registration No. C-2026-023829 (18 May 2026).\033[0m
 
-\033[37m  Cite:
-    J.K. Lee, An integrated multi-diagnostic visualization platform for
-    KSTAR tokamak, Fusion Engineering and Design, Vol. 228, 2026, 115786.
+\033[37m  If you use PRISM in your work, please cite:
+    J.K. Lee, "An integrated multi-diagnostic visualization platform for
+    KSTAR tokamak," Fusion Engineering and Design, Vol. 228, 2026, 115786.
     https://doi.org/10.1016/j.fusengdes.2026.115786\033[0m
 
-\033[37m  Modes:
-    prism              Full PRISM (Diagnostics + EFIT + BiProfile + TRANSP)
-    prism -d           Diagnostic data viewer
-    prism -e           EFIT viewer
-    prism -b           BiProfile viewer
-    prism -t           TRANSP viewer (UFILE input + CDF output)
-
-  Options:
-    prism -s           Select and launch individual viewers
-    prism -h           Show help\033[0m
+\033[37m  For usage and command-line options, run `prism -h`.\033[0m
 """)
 
 

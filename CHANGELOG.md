@@ -5,6 +5,91 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-05-26
+
+### Added — Profile fitting: SOL (Scrape-off Layer) tail
+- **`Add SOL tail` toggle** in the parametric fit Option dialog (mtanh / ptanh / EPED). Universally applicable post-processing layer: the core fit is unchanged, and for ψ_N > 1 the output curve is overlaid with `y_SOL = y(ψ=1) · max(1 − sol_b·(ψ−1), 0)`. Continuity at the LCFS is enforced by construction.
+- **`sol_b` is fittable**: lives in the same Value / Min / Max / Fix table as the rest of the parameters. Default `(3.0, 0.01, 50.0)` — `b = 3` means SOL reaches zero at ψ_N = 4/3. When the toggle is off the row is greyed out (theme-aware: dark `#cccccc` / `#666666`, light `#202020` / `#a0a0a0`).
+- **Core fit data range is invariant** to the SOL toggle — turning SOL on/off never changes the ψ_N ≤ 1 fit. SOL slope is post-fit on data with ψ_N > 1 only.
+- **Console output** mirrors the parametric param table (`Value / Error / Min / Max / Fixed`) and prints the resulting SOL formula with the fitted `sol_b`.
+
+### Added — Bundled Python + dependencies (vendor/)
+- **`vendor/cpython-3.8/`** ships a portable Linux x86_64 build of CPython 3.8.20 (from `astral-sh/python-build-standalone` release 20241002 — the last release that includes 3.8). PRISM no longer depends on the server's `/usr/bin/python3.8` or any per-user `~/.local/lib/python3.8/site-packages`.
+- All third-party packages (PySide6, numpy, scipy, matplotlib, Pillow, netCDF4, scikit-learn, MDSplus) sit inside the bundled interpreter's own site-packages: `vendor/cpython-3.8/lib/python3.8/site-packages/`. Standard CPython layout, no PYTHONPATH gymnastics required.
+- **`setup_vendor.ps1`** (Windows / office PC) downloads `python-build-standalone` and cross-installs the wheels (`--platform manylinux2014_x86_64 --python-version 3.8 --only-binary=:all:`). Must run elevated (admin or Windows Developer Mode) so the Linux symlinks inside the tarball can be created on NTFS. `python/share/terminfo` is excluded because it contains NTFS-reserved filenames (`aux`, `con`, ...) — PRISM is a GUI app and never uses curses.
+- **`run_prism.sh`** calls `vendor/cpython-3.8/bin/python3.8` directly and exports `PYTHONNOUSERSITE=1` so the system Python and any user site-packages cannot influence PRISM. This eliminates the previous silent TRANSP-load failure on ukstar (caused by the absence of netCDF4 in the system Python).
+- **`main.py`** does a fast existence check for the bundled interpreter and exits with a clear FATAL message if `vendor/cpython-3.8/bin/python3.8` is missing.
+- **`.gitignore`** excludes `vendor/`; the directory ships via the existing rsync deploy flow rather than git.
+
+### Added — Browse dialog: Dα signal selector
+- **`Dα` GroupBox** in the Browse dialog (replaces the `ELM` GroupBox). Lets the user pick which D-α-like signal to display:
+  - `\TOR_HA01` ~ `\TOR_HA20` (20 channels)
+  - `\POL_HA01` ~ `\POL_HA61` (61 channels)
+  - `\DIV_KHA01` ~ `\DIV_KHA09` (9 channels)
+  - `\DIV_GHA01` ~ `\DIV_GHA09` (9 channels)
+  Default is `\TOR_HA11`. Combobox styled identically to TRANSP Variable selector (filter field above + native popup + always-on scrollbar).
+- **`raw data (:FOO)` toggle** — when on, fetches `-<node>:FOO` (sign-flipped raw photodiode counts) instead of the calibrated signal.
+- **Zoom** label simplified (was "Dα Zoom") — the GroupBox title carries the Dα context.
+
+### Added — BiProfile Derived tab
+- **New `BiProfile > Derived` leaf tab** (single tab, sibling to `Profiles` and `Time Traces` sub-categories). UI mirrors the TRANSP-Output-Profiles pattern: shot input → time selection (Available/Selected + Browse) → variable dropdown → Plot/Option → Save. The dropdown shows the key, full name, and unit (e.g. `omega_ci  —  Ion cyclotron frequency  [rad/s]`). Y-axis labels likewise include the full quantity name.
+- **Browse dialog (`BiProfileDerivedPreviewDialog`)**: variable dropdown over the full derived catalog, time slider, frame/time entries, 2D/3D view toggle, Fix Axes, Playback. View mode is preserved when switching variable. The 3D view renders ψ_N × time × quantity as a surface with a red highlight curve at the current time.
+- **Derived quantity catalog (26 quantities)** in `core/derived_quantities.py`:
+  - Pressures: `p_e, p_i, p_tot` (Pa, with `n_i/n_e = (Z_imp − Z_eff)/(Z_imp − 1)` from quasineutrality)
+  - LFS midplane gradients: `dTe/dR, dTi/dR, dne/dR`
+  - Inverse scale lengths: `R/L_Te, R/L_Ti, R/L_ne`
+  - Toroidal beta: `β_e, β_i, β_tot`
+  - Hinton-Hazeltine collisionality: `ν*_e, ν*_i`
+  - Frequencies and lengths: `ω_pe, ω_ci, c_s, ρ_i`
+  - Radial electric field — separate variables for the two v_θ assumptions: `E_r_vp0` (v_θ = 0) and `E_r_neo` (full neoclassical v_θ)
+  - **Full neoclassical poloidal-velocity framework** (Kim-Diamond-Groebner, Phys. Fluids B 3 (1991) 2050) — regime-correct (banana / plateau / Pfirsch-Schlüter) via viscosity coefficients μ_00, μ_01, μ_11(α, g), with quasineutrality-split impurity density. Exposed quantities: `vpol_neo_i` (main ion D), `vpol_neo_imp` (C⁶⁺), `omega_neo_diff = ω_I − ω_i` (Eq. 40)
+  - **Sauter neoclassical conductivity and bootstrap current** (Sauter, PoP 6 (1999) 2834 + erratum PoP 9 (2002) 5140): `sigma_neo` (σ∥), `eta_neo` (1/σ∥), `j_BS` (⟨j_BS·B⟩/B₀, in A/m²)
+- **EFIT geometry extension** (`data_loaders/biprofile_loader.load_efit_psin`):
+  - Loads `qpsi`, `fpol`, `bcentr`, `rmaxis`, `simag`, `sibry`, and the midplane `B_p(R)` at z=0 (numerical derivative of ψ_N).
+  - `bcentr` median-broadcast fallback: when MDS+ returns a size-mismatched array (e.g. shot start with a missing afile frame, 1524 vs 1525), the loader takes the shot median and broadcasts. KSTAR vacuum BT is constant during a pulse, so this is physically justified.
+  - Diagnostic console output per EFIT load: `[EFIT efit01] extended geometry: qpsi=OK, fpol=OK, bcentr=OK, rmaxis=OK`. Missing nodes are flagged so the user can pick a different EFIT tree (e.g. `efit01/02/04` instead of realtime `efitrt1/2`).
+- **Reference-grid interpolation for biprofile parameters**: when individual `bi[param]` arrays use different ψ_N or time grids (per-parameter biprofile output), all parameters are 2D-interpolated onto a common reference grid via `scipy.interpolate.RegularGridInterpolator` (no extrapolation — out-of-bounds → NaN). Eliminates the prior broadcast errors and out-of-bounds indexing on quantities like `R_over_LTi`.
+- **CSV preview / save**: per-ψ_N rows with one column per derived quantity, configuration metadata in header.
+
+### Added — Diagnostics Ti, vT tabs (CES / XICS)
+- **vT ↔ ω_T toggle** in Profiles and Time Traces tabs (mirrors the MSE q/j pattern). Combobox switches the right-axis display between `v_T [km/s]` and `ω_T [krad/s]`. Conversion uses each channel's own R from `\CES_RT{ch}` MDS+ (XICS uses the fixed R = 1.8 m calibration). Fit overlays are auto-hidden in ω mode since fits are stored in v_T space. Toggle state persists across sessions.
+
+### Changed — MSE tab
+- `j` quantity dropdown now shows units (`j [MA/m²]`) for consistency with the vT/ω_T toggle. Combo width fixed at 110 px.
+
+### Changed — Diagnostics sidebar / file layout
+- **`TivT` → `Ion`** and **`neTe` → `Electron`** for both sidebar labels and module names (`ion_profile_tab.py`, `ion_timetrace_tab.py`, `electron_profile_tab.py`, `electron_timetrace_tab.py`). `config/user_settings.py` carries a one-time migration so previously saved per-tab settings (selected channels, view modes, fit params) follow the rename. Class names updated correspondingly (`IonProfileTab`, `ElectronProfileTab`, …).
+- **`KDG` → `Neoclassical`** in the BiProfile Derived dropdown — the original abbreviation referred only to one author and was overly cryptic. The underlying physics (Kim-Diamond-Groebner) and the registered quantity key (`vpol_neo_*`, `omega_neo_diff`) are unchanged.
+
+### Changed — Cross-path GUI parity (NoMachine vs SSH-X11)
+- **Bundled DejaVu Sans** (shipped with matplotlib at `vendor/cpython-3.8/lib/python3.8/site-packages/matplotlib/mpl-data/fonts/ttf/DejaVuSans.ttf`) is registered at startup via `QFontDatabase.addApplicationFont` and pinned as the default app font with `QFont.PreferNoHinting` + `QFont.PreferAntialias`. Eliminates the rendering differences that previously appeared between NoMachine direct (nkstar) and SSH-X11 forwarded sessions — fonts now render identically on nkstar (NoMachine + SSH-X11) and ukstar.
+- **`QT_FONT_DPI=96`** forced in `main.py` so Qt font metrics no longer depend on the X server's reported DPI (NoMachine's Xorg = 100 dpi vs MobaXterm SSH-X11 = 96 dpi).
+- **Global font-size reduction (−1)**: control panels and dialogs all use slightly smaller fonts. Sidebar gets an additional −1 (total −2) so categories / sub-categories / leaf tabs stay tight and don't overflow the panel width at the new metrics.
+
+### Changed — Shot / channel control icons
+- **SVG arrow icons** (`arrow-up`, `arrow-down`, `arrow-left`, `arrow-right`) replace the previous ad-hoc QSpinBox up/down arrows and the listbox prev/next buttons. White stroke in both themes, identical visual weight across the shot-number spinbox and the "Select Data" channel listbox.
+
+### Changed — Startup / launch banner
+- Reorganized: ASCII logo → description → citation block → developer + copyright block → help pointer.
+- Citation includes the paper title in quotes; help line phrased as a complete sentence (`run \`prism -h\``).
+- Removed the `Modes:` section (it was duplicating run_prism.sh `-h` output) and the standalone `-s` selector line. Banner shows only the `-h` reminder.
+- New copyright / registration footer: `Copyright © 2026 Korea Institute of Fusion Energy. All rights reserved.` / `Korea Copyright Commission Registration No. C-2026-023829 (18 May 2026).`
+
+### Changed — What's New popup
+- Copyright + KCC registration line appears above the "Do not show again" checkbox.
+
+### Removed
+- **Z_eff input spinbox** in Derived (Z_eff = 2.0 is now hard-coded; the assumption is documented in CHANGELOG and code).
+- **Ion / impurity selectors** in Derived (D / C6+ are fixed for the KSTAR carbon wall).
+- **`v_θ in E_r` radio buttons** in Derived (the two assumptions are now separate quantities `E_r_vp0` / `E_r_neo`).
+- Banana-limit-only `vpol_neo` quantity (replaced by full neoclassical `vpol_neo_imp`).
+- **`Find ELM peaks` toggle** in the Browse dialog (Difference-of-Gaussians + `find_peaks` based detection). Replaced by the new Dα signal selector — explicit channel choice is more reliable than auto-detection that depended on shot-specific thresholds.
+
+### Fixed
+- `_ensure_derived` no longer re-loads EFIT on every Browse / Plot click; the fetch step is the only place that calls `load_efit_psin` (eager load).
+- Sauter bootstrap and conductivity formulas now broadcast correctly when individual biprofile parameters use different ψ_N or time grids (root cause of the previous `operands could not be broadcast together` errors on `beta_*`, `nu_star_*`, etc.).
+- `biprofile_loader._get_thomson_positions` now reads `config/thomson_positions.json` instead of carrying a hard-coded duplicate of the channel-position list. Single source of truth shared with `thomson_loader.py`.
+
 ## [2.5.5] - 2026-05-09
 
 ### Fixed

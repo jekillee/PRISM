@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from ui.tabs.profile_base_tab import ProfileBaseTab
-from ui.ui_constants import CONTROL_PANEL_WIDTH, get_icon
+from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_shot_arrow_icons
 from ui.theme import ThemeManager
 
 
@@ -120,17 +120,16 @@ class MSEProfileTab(ProfileBaseTab):
         btn_updown_layout.setSpacing(0)
         mini_btn_style = "padding: 0px; border-radius: 2px;"
         up_btn = QPushButton()
-        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
         up_btn.setFixedSize(24, 15)
         up_btn.setStyleSheet(mini_btn_style)
         up_btn.clicked.connect(lambda: self._adjust_shot(1))
         btn_updown_layout.addWidget(up_btn)
         down_btn = QPushButton()
-        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
         down_btn.setFixedSize(24, 15)
         down_btn.setStyleSheet(mini_btn_style)
         down_btn.clicked.connect(lambda: self._adjust_shot(-1))
         btn_updown_layout.addWidget(down_btn)
+        apply_shot_arrow_icons(up_btn, down_btn)
         shot_layout.addWidget(btn_updown)
 
         grid.addWidget(shot_frame, 0, 1)
@@ -152,8 +151,8 @@ class MSEProfileTab(ProfileBaseTab):
             pass
 
     def _get_selected_param(self):
-        """Get selected parameter from dropdown"""
-        return self.param_combo.currentText()
+        """Get selected parameter key from dropdown ('q' or 'j'), stripping unit suffix."""
+        return self.param_combo.currentText().split()[0]
 
     def _create_plot_controls(self, parent):
         """Create plot control buttons with x-axis radios and q/j selection"""
@@ -167,7 +166,8 @@ class MSEProfileTab(ProfileBaseTab):
         row1 = QHBoxLayout()
 
         self.param_combo = QComboBox()
-        self.param_combo.addItems(['q', 'j'])
+        self.param_combo.addItems(['q', 'j [MA/m²]'])
+        self.param_combo.setFixedWidth(110)
         row1.addWidget(self.param_combo)
 
         plot_button = QPushButton("Plot")

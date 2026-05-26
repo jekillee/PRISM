@@ -20,7 +20,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QKeySequence, QShortcut
 
-from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_icon
+from ui.ui_constants import (
+    CONTROL_PANEL_WIDTH, apply_dark_figure_style, apply_shot_arrow_icons,
+)
 from ui.widgets.custom_toolbar import QuietNavigationToolbar
 from ui.theme import ThemeManager
 from config.user_settings import get_tab_settings, set_tab_settings
@@ -162,18 +164,17 @@ class NeutronTimeTraceTab:
 
         mini_btn_style = "padding: 0px; border-radius: 2px;"
         up_btn = QPushButton()
-        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
         up_btn.setFixedSize(24, 15)
         up_btn.setStyleSheet(mini_btn_style)
         up_btn.clicked.connect(lambda: self._adjust_shot(1))
         btn_layout.addWidget(up_btn)
 
         down_btn = QPushButton()
-        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
         down_btn.setFixedSize(24, 15)
         down_btn.setStyleSheet(mini_btn_style)
         down_btn.clicked.connect(lambda: self._adjust_shot(-1))
         btn_layout.addWidget(down_btn)
+        apply_shot_arrow_icons(up_btn, down_btn)
 
         shot_layout.addWidget(btn_widget)
         grid.addWidget(shot_frame, 0, 1)

@@ -201,23 +201,51 @@ class _PreviewBase(QDialog):
         play_layout.addWidget(stop_btn)
         cl.addWidget(play_group)
 
-        # ELM (only for diagnostic Browse — TRANSP CDF dialogs opt out)
-        if getattr(self, '_HAS_ELM', True):
+        # Dα signal panel (diagnostic Browse only — TRANSP/Derived opt out)
+        if getattr(self, '_HAS_DALPHA', True):
             from PySide6.QtWidgets import QDoubleSpinBox
-            elm_group = QGroupBox("ELM")
-            elm_layout = QVBoxLayout(elm_group)
-            elm_row = QHBoxLayout()
-            self.elm_detect_toggle = ToggleSwitch()
-            self.elm_detect_toggle.toggled.connect(self._on_elm_detect)
-            elm_row.addWidget(self.elm_detect_toggle)
-            elm_row.addWidget(QLabel("Find ELM peaks"))
-            elm_row.addStretch()
-            elm_layout.addLayout(elm_row)
+            da_group = QGroupBox("Dα")
+            da_layout = QVBoxLayout(da_group)
+
+            # Filter (TRANSP-style)
+            filter_row = QHBoxLayout()
+            filter_row.addWidget(QLabel("Filter"))
+            self.dalpha_signal_filter = QLineEdit()
+            self.dalpha_signal_filter.setPlaceholderText("Type to filter...")
+            self.dalpha_signal_filter.textChanged.connect(
+                self._populate_dalpha_combo)
+            filter_row.addWidget(self.dalpha_signal_filter, 1)
+            da_layout.addLayout(filter_row)
+
+            # Signal selector (TRANSP-style: native popup + always-on scrollbar)
+            self.dalpha_signal_combo = QComboBox()
+            self.dalpha_signal_combo.setMaxVisibleItems(20)
+            self.dalpha_signal_combo.setSizeAdjustPolicy(
+                QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            self.dalpha_signal_combo.setMinimumContentsLength(10)
+            self.dalpha_signal_combo.setStyleSheet("QComboBox { combobox-popup: 0; }")
+            self.dalpha_signal_combo.view().setVerticalScrollBarPolicy(
+                Qt.ScrollBarAlwaysOn)
+            self.dalpha_signal_combo.currentTextChanged.connect(
+                self._on_dalpha_signal_changed)
+            self._populate_dalpha_combo()
+            da_layout.addWidget(self.dalpha_signal_combo)
+
+            # Raw data toggle: signal → -<NODE>:FOO
+            raw_row = QHBoxLayout()
+            self.dalpha_raw_toggle = ToggleSwitch()
+            self.dalpha_raw_toggle.toggled.connect(self._on_dalpha_raw_changed)
+            raw_row.addWidget(self.dalpha_raw_toggle)
+            raw_row.addWidget(QLabel("raw data (:FOO)"))
+            raw_row.addStretch()
+            da_layout.addLayout(raw_row)
+
+            # Zoom
             dz_row = QHBoxLayout()
             self.dalpha_zoom_toggle = ToggleSwitch()
             self.dalpha_zoom_toggle.toggled.connect(self._on_dalpha_zoom)
             dz_row.addWidget(self.dalpha_zoom_toggle)
-            dz_row.addWidget(QLabel("Dα Zoom  ±"))
+            dz_row.addWidget(QLabel("Zoom  ±"))
             self.dalpha_zoom_spin = QDoubleSpinBox()
             self.dalpha_zoom_spin.setRange(0.05, 5.0)
             self.dalpha_zoom_spin.setDecimals(2)
@@ -227,8 +255,8 @@ class _PreviewBase(QDialog):
             self.dalpha_zoom_spin.valueChanged.connect(self._on_dalpha_zoom_changed)
             dz_row.addWidget(self.dalpha_zoom_spin)
             dz_row.addStretch()
-            elm_layout.addLayout(dz_row)
-            cl.addWidget(elm_group)
+            da_layout.addLayout(dz_row)
+            cl.addWidget(da_group)
 
         # Options (Fix Axes — generic, kept at the bottom)
         opt_group = QGroupBox("Options")
@@ -283,22 +311,53 @@ class _PreviewBase(QDialog):
         if self._dalpha_zoom and self._view_mode == '2D':
             self._update_plot(self.slider.value())
 
-    def _on_elm_detect(self, checked):
-        """Run / clear ELM peak detection on demand."""
-        if self._dalpha_t is None or self._dalpha_v is None:
+    _DALPHA_CATEGORIES = (
+        [f"\\TOR_HA{n:02d}" for n in range(1, 21)],
+        [f"\\POL_HA{n:02d}" for n in range(1, 62)],
+        [f"\\DIV_KHA{n:02d}" for n in range(1, 10)],
+        [f"\\DIV_GHA{n:02d}" for n in range(1, 10)],
+    )
+
+    def _populate_dalpha_combo(self):
+        """Refill combo based on filter text. Keep category separators only
+        when no filter is active (otherwise filtered list is flat)."""
+        filt = self.dalpha_signal_filter.text().strip().upper()
+        current = self.dalpha_signal_combo.currentText() or self._dalpha_signal
+
+        self.dalpha_signal_combo.blockSignals(True)
+        self.dalpha_signal_combo.clear()
+        first = True
+        for cat in self._DALPHA_CATEGORIES:
+            items = [s for s in cat if not filt or filt in s.upper()]
+            if not items:
+                continue
+            if not filt and not first:
+                self.dalpha_signal_combo.insertSeparator(
+                    self.dalpha_signal_combo.count())
+            for s in items:
+                self.dalpha_signal_combo.addItem(s)
+            first = False
+
+        idx = self.dalpha_signal_combo.findText(current)
+        if idx >= 0:
+            self.dalpha_signal_combo.setCurrentIndex(idx)
+        self.dalpha_signal_combo.blockSignals(False)
+
+    def _on_dalpha_signal_changed(self, text):
+        if not text or text.startswith('---'):
             return
-        if checked:
-            ip_start, ip_end = getattr(self, '_dalpha_window', (None, None))
-            self._dalpha_peaks = self._detect_elm_peaks(
-                self._dalpha_t, self._dalpha_v,
-                tmin=ip_start, tmax=ip_end)
-            wstr = (f" (Ip window {ip_start:.2f}-{ip_end:.2f}s)"
-                    if ip_start is not None else "")
-            print(f"[Dalpha] #{self.shot_number}: "
-                  f"{len(self._dalpha_peaks)} ELM peaks{wstr}")
-        else:
-            self._dalpha_peaks = np.array([])
-        # Rebuild figure so ELM peak overlays update
+        if text == self._dalpha_signal:
+            return
+        self._dalpha_signal = text
+        self._reload_dalpha()
+
+    def _on_dalpha_raw_changed(self, checked):
+        self._dalpha_raw = bool(checked)
+        self._reload_dalpha()
+
+    def _reload_dalpha(self):
+        self._dalpha_t, self._dalpha_v = self._load_dalpha(
+            self._dalpha_signal, self._dalpha_raw)
         if self._view_mode == '2D':
             self._init_plot()
             self._update_plot(self.slider.value())
@@ -391,8 +450,11 @@ class ProfilePreviewDialog(_PreviewBase):
         self.param2_label = param2_label
         self._is_ece_only = (source == 'ECE')
         self.time_arr = getattr(data, 'time_prof', data.time)
-        # D-alpha for ELM context (loaded once per dialog)
-        self._dalpha_t, self._dalpha_v, self._dalpha_peaks = self._load_dalpha()
+        # D-alpha context (signal selectable from the Browse dialog)
+        self._dalpha_signal = '\\TOR_HA11'
+        self._dalpha_raw = False
+        self._dalpha_t, self._dalpha_v = self._load_dalpha(
+            self._dalpha_signal, self._dalpha_raw)
 
         super().__init__(parent, len(self.time_arr),
                          f"Browse  #{shot_number} ({source})",
@@ -401,74 +463,7 @@ class ProfilePreviewDialog(_PreviewBase):
         self._init_plot()
         self._update_plot(0)
 
-    # --- D-alpha helpers (inline ELM context) ---
-
-    @staticmethod
-    def _detect_elm_peaks(time, signal, dacrit=2.0, prom_factor=2.0,
-                          tmin=None, tmax=None,
-                          mild_ms=0.15, heavy_factor=15.0,
-                          min_spacing_ms=0.2):
-        """ELM peak detection via DoG + prominence-filtered find_peaks.
-
-        Steps:
-          1. DoG: mild gaussian − heavy gaussian removes slow baseline.
-          2. Robust noise estimate via MAD on the Ip-active window.
-          3. scipy.signal.find_peaks with two filters:
-               • height     ≥ median + dacrit · noise      (amplitude)
-               • prominence ≥ prom_factor · noise          (sharpness)
-             Prominence rejects small ripples on a rising slope while
-             keeping isolated grassy peaks intact.
-          4. Minimum peak-to-peak distance min_spacing_ms.
-        """
-        from scipy.ndimage import gaussian_filter1d
-        from scipy.signal import find_peaks
-
-        time = np.asarray(time, dtype=float)
-        signal = np.asarray(signal, dtype=float)
-        if time.size < 8 or signal.size != time.size:
-            return np.array([])
-        dt = float(time[4] - time[3])
-        if dt <= 0:
-            return np.array([])
-
-        mild_sig = max(1.0, (mild_ms * 1e-3) / dt)
-        heavy_sig = mild_sig * heavy_factor
-        S1 = gaussian_filter1d(signal, mild_sig)
-        S2 = gaussian_filter1d(signal, heavy_sig)
-        DS = S1 - S2
-
-        win_mask = np.ones_like(time, dtype=bool)
-        if tmin is not None:
-            win_mask &= (time >= tmin)
-        if tmax is not None:
-            win_mask &= (time <= tmax)
-        if not np.any(win_mask):
-            return np.array([])
-        DS_win = DS[win_mask]
-        if DS_win.size < 10:
-            return np.array([])
-
-        med = float(np.median(DS_win))
-        mad = float(np.median(np.abs(DS_win - med)))
-        noise = 1.4826 * mad
-        if noise <= 0:
-            noise = float(np.std(DS_win))
-            if noise <= 0:
-                return np.array([])
-
-        height = med + dacrit * noise
-        prominence = prom_factor * noise
-        distance = max(1, int(round((min_spacing_ms * 1e-3) / dt)))
-
-        # Only consider points within the window
-        DS_scan = DS.copy()
-        DS_scan[~win_mask] = -np.inf
-
-        peaks_idx, _ = find_peaks(DS_scan,
-                                  height=height,
-                                  prominence=prominence,
-                                  distance=distance)
-        return time[peaks_idx]
+    # --- D-alpha helpers ---
 
     @staticmethod
     def _load_ip_window(mds, shot, threshold_a=1.0e5):
@@ -483,34 +478,38 @@ class ProfilePreviewDialog(_PreviewBase):
             pass
         return None, None
 
-    def _load_dalpha(self):
-        """Load \\tor_ha11 + \\PCRC03 (Ip). ELM detection is *not* run here;
-        the user toggles it on demand from the Browse dialog.
+    def _load_dalpha(self, node='\\TOR_HA11', raw=False):
+        """Load the selected Dα-like signal + \\PCRC03 (Ip window).
+
+        node : MDS+ tag (e.g. '\\TOR_HA11', '\\POL_HA01', '\\DIV_KHA05').
+        raw  : if True, fetch '-<node>:FOO' (sign-flipped raw photodiode
+               counts); otherwise the calibrated <node>.
         """
+        tag = f"{node}:FOO" if raw else node
+        value_expr = f"-{tag}" if raw else tag
         try:
             from MDSplus import Connection
             from config.app_config import AppConfig
             mds = Connection(AppConfig().MDS_IP)
             mds.openTree('kstar', int(self.shot_number))
             try:
-                v = np.asarray(mds.get('\\tor_ha11').data(), dtype=np.float32)
-                t = np.asarray(mds.get('dim_of(\\tor_ha11)').data(), dtype=np.float32)
+                v = np.asarray(mds.get(value_expr).data(), dtype=np.float32)
+                t = np.asarray(mds.get(f'dim_of({tag})').data(), dtype=np.float32)
                 ip_start, ip_end = self._load_ip_window(mds, int(self.shot_number))
             finally:
                 mds.closeTree('kstar', int(self.shot_number))
             if t.size == 0 or v.size == 0:
                 self._dalpha_window = (None, None)
-                return None, None, np.array([])
+                return None, None
             self._dalpha_window = (ip_start, ip_end)
             wstr = (f" (Ip window {ip_start:.2f}-{ip_end:.2f}s)"
                     if ip_start is not None else "")
-            print(f"[Dalpha] #{self.shot_number} loaded{wstr}; "
-                  f"toggle ELM detection in the Browse dialog to find peaks.")
-            return t, v, np.array([])
+            print(f"[Dalpha] #{self.shot_number} {value_expr} loaded{wstr}")
+            return t, v
         except Exception as e:
-            print(f"[Dalpha] not available for #{self.shot_number}: {e}")
+            print(f"[Dalpha] not available ({value_expr}) for #{self.shot_number}: {e}")
             self._dalpha_window = (None, None)
-            return None, None, np.array([])
+            return None, None
 
     def _build_ui(self):
         main_layout = QHBoxLayout(self)
@@ -594,10 +593,11 @@ class ProfilePreviewDialog(_PreviewBase):
             ax_da = self.figure.add_subplot(gs[1, :])
             ax_da.plot(self._dalpha_t, self._dalpha_v,
                        '-', color='#888', lw=0.8)
-            for pk in self._dalpha_peaks:
-                ax_da.axvline(pk, color='#cc4444', lw=0.5, alpha=0.4)
             ax_da.set_xlabel('Time [s]', fontsize=10)
-            ax_da.set_ylabel(r'D$_\alpha$', fontsize=10)
+            ylabel = self._dalpha_signal
+            if self._dalpha_raw:
+                ylabel = f"-{ylabel}:FOO"
+            ax_da.set_ylabel(ylabel, fontsize=10)
             ax_da.tick_params(labelsize=9)
             ax_da.grid(ls='--', lw=0.3, color='#444444')
             # Default x-range = Ip-active window if available
@@ -1158,7 +1158,7 @@ class TimeTracePreviewDialog(_PreviewBase):
 class TranspProfilePreviewDialog(_PreviewBase):
     """Preview TRANSP CDF profiles: filter + variable selector + time slider."""
 
-    _HAS_ELM = False  # TRANSP CDF data has no Dα → no ELM detection
+    _HAS_DALPHA = False  # TRANSP CDF data has no Dα plot
 
     def __init__(self, parent, cdf, shot, run, selected_listbox=None):
         self.cdf = cdf
@@ -2254,3 +2254,283 @@ class BiProfilePreviewDialog(QDialog):
     def _on_close(self):
         self._stop_play()
         self.accept()
+
+
+# ============================================================
+# BiProfileDerivedPreviewDialog
+# ============================================================
+
+class BiProfileDerivedPreviewDialog(_PreviewBase):
+    """Browse derived plasma quantities for the currently-loaded shot.
+
+    Variable dropdown lets the user pick any quantity from the derived catalog;
+    time slider scans the biprofile time grid. Mirrors TranspProfilePreviewDialog
+    UX. 'Add to Selected' pushes `{shot:06d}_{ms:06d}` entries into the parent
+    derived tab's selected_listbox.
+    """
+
+    _HAS_DALPHA = False   # no Dα data in derived dialog
+
+    def __init__(self, parent, derived_computer, shot, selected_listbox=None):
+        from core.derived_quantities import PROFILE_QUANTITIES
+        self.derived = derived_computer
+        self.shot = shot
+        self.time = np.asarray(derived_computer.time)
+        self.psin = np.asarray(derived_computer.psin)
+        n = len(self.time)
+        self._all_var_items = [
+            (key, f"{key}  —  {name}  [{unit}]")
+            for key, name, _lbl, unit, _req in PROFILE_QUANTITIES
+        ]
+        self._current_data = None
+
+        super().__init__(parent, n, f"Browse Derived  #{shot}", selected_listbox)
+        self._build_ui()
+        self._init_plot()
+        if self._all_var_items:
+            self.var_combo.setCurrentIndex(0)
+            self._on_var_changed()
+
+    def _build_ui(self):
+        from PySide6.QtWidgets import QComboBox as _QCB
+
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(4, 4, 4, 4)
+        main_layout.setSpacing(4)
+
+        self._build_left(main_layout,
+                         "Use mouse wheel or arrow keys to navigate time points.")
+
+        def _nav(layout):
+            var_group = QGroupBox("Variable")
+            var_layout = QVBoxLayout(var_group)
+            self.var_combo = _QCB()
+            self.var_combo.setMaxVisibleItems(20)
+            self.var_combo.setSizeAdjustPolicy(_QCB.AdjustToMinimumContentsLengthWithIcon)
+            self.var_combo.setMinimumContentsLength(8)
+            self.var_combo.setStyleSheet("QComboBox { combobox-popup: 0; }")
+            self.var_combo.view().setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+            for vn, display in self._all_var_items:
+                self.var_combo.addItem(display, vn)
+            self.var_combo.currentIndexChanged.connect(self._on_var_changed)
+            var_layout.addWidget(self.var_combo)
+            layout.addWidget(var_group)
+
+            nav_group = QGroupBox("Navigation")
+            nav_layout = QVBoxLayout(nav_group)
+            row1 = QHBoxLayout()
+            row1.addWidget(QLabel("Frame"))
+            self.frame_entry = QLineEdit("1")
+            self.frame_entry.returnPressed.connect(self._goto_frame)
+            row1.addWidget(self.frame_entry)
+            self.frame_max_label = QLabel(f"/ {len(self.time)}")
+            row1.addWidget(self.frame_max_label)
+            go = QPushButton()
+            go.setIcon(self.style().standardIcon(QStyle.SP_DialogOkButton))
+            go.setFixedSize(24, 24)
+            go.clicked.connect(self._goto_frame)
+            row1.addWidget(go)
+            nav_layout.addLayout(row1)
+
+            row2 = QHBoxLayout()
+            row2.addWidget(QLabel("Time [s]"))
+            self.time_entry = QLineEdit(f"{self.time[0]:.3f}" if len(self.time) else "0.0")
+            self.time_entry.returnPressed.connect(self._goto_time)
+            row2.addWidget(self.time_entry)
+            go2 = QPushButton()
+            go2.setIcon(self.style().standardIcon(QStyle.SP_DialogOkButton))
+            go2.setFixedSize(24, 24)
+            go2.clicked.connect(self._goto_time)
+            row2.addWidget(go2)
+            nav_layout.addLayout(row2)
+            layout.addWidget(nav_group)
+
+        self._build_right(main_layout, _nav)
+
+    def _on_var_changed(self):
+        key = self.var_combo.currentData()
+        if key is None:
+            return
+        try:
+            d = self.derived.compute(key)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            d = None
+        self._current_data = d
+        if d is None:
+            self.figure.clear()
+            ax = self.figure.add_subplot(1, 1, 1)
+            ax.text(0.5, 0.5, f"{key}: not computable\n(check console)",
+                    ha='center', va='center', fontsize=12, color='gray',
+                    transform=ax.transAxes)
+            ax.axis('off')
+            apply_dark_figure_style(self.figure)
+            self.canvas.draw_idle()
+            return
+        # Preserve current view mode (2D / 3D) when switching variable
+        if self._view_mode == '3D':
+            self._render_3d()
+            self._render_3d_highlight(self.slider.value())
+            self.canvas.draw_idle()
+        else:
+            self._update_plot(self.slider.value())
+
+    def _init_plot(self):
+        self.figure.clear()
+        self.canvas.draw_idle()
+
+    def _global_ylim(self):
+        """Return (ymin, ymax) over ALL times for the current quantity."""
+        d = self._current_data
+        if d is None:
+            return None
+        vals = d['value']
+        valid = np.isfinite(vals)
+        if not valid.any():
+            return None
+        ymin = float(np.nanmin(vals[valid]))
+        ymax = float(np.nanmax(vals[valid]))
+        if ymin == ymax:
+            ymin -= 1; ymax += 1
+        pad = 0.05 * (ymax - ymin)
+        return (ymin - pad, ymax + pad)
+
+    def _update_plot(self, idx):
+        d = self._current_data
+        if d is None or idx >= len(self.time):
+            return
+        self.figure.clear()
+        ax = self.figure.add_subplot(1, 1, 1)
+        psin = d['psin']
+        vals = d['value'][:, idx]
+        valid = np.isfinite(vals)
+        if np.any(valid):
+            ax.plot(psin[valid], vals[valid], 'o-',
+                    color='#1f77b4', lw=1.6, ms=3)
+        ax.set_xlabel(r'$\psi_\mathrm{N}$', fontsize=11)
+        # ylabel: include full name
+        from core.derived_quantities import get_quantity_meta
+        key = self.var_combo.currentData() if hasattr(self, 'var_combo') else ''
+        meta = get_quantity_meta(key) if key else None
+        if meta:
+            qname, qlabel, qunit, _ = meta
+            ax.set_ylabel(f'{qname}, {qlabel}  [{qunit}]', fontsize=11)
+        else:
+            ax.set_ylabel(f"{d['label']} [{d['unit']}]", fontsize=11)
+        ax.set_xlim(0, 1.1)
+        ax.grid(ls='--', lw=0.3, color='#444444')
+        zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
+        ax.axvline(x=1.0, color=zc, ls='--', lw=0.8, alpha=0.5)
+        if key and key.startswith('nu_star'):
+            ax.set_yscale('log')
+        # Fix Axes: clamp y to the global range across all times for this var
+        if self._fix_axes:
+            yl = self._global_ylim()
+            if yl is not None:
+                ax.set_ylim(*yl)
+        t_s = float(self.time[idx])
+        ax.set_title(f"#{self.shot}  t = {t_s*1e3:.1f} ms  ({idx+1}/{len(self.time)})",
+                     fontsize=10)
+        if hasattr(self, 'frame_entry'):
+            self.frame_entry.setText(str(idx + 1))
+        if hasattr(self, 'time_entry'):
+            self.time_entry.setText(f"{t_s:.3f}")
+        apply_dark_figure_style(self.figure)
+        self.canvas.draw_idle()
+
+    def _render_3d(self):
+        """3D surface: ψ_N × time × quantity."""
+        d = self._current_data
+        if d is None:
+            super()._render_3d()
+            return
+        try:
+            from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+        except Exception:
+            super()._render_3d()
+            return
+        self.figure.clear()
+        ax = self.figure.add_subplot(1, 1, 1, projection='3d')
+        psin = np.asarray(d['psin'])
+        time = np.asarray(d['time'])
+        vals = np.asarray(d['value'])   # (n_psi, n_time)
+        # Mask non-finite to avoid surface artifacts
+        Z = np.where(np.isfinite(vals), vals, np.nan)
+        P, T = np.meshgrid(psin, time, indexing='ij')
+        try:
+            ax.plot_surface(P, T, Z, cmap='viridis',
+                            edgecolor='none', antialiased=False,
+                            rstride=1, cstride=1)
+        except Exception:
+            ax.text2D(0.5, 0.5, "3D render failed", ha='center',
+                      va='center', transform=ax.transAxes)
+        from core.derived_quantities import get_quantity_meta
+        key = self.var_combo.currentData() if hasattr(self, 'var_combo') else ''
+        meta = get_quantity_meta(key) if key else None
+        if meta:
+            qname, qlabel, qunit, _ = meta
+            zlabel = f'{qname}, {qlabel}  [{qunit}]'
+        else:
+            zlabel = f"{d['label']} [{d['unit']}]"
+        ax.set_xlabel(r'$\psi_\mathrm{N}$')
+        ax.set_ylabel('Time [s]')
+        ax.set_zlabel(zlabel)
+        apply_dark_figure_style(self.figure)
+        self.canvas.draw_idle()
+
+    def _render_3d_highlight(self, idx):
+        """Overlay a highlight curve on the 3D surface for the current time."""
+        d = self._current_data
+        if d is None or not self.figure.axes:
+            return
+        ax = self.figure.axes[0]
+        # Remove previous highlight artists tagged with gid='3d_hl'
+        for artist in list(ax.lines):
+            if getattr(artist, 'get_gid', lambda: None)() == '3d_hl':
+                artist.remove()
+        psin = np.asarray(d['psin'])
+        time = np.asarray(d['time'])
+        vals = np.asarray(d['value'])
+        if idx < 0 or idx >= len(time):
+            return
+        z = vals[:, idx]
+        valid = np.isfinite(z)
+        if not np.any(valid):
+            return
+        t_const = np.full_like(psin[valid], time[idx])
+        ax.plot(psin[valid], t_const, z[valid], color='red', lw=2.0,
+                gid='3d_hl')
+        self.canvas.draw_idle()
+
+    def _goto_frame(self):
+        try:
+            self.slider.setValue(max(
+                0, min(self.slider.maximum(), int(self.frame_entry.text()) - 1)))
+        except ValueError:
+            pass
+
+    def _goto_time(self):
+        try:
+            t = float(self.time_entry.text())
+            self.slider.setValue(int(np.argmin(np.abs(self.time - t))))
+        except ValueError:
+            pass
+
+    def _add_current(self):
+        idx = self.slider.value()
+        if idx >= len(self.time):
+            return
+        t_s = float(self.time[idx])
+        entry = f"{self.shot:06d}_{int(round(t_s*1e3)):06d}"
+        display = f"{int(round(t_s*1e3)):06d}ms"
+        if self.selected_listbox is None:
+            self.add_btn.setText(f"{display}: no parent list")
+            return
+        existing = {self.selected_listbox.item(i).text()
+                    for i in range(self.selected_listbox.count())}
+        if entry in existing:
+            self.add_btn.setText(f"{display} already selected")
+            return
+        self.selected_listbox.addItem(entry)
+        self.added_count += 1
+        self.add_btn.setText(f"Added {display}  ({self.added_count} total)")

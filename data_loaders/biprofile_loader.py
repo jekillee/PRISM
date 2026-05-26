@@ -15,35 +15,19 @@ DIAG_PARAMS (in 'biprofile' tree):
     \\BINE_TCI.BINE_TCI{XX}: NE_USE, NE_OUTLIER_P
 """
 
+import json
+from pathlib import Path
+
 import numpy as np
 from data_loaders.base_loader import BaseDiagnosticLoader
 
 PARAM_TREES = {'Ti': 'BITI', 'vT': 'BIVT', 'Te': 'BITE', 'ne': 'BINE'}
 
-# Thomson channel R positions [mm] by shot range
-_THOMSON_POSITIONS = [
-    {'range': (0, 21778),
-     'core': [1806,1826,1848,1871,1894,1917,1942,1966,1991,2016,2041,2068,2093,2119],
-     'edge': [2124,2137,2143,2149,2156,2162,2177,2191,2202,2216,2229,2242,2257,2271,2285,2297,2311]},
-    {'range': (24082, 27400),
-     'core': [1802,1823,1845,1866,1889,1912,1937,1961,1986,2011,2036,2061,2086,2114],
-     'edge': [2114,2126,2138,2150,2164,2177,2189,2196,2202,2208,2214,2221,2235,2248,2261,2275,2289]},
-    {'range': (27401, 30445),
-     'core': [1797,1818,1841,1862,1884,1908,1931,1954,1979,2004,2030,2056,2082,2108],
-     'edge': [2108,2120,2133,2146,2153,2171,2183,2190,2197,2203,2209,2216,2229,2243,2254,2269,2282]},
-    {'range': (30446, 32768),
-     'core': [1800,1820,1842,1864,1887,1909,1933,1956,1983,2008,2033,2058,2083,2109],
-     'edge': [2111,2124,2136,2149,2161,2174,2187,2194,2200,2207,2212,2219,2232,2245,2259,2272,2285]},
-    {'range': (32769, 34836),
-     'core': [1800,1820,1842,1864,1887,1911,1933,1958,1981,2006,2030,2058,2083,2110],
-     'edge': [2111,2124,2137,2147,2162,2175,2187,2195,2200,2205,2210,2217,2233,2245,2259,2271,2290]},
-    {'range': (34837, 37741),
-     'core': [1795,1817,1839,1861,1884,1908,1930,1954,1978,2003,2029,2054,2081,2108],
-     'edge': [2108,2116,2125,2136,2145,2155,2163,2171,2180,2191,2200,2213,2222,2232,2253,2274,2296]},
-    {'range': (37742, 999999),
-     'core': [1785,1807,1828,1851,1873,1896,1920,1944,1968,1993,2018,2043,2070,2095],
-     'edge': [2096,2105,2113,2123,2131,2141,2149,2158,2168,2178,2197,2217,2237,2258,2280]},
-]
+# Thomson channel R positions: read from the shared config so biprofile_loader
+# and thomson_loader stay in lockstep (single source of truth).
+_TS_CONFIG_PATH = Path(__file__).parent.parent / 'config' / 'thomson_positions.json'
+with open(_TS_CONFIG_PATH, 'r') as _f:
+    _THOMSON_CONFIG = json.load(_f)
 
 
 def _try_get(mds, path, default=None):
@@ -54,13 +38,18 @@ def _try_get(mds, path, default=None):
 
 
 def _get_thomson_positions(shot):
-    for entry in _THOMSON_POSITIONS:
-        lo, hi = entry['range']
+    """Return (core_m, edge_m) channel R positions for the given shot.
+    Reads from config/thomson_positions.json — same data thomson_loader uses."""
+    for entry in _THOMSON_CONFIG['positions']:
+        lo, hi = entry['shot_range']
+        if hi is None:
+            hi = float('inf')
         if lo <= shot <= hi:
             return ([r / 1000.0 for r in entry['core']],
                     [r / 1000.0 for r in entry['edge'] if r is not None])
-    e = _THOMSON_POSITIONS[-1]
-    return ([r/1000 for r in e['core']], [r/1000 for r in e['edge'] if r])
+    last = _THOMSON_CONFIG['positions'][-1]
+    return ([r / 1000.0 for r in last['core']],
+            [r / 1000.0 for r in last['edge'] if r is not None])
 
 
 class BiProfileLoader(BaseDiagnosticLoader):
@@ -172,7 +161,15 @@ def load_diag_params(shot_number):
 
 
 def load_efit_psin(shot_number, efit_tree='EFIT01'):
-    """Load EFIT psi_N(R) at midplane (z=0)."""
+    """Load EFIT psi_N(R) at midplane (z=0) plus 1D equilibrium profiles
+    needed by derived quantities (q, fpol, B0, R_axis).
+
+    Backwards compatible: returns the original {'time', 'r_grid', 'psin'} keys
+    and adds 'q_psin_grid', 'q_t_psi', 'fpol_t_psi', 'bcentr', 'rmaxis'.
+
+    1D EFIT profiles (qpsi, fpol) are stored vs an internal ψ_N grid built from
+    \\mw (linspace 0→1). Scalars are interpolated to EFIT time.
+    """
     from MDSplus import Connection
     from scipy.interpolate import interp2d
     from config.app_config import AppConfig
@@ -200,7 +197,140 @@ def load_efit_psin(shot_number, efit_tree='EFIT01'):
             psi_z0 = f(r_grid, 0).flatten()
             psin_all[t] = (psi_z0 - simag[t]) / (sibry[t] - simag[t])
 
-        return {'time': time_arr, 'r_grid': r_grid, 'psin': psin_all}
+        # Equilibrium 1D profiles + scalars for derived quantities
+        try:
+            nw = int(np.asarray(mds.get('\\mw').data()).flatten()[0])
+        except Exception:
+            nw = 65
+        q_psin_grid = np.linspace(0.0, 1.0, nw)
+
+        def _safe_get_2d(node, fallback_shape):
+            try:
+                return np.asarray(mds.get(node).data())
+            except Exception:
+                return np.full(fallback_shape, np.nan)
+
+        def _safe_get_1d(node, fallback_len):
+            try:
+                return np.asarray(mds.get(node).data()).flatten()
+            except Exception:
+                return np.full(fallback_len, np.nan)
+
+        def _check_and_get_2d(node, fallback_shape):
+            """Coerce to (n_time, nw). 1D-shape (nw,) is broadcast across time."""
+            try:
+                arr = np.asarray(mds.get(node).data())
+                if arr.ndim == 2:
+                    return arr, True
+                if arr.ndim == 1 and arr.size == fallback_shape[1]:
+                    # profile-only (no time dim) — broadcast
+                    return np.tile(arr, (fallback_shape[0], 1)), True
+                print(f"[EFIT {efit_tree}] {node} shape {arr.shape} unexpected "
+                      f"(expected ({fallback_shape[0]},{fallback_shape[1]})) — using NaN")
+                return np.full(fallback_shape, np.nan), False
+            except Exception as e:
+                print(f"[EFIT {efit_tree}] {node} not available: {e}")
+                return np.full(fallback_shape, np.nan), False
+
+        def _check_and_get_1d(node, fallback_len):
+            """Coerce to (n_time,). Scalars are broadcast; small length mismatch
+            (off-by-one, common in KSTAR realtime EFIT) is resized."""
+            try:
+                arr = np.asarray(mds.get(node).data()).flatten()
+                if arr.size == fallback_len:
+                    return arr, True
+                if arr.size == 1:
+                    # scalar (e.g. constant vacuum BT) — broadcast
+                    return np.full(fallback_len, float(arr[0])), True
+                # Small off-by-N mismatch (e.g. 1524 vs 1525): linearly resample
+                # along an implicit normalized index so the value at each target
+                # time is the nearest-corresponding source sample.
+                if 0 < arr.size < fallback_len * 10:   # accept any reasonable size
+                    src_x = np.linspace(0.0, 1.0, arr.size)
+                    tgt_x = np.linspace(0.0, 1.0, fallback_len)
+                    resampled = np.interp(tgt_x, src_x, arr)
+                    print(f"[EFIT {efit_tree}] {node} size {arr.size} ≠ {fallback_len} "
+                          f"(time frames) — linearly resampled to {fallback_len}")
+                    return resampled, True
+                print(f"[EFIT {efit_tree}] {node} size {arr.size} unexpected "
+                      f"(expected {fallback_len}) — using NaN")
+                return np.full(fallback_len, np.nan), False
+            except Exception as e:
+                print(f"[EFIT {efit_tree}] {node} not available: {e}")
+                return np.full(fallback_len, np.nan), False
+
+        q_t_psi, q_ok = _check_and_get_2d('\\qpsi', (n_time, nw))
+        fpol_t_psi, fpol_ok = _check_and_get_2d('\\fpol', (n_time, nw))
+
+        # bcentr: normally one value per time frame. If the size happens to
+        # disagree with n_time (e.g. a missing afile frame at shot start —
+        # 1524 vs 1525 etc.), fall back to broadcasting the median across the
+        # available valid samples. This is justified for KSTAR because the
+        # vacuum BT is set by the toroidal coil current and is constant
+        # during a pulse.
+        try:
+            _bc_raw = np.asarray(mds.get('\\bcentr').data()).flatten()
+            if _bc_raw.size == n_time:
+                bcentr = _bc_raw
+                bcentr_ok = True
+            else:
+                _bc_valid = np.isfinite(_bc_raw) & (_bc_raw != 0)
+                if _bc_valid.any():
+                    _bc_val = float(np.nanmedian(_bc_raw[_bc_valid]))
+                    bcentr = np.full(n_time, _bc_val)
+                    bcentr_ok = True
+                    print(f"[EFIT {efit_tree}] bcentr size {_bc_raw.size} ≠ {n_time}: "
+                          f"using shot median {_bc_val:.3f} T "
+                          f"({_bc_valid.sum()} valid samples; KSTAR BT is constant)")
+                else:
+                    bcentr = np.full(n_time, np.nan)
+                    bcentr_ok = False
+                    print(f"[EFIT {efit_tree}] bcentr: no valid samples — using NaN")
+        except Exception as e:
+            bcentr = np.full(n_time, np.nan)
+            bcentr_ok = False
+            print(f"[EFIT {efit_tree}] bcentr not available: {e}")
+
+        rmaxis, rmaxis_ok = _check_and_get_1d('\\rmaxis', n_time)
+        print(f"[EFIT {efit_tree}] extended geometry: "
+              f"qpsi={'OK' if q_ok else 'NaN'}, "
+              f"fpol={'OK' if fpol_ok else 'NaN'}, "
+              f"bcentr={'OK' if bcentr_ok else 'NaN'}, "
+              f"rmaxis={'OK' if rmaxis_ok else 'NaN'}")
+        # bcentr and rmaxis may be stored as constants; broadcast
+        if bcentr.size == 1:
+            bcentr = np.full(n_time, float(bcentr[0]))
+        if rmaxis.size == 1:
+            rmaxis = np.full(n_time, float(rmaxis[0]))
+        if bcentr.size != n_time:
+            bcentr = np.full(n_time, np.nan)
+        if rmaxis.size != n_time:
+            rmaxis = np.full(n_time, np.nan)
+
+        # Midplane B_p(R) at z=0 from numerical derivative of ψ:
+        #   B_p ≈ B_z(z=0) = (1/R) · dψ/dR
+        #   dψ/dR = (sibry - simag) · d(ψ_N)/dR
+        Bp_z0 = np.zeros((n_time, n_r))
+        for t in range(n_time):
+            dpsin_dR = np.gradient(psin_all[t], r_grid)
+            dpsi_dR = (sibry[t] - simag[t]) * dpsin_dR
+            with np.errstate(divide='ignore', invalid='ignore'):
+                Bp_z0[t] = dpsi_dR / r_grid
+
+        return {
+            'time': time_arr, 'r_grid': r_grid, 'psin': psin_all,
+            'q_psin_grid': q_psin_grid,
+            'q_t_psi': q_t_psi,
+            'fpol_t_psi': fpol_t_psi,
+            'bcentr': bcentr,
+            'rmaxis': rmaxis,
+            # Δψ = sibry - simag is needed for derivatives w.r.t. ψ (poloidal flux)
+            # required by Sauter bootstrap / neoclassical conductivity.
+            'simag': simag,
+            'sibry': sibry,
+            # B_p(R) at z=0 midplane (n_efit_time, n_r) — used by full neoclassical poloidal velocity
+            'Bp_z0': Bp_z0,
+        }
     finally:
         mds.closeTree(efit_tree, shot_number)
 

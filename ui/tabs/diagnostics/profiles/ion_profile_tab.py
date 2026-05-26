@@ -1,5 +1,5 @@
 """
-Ti/vT Profile tab with CES and XICS integration
+Ion (Ti, vT) Profile tab with CES and XICS integration
 """
 
 import numpy as np
@@ -11,14 +11,17 @@ from PySide6.QtWidgets import (
 )
 
 from ui.tabs.profile_base_tab import ProfileBaseTab
-from ui.ui_constants import get_icon
+from ui.ui_constants import apply_shot_arrow_icons
 from ui.theme import ThemeManager
 
 
-class TiVTProfileTab(ProfileBaseTab):
-    """Ti/vT Profile tab with CES and XICS support"""
+class IonProfileTab(ProfileBaseTab):
+    """Ion (Ti, vT) Profile tab with CES and XICS support"""
 
-    TAB_NAME = "Ti/vT"
+    TAB_NAME = "Ion"
+
+    Y2_VT_LABEL = 'v$_T$ [km/s]'
+    Y2_OMEGA_LABEL = r'$\omega_T$ [krad/s]'
 
     def __init__(self, parent, app_config, diagnostic_name, tab_type,
                  data_loader, efit_loader, plot_manager, file_parser):
@@ -27,6 +30,43 @@ class TiVTProfileTab(ProfileBaseTab):
         self.file_parser = file_parser
         self.xics_loader = None
         self.xics_data_cache = {}
+
+    # ---------- vT / ω display helpers ----------
+
+    def _is_omega_mode(self):
+        return getattr(self, 'param2_combo', None) is not None \
+            and self.param2_combo.currentText().startswith('ωT')
+
+    def _y2_label(self):
+        return self.Y2_OMEGA_LABEL if self._is_omega_mode() else self.Y2_VT_LABEL
+
+    def _to_y2(self, vT_arr, vT_err_arr, R_arr):
+        """Apply ω = vT[km/s]/R[m] = krad/s when in omega mode; else pass through."""
+        if not self._is_omega_mode():
+            return vT_arr, vT_err_arr
+        with np.errstate(invalid='ignore', divide='ignore'):
+            R_safe = np.where(np.asarray(R_arr) > 0, R_arr, np.nan)
+            y = np.asarray(vT_arr) / R_safe
+            yerr = np.asarray(vT_err_arr) / R_safe
+        return y, yerr
+
+    def _restore_shot_from_settings(self):
+        super()._restore_shot_from_settings()
+        from config.user_settings import get_tab_settings
+        s = get_tab_settings(self._settings_key)
+        if hasattr(self, 'param2_combo'):
+            saved = s.get('y2_mode', 'vT [km/s]')
+            idx = self.param2_combo.findText(saved)
+            if idx >= 0:
+                self.param2_combo.setCurrentIndex(idx)
+
+    def save_settings(self):
+        super().save_settings()
+        from config.user_settings import get_tab_settings, set_tab_settings
+        s = get_tab_settings(self._settings_key)
+        if hasattr(self, 'param2_combo'):
+            s['y2_mode'] = self.param2_combo.currentText()
+        set_tab_settings(self._settings_key, s)
 
     def _create_shot_input(self, parent):
         """Create data loading section with analysis type selection"""
@@ -48,17 +88,16 @@ class TiVTProfileTab(ProfileBaseTab):
         btn_layout.setSpacing(0)
         mini_btn_style = "padding: 0px; border-radius: 2px;"
         up_btn = QPushButton()
-        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
         up_btn.setFixedSize(24, 15)
         up_btn.setStyleSheet(mini_btn_style)
         up_btn.clicked.connect(lambda: self._adjust_shot(1))
         btn_layout.addWidget(up_btn)
         down_btn = QPushButton()
-        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
         down_btn.setFixedSize(24, 15)
         down_btn.setStyleSheet(mini_btn_style)
         down_btn.clicked.connect(lambda: self._adjust_shot(-1))
         btn_layout.addWidget(down_btn)
+        apply_shot_arrow_icons(up_btn, down_btn)
         grid.addWidget(btn_updown, 0, 2)
 
         analysis_types = list(self.diag_config['analysis_types'].keys())
@@ -78,6 +117,62 @@ class TiVTProfileTab(ProfileBaseTab):
         file_button = QPushButton("Open CES Result File...")
         file_button.clicked.connect(self.load_file_data)
         grid.addWidget(file_button, 2, 0, 1, 5)
+
+        parent.layout().addWidget(group)
+
+    def _create_plot_controls(self, parent):
+        """Plot controls: x-axis radios + Plot/Option buttons + vT/ω toggle + Show Nodes + Channels."""
+        from PySide6.QtWidgets import QFrame as _QFrame, QGroupBox as _QGB
+        from ui.widgets.toggle_switch import ToggleSwitch
+
+        group = _QGB("4. Plot")
+        group_layout = QVBoxLayout(group)
+
+        # X-axis radio buttons: R | ψₙ | ρₚₒₗ | ρₜₒᵣ
+        self._create_x_axis_radios(group_layout)
+
+        # Row 1: vT/ω combo + Plot + Option
+        row1 = QHBoxLayout()
+        self.param2_combo = QComboBox()
+        self.param2_combo.addItems(['vT [km/s]', 'ωT [krad/s]'])
+        self.param2_combo.setCurrentText('vT [km/s]')
+        self.param2_combo.setFixedWidth(110)
+        self.param2_combo.currentTextChanged.connect(lambda _t: self._on_plot_clicked())
+        row1.addWidget(self.param2_combo)
+        plot_button = QPushButton("Plot")
+        plot_button.clicked.connect(self._on_plot_clicked)
+        row1.addWidget(plot_button, 2)
+        style_btn = QPushButton("Option")
+        style_btn.clicked.connect(self._show_style_dialog)
+        row1.addWidget(style_btn, 1)
+        group_layout.addLayout(row1)
+
+        sep = _QFrame(); sep.setFrameShape(_QFrame.HLine); sep.setFrameShadow(_QFrame.Sunken)
+        group_layout.addWidget(sep)
+
+        # Hidden color combo (used by _get_plot_colors / settings)
+        self.color_mode_combo = QComboBox()
+        self.color_mode_combo.addItems([
+            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
+            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
+        ])
+        self.color_mode_combo.setCurrentText("Gradient(viridis)")
+        self.color_mode_combo.hide()
+        self.label_fontsize = 12
+        self.legend_fontsize = 8
+        self.tick_fontsize = 10
+
+        row2 = QHBoxLayout()
+        self.show_channel_checkbox = ToggleSwitch()
+        self.show_channel_checkbox.toggled.connect(self._on_show_nodes_toggled)
+        row2.addWidget(self.show_channel_checkbox)
+        row2.addWidget(QLabel("Show Nodes"))
+        row2.addStretch()
+        channels_btn = QPushButton("Select Channels")
+        channels_btn.setToolTip("Select which channels to enable or dim")
+        channels_btn.clicked.connect(self._show_channel_selector)
+        row2.addWidget(channels_btn)
+        group_layout.addLayout(row2)
 
         parent.layout().addWidget(group)
 
@@ -402,7 +497,7 @@ class TiVTProfileTab(ProfileBaseTab):
         self.ax1.set_xlabel('R [m]')
         self.ax2.set_xlabel('R [m]')
         self.ax1.set_ylabel(self.param1['label'])
-        self.ax2.set_ylabel(self.param2['label'])
+        self.ax2.set_ylabel(self._y2_label())
 
         selected_entries = [self.selected_listbox.item(i).text()
                            for i in range(self.selected_listbox.count())]
@@ -425,21 +520,25 @@ class TiVTProfileTab(ProfileBaseTab):
                         xics_label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (XICS)'
 
                         ti_max = max(ti_max, xics_point['Ti'])
-                        vt_min = min(vt_min, xics_point['vT'])
-                        vt_max = max(vt_max, xics_point['vT'])
+                        # vT or ω depending on toggle (XICS scalar values)
+                        _y2_x, _ = self._to_y2(np.array([xics_point['vT']]),
+                                               np.array([xics_point.get('vT_err', 0.0)]),
+                                               np.array([xics_point['R']]))
+                        vt_min = min(vt_min, float(_y2_x[0]))
+                        vt_max = max(vt_max, float(_y2_x[0]))
 
                         self.ax1.plot(xics_point['R'], xics_point['Ti'],
                                      marker=xics_style['marker'], color=color,
                                      markersize=5, label=xics_label,
                                      linestyle='none')
-                        self.ax2.plot(xics_point['R'], xics_point['vT'],
+                        self.ax2.plot(xics_point['R'], float(_y2_x[0]),
                                      marker=xics_style['marker'], color=color,
                                      markersize=5, label=xics_label,
                                      linestyle='none')
 
                         # Add XICS channel label (TXCS node)
                         self._add_channel_labels(self.ax1, [xics_point['R']], [xics_point['Ti']], 'TXCS_TI0', [53])
-                        self._add_channel_labels(self.ax2, [xics_point['R']], [xics_point['vT']], 'TXCS_VR0', [53])
+                        self._add_channel_labels(self.ax2, [xics_point['R']], [float(_y2_x[0])], 'TXCS_VR0', [53])
                     continue
 
                 # CES data processing
@@ -468,6 +567,9 @@ class TiVTProfileTab(ProfileBaseTab):
                 Ti_err_profile = Ti_err[:, time_idx]
                 vT_profile = vT_data[:, time_idx]
                 vT_err_profile = vT_err[:, time_idx]
+
+                # vT → ω/R conversion when in omega mode (per-channel R)
+                vT_profile, vT_err_profile = self._to_y2(vT_profile, vT_err_profile, R_data)
 
                 # Split enabled/disabled channels
                 ch_keys = [f"CES_{j}" for j in range(len(R_data))]
@@ -557,9 +659,10 @@ class TiVTProfileTab(ProfileBaseTab):
         zc = 'white' if ThemeManager.current_theme == 'dark' else 'gray'
         self.ax2.axhline(y=0, c=zc, ls='--', gid='zero_ref')
 
-        # Overlay fit curves if available
+        # Overlay fit curves if available — only when displaying vT (fits are in vT space)
         self._overlay_fit_curves(self.ax1, 'Ti', selected_entries, colors)
-        self._overlay_fit_curves(self.ax2, 'vT', selected_entries, colors)
+        if not self._is_omega_mode():
+            self._overlay_fit_curves(self.ax2, 'vT', selected_entries, colors)
 
         self.plot_manager.apply_common_styling(
             self.ax1, self.ax2,
@@ -628,20 +731,23 @@ class TiVTProfileTab(ProfileBaseTab):
                         xics_label = f'#{shot_number} {entry.split("_")[1].split()[0]}ms (XICS)'
 
                         ti_max = max(ti_max, xics_point['Ti'])
-                        vt_max = max(vt_max, np.abs(xics_point['vT']))
+                        _xy2, _ = self._to_y2(np.array([xics_point['vT']]),
+                                              np.array([xics_point.get('vT_err', 0.0)]),
+                                              np.array([xics_point['R']]))
+                        vt_max = max(vt_max, float(np.abs(_xy2[0])))
 
                         self.ax1.plot(xics_x, xics_point['Ti'],
                                      marker=xics_style['marker'], color=color,
                                      markersize=5, label=xics_label,
                                      linestyle='none')
-                        self.ax2.plot(xics_x, xics_point['vT'],
+                        self.ax2.plot(xics_x, float(_xy2[0]),
                                      marker=xics_style['marker'], color=color,
                                      markersize=5, label=xics_label,
                                      linestyle='none')
 
                         # Add XICS channel label (ch 53)
                         self._add_channel_labels(self.ax1, [xics_x], [xics_point['Ti']], 'TXCS_TI0', [53])
-                        self._add_channel_labels(self.ax2, [xics_x], [xics_point['vT']], 'TXCS_TI0', [53])
+                        self._add_channel_labels(self.ax2, [xics_x], [float(_xy2[0])], 'TXCS_TI0', [53])
                     continue
 
                 # CES data processing
@@ -682,6 +788,10 @@ class TiVTProfileTab(ProfileBaseTab):
                     Ti_err_profile = Ti_err[:, time_idx]
                     vT_profile = vT_data[:, time_idx]
                     vT_err_profile = vT_err[:, time_idx]
+
+                # vT → ω/R conversion when in omega mode (R per channel from CES)
+                vT_profile, vT_err_profile = self._to_y2(
+                    vT_profile, vT_err_profile, data.radius + ces_rshift)
 
                 # Split enabled/disabled channels
                 ch_keys = [f"CES_{j}" for j in range(len(x_data))]
@@ -760,14 +870,15 @@ class TiVTProfileTab(ProfileBaseTab):
             except Exception as e:
                 print(f"[Ti/vT] Error plotting {entry}: {str(e)}")
 
-        # Overlay fit curves
+        # Overlay fit curves — vT fits make sense only when displaying vT
         self._overlay_fit_curves(self.ax1, 'Ti', selected_entries, colors)
-        self._overlay_fit_curves(self.ax2, 'vT', selected_entries, colors)
+        if not self._is_omega_mode():
+            self._overlay_fit_curves(self.ax2, 'vT', selected_entries, colors)
 
         self.ax1.set_xlabel(x_label)
         self.ax2.set_xlabel(x_label)
         self.ax1.set_ylabel(self.param1['label'])
-        self.ax2.set_ylabel(self.param2['label'])
+        self.ax2.set_ylabel(self._y2_label())
 
         x_left, x_right = -0.1, 1.1
         try:

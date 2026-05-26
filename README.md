@@ -45,13 +45,13 @@ BibTeX:
 - **TV Image Viewer**: Sequential image viewer for visible camera data with line drawing
 - **TV Startup Comparison**: Compare plasma startup sequences across multiple shots
 - **IRVB Viewer**: 2D radiation profile with EFIT overlay and regional Prad analysis
-- **Profile Fitting**: mtanh, ptanh, EPED, spline, RBF, GPR with PRISM-style pedestal output (Height / Top / Foot / Width / Location in normalized + physical units, ± uncertainties)
+- **Profile Fitting**: mtanh, ptanh, EPED, spline, RBF, GPR with PRISM-style pedestal output (Height / Top / Foot / Width / Location in normalized + physical units, ± uncertainties). Optional **SOL (Scrape-off Layer) tail** post-processing — adds a continuous linear decay for ψ_N > 1 with a fittable slope (Value / Min / Max / Fix)
 - **X-axis Selection**: R / ψ_N / ρ_pol / ρ_tor radio buttons in profile plot section. Fit-overlay tracks the axis it was fit on (no mismatched curves)
 - **Interactive Channel Toggle**: Double-click data points to exclude/include channels from fitting
 - **Dark/Light Theme**: Runtime theme switching with persistence (now covering QSpinBox/QDoubleSpinBox)
 - **Data Preview & Save**: Spreadsheet-style preview before exporting data, with p-file (PEQDSK) format export for fitted profiles
 - **Figure Save**: Custom matplotlib toolbar with PNG / SVG / EPS save buttons
-- **Profile Browse**: 2D / 3D toggle (mpl_toolkits surface) with slider playback. ELM detection (DoG + prominence-filtered `find_peaks`) and adaptive D-α zoom for inter-ELM window selection
+- **Profile Browse**: 2D / 3D toggle (mpl_toolkits surface) with slider playback. **Dα signal selector** dropdown (`\TOR_HA*`, `\POL_HA*`, `\DIV_KHA*`, `\DIV_GHA*`) with raw-data (`:FOO`) toggle for inter-ELM window selection
 - **Time Averaging**: dt-based profile averaging for fitting and visualization with proper RMS error propagation. Markers reflect the same averaged data used in the fit
 - **Collapsible Sidebar**: Expand/collapse category groups with state persistence
 - **TRANSP Viewer**: Two-pane workflow — **Input > UFILE** loads a TRANSP run directory and dispatches by UFILE type (1D time traces, profile×time with 2D/3D radio, NBI/ECP heating multi-channel, MMX Fourier-reconstructed flux surfaces, LIM auto-overlay); **Output** tabs handle CDF files for profiles and time traces with variable filter/search and cross-run comparison
@@ -75,6 +75,7 @@ BibTeX:
 | TV | Visible Camera (IVIS) | Image sequence |
 | IRVB | Infra-Red Video Bolometer | 2D Prad |
 | EFIT | Equilibrium Fitting | Scalars, profiles, 2D ψ, p-file |
+| BiProfile Derived | Derived plasma quantities from BiProfile + EFIT | p_e/p_i/p_tot, dT/dR, R/L_T, R/L_n, β, ν*, ω_pe, ω_ci, c_s, ρ_i, E_r (v_θ=0 / neoclassical), neoclassical v_θ for D and C⁶⁺, ω_imp−ω_main, σ_neo, η_neo, j_BS |
 | TRANSP | Transport Analysis (BiProfile + UFILE input + CDF output) | Ti, vT, Te, ne, UFILE profiles/traces/2D, CDF profiles/traces |
 
 ## Usage
@@ -117,18 +118,34 @@ prism -s
 
 | Server | PRISM Path | Python | Note |
 |--------|-----------|--------|------|
-| nkstar | `/home/users/jklee/PRISM` | 3.8 (`/usr/bin/python38`) | All tabs |
-| ukstar | `/UKSTAR_HOME/jklee/PRISM` | 3.8 (`/usr/bin/python3.8`) | TV/IRVB excluded |
+| nkstar | `/home/users/jklee/PRISM` | bundled `vendor/cpython-3.8/bin/python3.8` (3.8.20) | All tabs |
+| ukstar | `/UKSTAR_HOME/jklee/PRISM` | bundled `vendor/cpython-3.8/bin/python3.8` (3.8.20) | TV/IRVB excluded |
 
 ### For External Users
 
-PRISM requires access to KSTAR MDS+ server, which is only available from the nkstar server at KFE. External users cannot run PRISM directly.
+PRISM requires access to KSTAR MDS+ server, which is only available from KFE internal servers (nkstar / ukstar). External users cannot run PRISM directly.
 
 This repository is provided for:
 - Code reference and architecture review
 - Adaptation to other tokamak facilities with their own MDS+ infrastructure
 
 If you are interested in adapting PRISM for other fusion devices, please contact the author.
+
+### Bundled Python (`vendor/`, v2.6.0+)
+
+Since v2.6.0 PRISM bundles **both the Python 3.8 interpreter and every third-party package** under `vendor/`, so the server's system Python and `~/.local/lib/...` are never touched. The layout is the standard CPython tree:
+
+```
+vendor/
+└── cpython-3.8/                       # portable Linux Python interpreter
+    ├── bin/python3.8
+    └── lib/python3.8/
+        ├── (stdlib)
+        └── site-packages/             # PySide6, numpy, scipy, matplotlib,
+                                       # Pillow, netCDF4, scikit-learn, MDSplus
+```
+
+`vendor/` is git-ignored and distributed via the existing rsync deploy flow rather than git.
 
 ## Directory Structure
 
@@ -144,6 +161,7 @@ PRISM/
 │   └── mirnov_config.json       # Mirnov coil configurations by year
 ├── core/
 │   ├── data_structures.py       # Data classes
+│   ├── derived_quantities.py    # Derived plasma quantities (neoclassical, Sauter, ...)
 │   ├── file_parser.py           # File parser
 │   └── fitting.py               # Profile fitting functions
 ├── data_loaders/
@@ -163,46 +181,56 @@ PRISM/
 │   ├── transp_cdf_loader.py   # TRANSP CDF (netCDF) loader
 │   └── efit_viewer_loader.py  # EFIT viewer loader (MDS+, g-file, a-file)
 ├── ui/
-│   ├── theme.py                 # Theme manager (dark/light QSS, palette, mpl)
-│   ├── ui_constants.py          # UI constants and helpers
-│   ├── main_window.py           # Main window with sidebar navigation
-│   ├── base_tab.py              # Base tab class
-│   ├── profile_base_tab.py      # Profile tab base class
-│   ├── timetrace_base_tab.py    # Time trace tab base class
-│   ├── tab_factory.py           # Tab creation factory
-│   ├── tivt_profile_tab.py      # Ti,vT profile tab
-│   ├── tivt_timetrace_tab.py    # Ti,vT time trace tab
-│   ├── nete_profile_tab.py      # ne,Te profile tab
-│   ├── nete_timetrace_tab.py    # ne,Te time trace tab
-│   ├── mse_profile_tab.py       # MSE profile tab
-│   ├── mse_timetrace_tab.py     # MSE time trace tab
-│   ├── spectrogram_tab.py       # Spectrogram tab
-│   ├── nmode_spectrum_tab.py    # n-Mode Spectrum tab
-│   ├── tv_tab.py                # TV image viewer tab
-│   ├── tv_startup_tab.py        # TV Startup Comparison tab
-│   ├── tv_utils.py              # TV utility functions
-│   ├── irvb_tab.py              # IRVB viewer tab
-│   ├── neutron_timetrace_tab.py # Neutron time trace tab
-│   ├── biprofile_profile_tab.py # BiProfile profile tab
-│   ├── biprofile_timetrace_tab.py # BiProfile time trace tab
-│   ├── transp_profile_tab.py   # TRANSP CDF (output) profile tab
-│   ├── transp_timetrace_tab.py # TRANSP CDF (output) time trace tab
-│   ├── transp_ufile_tab.py     # TRANSP UFILE (input) — single tab dispatching by class
-│   ├── efit_timetrace_tab.py   # EFIT time traces (AEQDSK scalars)
-│   ├── efit_profile_tab.py     # EFIT profiles (GEQDSK)
-│   ├── efit_2d_tab.py          # EFIT 2D equilibrium contours
-│   ├── efit_pfile_tab.py       # EFIT p-file viewer
-│   ├── icons/                   # SVG icons (logo, themed widgets)
-│   └── widgets/
-│       ├── custom_toolbar.py    # Custom matplotlib toolbar
-│       ├── toggle_switch.py    # iOS-style animated toggle
-│       ├── preview_dialog.py   # Profile Browse dialog
-│       └── biprofile_browse_dialog.py  # BiProfile Browse dialog
+│   ├── theme.py                       # Theme manager (dark/light QSS, palette, mpl)
+│   ├── ui_constants.py                # UI constants and helpers
+│   ├── main_window.py                 # Main window with sidebar navigation
+│   ├── tab_factory.py                 # Tab creation factory
+│   ├── icons/                         # SVG icons (logo, themed widgets)
+│   ├── widgets/
+│   │   ├── custom_toolbar.py          # Custom matplotlib toolbar
+│   │   ├── toggle_switch.py           # iOS-style animated toggle
+│   │   └── preview_dialog.py          # Browse dialogs
+│   └── tabs/
+│       ├── base_tab.py                # Base tab class
+│       ├── profile_base_tab.py        # Profile tab base class
+│       ├── timetrace_base_tab.py      # Time trace tab base class
+│       ├── diagnostics/
+│       │   ├── profiles/
+│       │   │   ├── ion_profile_tab.py        # Ion (Ti, vT) profile  (CES + XICS)
+│       │   │   ├── electron_profile_tab.py   # Electron (ne, Te) profile  (Thomson + ECE)
+│       │   │   └── mse_profile_tab.py        # MSE q/j profile
+│       │   ├── timetraces/
+│       │   │   ├── ion_timetrace_tab.py
+│       │   │   ├── electron_timetrace_tab.py
+│       │   │   ├── mse_timetrace_tab.py
+│       │   │   └── neutron_timetrace_tab.py
+│       │   ├── spectral/
+│       │   │   ├── spectrogram_tab.py
+│       │   │   └── nmode_spectrum_tab.py
+│       │   └── imaging/
+│       │       ├── tv_tab.py
+│       │       ├── tv_startup_tab.py
+│       │       ├── tv_utils.py
+│       │       └── irvb_tab.py
+│       ├── biprofile/
+│       │   ├── biprofile_profile_tab.py
+│       │   ├── biprofile_timetrace_tab.py
+│       │   └── biprofile_derived_profile_tab.py
+│       ├── transp/
+│       │   ├── transp_profile_tab.py         # CDF Output - Profiles
+│       │   ├── transp_timetrace_tab.py       # CDF Output - Time Traces
+│       │   └── transp_ufile_tab.py           # UFILE Input (single dispatch tab)
+│       └── efit/
+│           ├── efit_profile_tab.py           # GEQDSK profiles
+│           ├── efit_timetrace_tab.py         # AEQDSK scalars
+│           ├── efit_2d_tab.py                # 2D equilibrium contours
+│           └── efit_pfile_tab.py             # p-file viewer
 ├── plotting/
-│   └── plot_manager.py          # Plot management
-├── requirements.txt             # Python dependencies
-├── README.md                    # This file
-└── CHANGELOG.md                 # Version history
+│   └── plot_manager.py                # Plot management
+├── setup_vendor.ps1                   # Office-PC bundler (Python + pip wheels into vendor/)
+├── requirements.txt                   # Documented dependencies (vendor/ is authoritative)
+├── README.md
+└── CHANGELOG.md
 ```
 
 ## Requirements
@@ -217,7 +245,7 @@ PRISM/
 
 ## Note for External Users
 
-This software is developed and configured for KSTAR tokamak at KFE. The MDS+ server addresses, data paths, and tree structures in `config/` are KSTAR-specific and require access to the nkstar server.
+This software is developed and configured for KSTAR tokamak at KFE. The MDS+ server addresses, data paths, and tree structures in `config/` are KSTAR-specific and require access to KFE internal servers (nkstar / ukstar).
 
 To adapt for other facilities, modify:
 - `config/app_config.py`: MDS+ server address, file paths
@@ -237,6 +265,12 @@ See existing implementations for reference.
 Jekil Lee (jklee@kfe.re.kr)
 
 Korea Institute of Fusion Energy (KFE)
+
+## Copyright
+
+Copyright © 2026 Korea Institute of Fusion Energy. All rights reserved.
+
+Korea Copyright Commission Registration No. C-2026-023829 (18 May 2026).
 
 ## License
 

@@ -35,24 +35,24 @@ def _get_parser_map():
 
 def _get_profile_tab_map():
     """Lazily import and return the profile tab class map"""
-    from ui.tabs.diagnostics.profiles.nete_profile_tab import NeTeProfileTab
-    from ui.tabs.diagnostics.profiles.tivt_profile_tab import TiVTProfileTab
+    from ui.tabs.diagnostics.profiles.electron_profile_tab import ElectronProfileTab
+    from ui.tabs.diagnostics.profiles.ion_profile_tab import IonProfileTab
     from ui.tabs.diagnostics.profiles.mse_profile_tab import MSEProfileTab
     return {
-        'Thomson': NeTeProfileTab,
-        'CES': TiVTProfileTab,
+        'Thomson': ElectronProfileTab,
+        'CES': IonProfileTab,
         'MSE': MSEProfileTab,
     }
 
 
 def _get_timetrace_tab_map():
     """Lazily import and return the timetrace tab class map"""
-    from ui.tabs.diagnostics.timetraces.nete_timetrace_tab import NeTeTimeTraceTab
-    from ui.tabs.diagnostics.timetraces.tivt_timetrace_tab import TiVTTimeTraceTab
+    from ui.tabs.diagnostics.timetraces.electron_timetrace_tab import ElectronTimeTraceTab
+    from ui.tabs.diagnostics.timetraces.ion_timetrace_tab import IonTimeTraceTab
     from ui.tabs.diagnostics.timetraces.mse_timetrace_tab import MSETimeTraceTab
     return {
-        'Thomson': NeTeTimeTraceTab,
-        'CES': TiVTTimeTraceTab,
+        'Thomson': ElectronTimeTraceTab,
+        'CES': IonTimeTraceTab,
         'MSE': MSETimeTraceTab,
     }
 
@@ -73,12 +73,12 @@ class TabFactory:
     # Custom tab display names
     TAB_NAMES = {
         'Thomson': {
-            'profile': 'ne, Te',
-            'timetrace': 'ne, Te'
+            'profile': 'Electron',
+            'timetrace': 'Electron'
         },
         'CES': {
-            'profile': 'Ti, vT',
-            'timetrace': 'Ti, vT'
+            'profile': 'Ion',
+            'timetrace': 'Ion'
         },
         'MSE': {
             'profile': 'MSE',

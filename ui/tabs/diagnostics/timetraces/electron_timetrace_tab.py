@@ -1,5 +1,5 @@
 """
-ne, Te Time Trace tab with unified Thomson/ECE/TCI loading
+Electron (ne, Te) Time Trace tab with unified Thomson/ECE/TCI loading
 """
 
 import numpy as np
@@ -11,13 +11,13 @@ from PySide6.QtWidgets import (
 )
 
 from ui.tabs.timetrace_base_tab import TimeTraceBaseTab
-from ui.ui_constants import get_icon
+from ui.ui_constants import apply_shot_arrow_icons
 
 
-class NeTeTimeTraceTab(TimeTraceBaseTab):
-    """ne, Te Time Trace tab with unified Thomson/ECE/TCI loading"""
+class ElectronTimeTraceTab(TimeTraceBaseTab):
+    """Electron (ne, Te) Time Trace tab with unified Thomson/ECE/TCI loading"""
 
-    TAB_NAME = "ne/Te"
+    TAB_NAME = "Electron"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -47,17 +47,16 @@ class NeTeTimeTraceTab(TimeTraceBaseTab):
         btn_updown_layout.setSpacing(0)
         mini_btn_style = "padding: 0px; border-radius: 2px;"
         up_btn = QPushButton()
-        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
         up_btn.setFixedSize(24, 15)
         up_btn.setStyleSheet(mini_btn_style)
         up_btn.clicked.connect(lambda: self._adjust_shot(1))
         btn_updown_layout.addWidget(up_btn)
         down_btn = QPushButton()
-        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
         down_btn.setFixedSize(24, 15)
         down_btn.setStyleSheet(mini_btn_style)
         down_btn.clicked.connect(lambda: self._adjust_shot(-1))
         btn_updown_layout.addWidget(down_btn)
+        apply_shot_arrow_icons(up_btn, down_btn)
         grid.addWidget(btn_updown, 0, 2)
 
         diag_options = ['TS', 'ECE (100Hz)', 'ECE (1kHz)', 'TCI (100Hz)', 'TCI (1kHz)']

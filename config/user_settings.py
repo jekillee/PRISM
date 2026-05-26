@@ -27,7 +27,7 @@ DEFAULT_SETTINGS = {
     "last_seen_version": "0.0.0",
     "theme": "dark",
     "tabs": {
-        "tivt_profile": {
+        "ion_profile": {
             "shot": "",
             "efit_tree": "efitrt1 (RT for PCS)",
             "coord_type": "psi_N",
@@ -39,14 +39,14 @@ DEFAULT_SETTINGS = {
             "tick_fontsize": 10,
             "fit_funcs": {"Ti": "mtanh", "vT": "mtanh"}
         },
-        "tivt_timetrace": {
+        "ion_timetrace": {
             "shot": "",
             "color_mode": "Gradient(viridis)",
             "label_fontsize": 12,
             "legend_fontsize": 8,
             "tick_fontsize": 10
         },
-        "nete_profile": {
+        "electron_profile": {
             "shot": "",
             "efit_tree": "efitrt1 (RT for PCS)",
             "coord_type": "psi_N",
@@ -59,7 +59,7 @@ DEFAULT_SETTINGS = {
             "fit_funcs": {"Te": "mtanh", "ne": "mtanh"},
             "tci_validation": False
         },
-        "nete_timetrace": {
+        "electron_timetrace": {
             "shot": "",
             "diagnostic": "TS",
             "color_mode": "Gradient(viridis)",
@@ -160,6 +160,27 @@ def _ensure_settings_dir():
         os.makedirs(SETTINGS_DIR)
 
 
+def _migrate_legacy_keys(settings):
+    """Rename legacy tab settings keys to current names.
+
+    v2.5.6 renamed CES (Ti, vT) tab to "Ion" and Thomson (ne, Te) tab to
+    "Electron". Existing user settings files have the old keys; remap them
+    so saved preferences (shot, fit funcs, etc.) survive the upgrade.
+    """
+    tabs = settings.get('tabs')
+    if not isinstance(tabs, dict):
+        return
+    renames = {
+        'tivt_profile': 'ion_profile',
+        'tivt_timetrace': 'ion_timetrace',
+        'nete_profile': 'electron_profile',
+        'nete_timetrace': 'electron_timetrace',
+    }
+    for old_key, new_key in renames.items():
+        if old_key in tabs and new_key not in tabs:
+            tabs[new_key] = tabs.pop(old_key)
+
+
 def load_settings():
     """Load settings from file, create default if not exists"""
     global _settings
@@ -170,6 +191,8 @@ def load_settings():
         try:
             with open(SETTINGS_FILE, 'r') as f:
                 _settings = json.load(f)
+
+            _migrate_legacy_keys(_settings)
 
             # Merge with defaults for any missing keys
             _settings = _merge_defaults(_settings, DEFAULT_SETTINGS)
@@ -357,6 +380,16 @@ def show_update_popup(parent):
         tab_widget.addTab(text_widget, f"v{major_ver}")
 
     layout.addWidget(tab_widget)
+
+    # Copyright / registration footer (above "Do not show again")
+    copyright_label = QLabel(
+        "Copyright © 2026 Korea Institute of Fusion Energy. "
+        "All rights reserved.<br>"
+        "Korea Copyright Commission Registration No. C-2026-023829 (18 May 2026).")
+    copyright_label.setTextFormat(Qt.RichText)
+    copyright_label.setAlignment(Qt.AlignCenter)
+    copyright_label.setStyleSheet("color: #888; font-size: 10px; padding-top: 6px;")
+    layout.addWidget(copyright_label)
 
     # Bottom widget for checkbox, contact, and button
     bottom_widget = QWidget()

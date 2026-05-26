@@ -18,6 +18,8 @@ _ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
 _CHECK_ICON = os.path.join(_ICON_DIR, 'check-white.svg').replace('\\', '/')
 _ARROW_DOWN_LIGHT = os.path.join(_ICON_DIR, 'arrow-down-light.svg').replace('\\', '/')
 _ARROW_DOWN_DARK = os.path.join(_ICON_DIR, 'arrow-down-dark.svg').replace('\\', '/')
+_ARROW_UP_WHITE = os.path.join(_ICON_DIR, 'arrow-up-white.svg').replace('\\', '/')
+_ARROW_DOWN_WHITE = os.path.join(_ICON_DIR, 'arrow-down-white.svg').replace('\\', '/')
 
 
 # ============================================================
@@ -57,7 +59,7 @@ QTreeWidget#sidebar {
     background: #1e1e1e;
     color: #cccccc;
     border: none;
-    font-size: 13px;
+    font-size: 11px;
     outline: none;
 }
 QTreeWidget#sidebar::item {
@@ -157,21 +159,46 @@ QSpinBox, QDoubleSpinBox {
     border: 1px solid #555;
     border-radius: 4px;
     padding: 2px 4px;
+    outline: none;
 }
 QSpinBox:disabled, QDoubleSpinBox:disabled {
     background: #2b2b2b;
     color: #555;
     border: 1px solid #3c3c3c;
 }
-QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    background: #0d6efd;
+    border: none;
+    border-top-right-radius: 4px;
+    width: 18px;
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+}
 QSpinBox::down-button, QDoubleSpinBox::down-button {
-    background: #4a4d4f;
-    border: 1px solid #555;
-    width: 14px;
+    background: #0d6efd;
+    border: none;
+    border-bottom-right-radius: 4px;
+    width: 18px;
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
 }
 QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
 QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
-    background: #5a5d5f;
+    background: #3d8bfd;
+}
+QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed,
+QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {
+    background: #0a58ca;
+}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url(""" + _ARROW_UP_WHITE + """);
+    width: 10px;
+    height: 10px;
+}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url(""" + _ARROW_DOWN_WHITE + """);
+    width: 10px;
+    height: 10px;
 }
 
 QCheckBox { color: #ccc; spacing: 6px; }
@@ -300,6 +327,9 @@ _DARK_MPL = {
     'legend.facecolor':  '#2b2b2b',
     'legend.edgecolor':  '#555555',
     'legend.labelcolor': '#cccccc',
+    # Pin font family + size so plots render identically across access paths
+    'font.family':       'DejaVu Sans',
+    'font.size':         10.0,
 }
 
 # ============================================================
@@ -339,7 +369,7 @@ QTreeWidget#sidebar {
     background: #e8e8e8;
     color: #333333;
     border: none;
-    font-size: 13px;
+    font-size: 11px;
     outline: none;
 }
 QTreeWidget#sidebar::item {
@@ -439,21 +469,46 @@ QSpinBox, QDoubleSpinBox {
     border: 1px solid #cccccc;
     border-radius: 4px;
     padding: 2px 4px;
+    outline: none;
 }
 QSpinBox:disabled, QDoubleSpinBox:disabled {
     background: #e8e8e8;
     color: #aaa;
     border: 1px solid #ddd;
 }
-QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    background: #0d6efd;
+    border: none;
+    border-top-right-radius: 4px;
+    width: 18px;
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+}
 QSpinBox::down-button, QDoubleSpinBox::down-button {
-    background: #f0f0f0;
-    border: 1px solid #cccccc;
-    width: 14px;
+    background: #0d6efd;
+    border: none;
+    border-bottom-right-radius: 4px;
+    width: 18px;
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
 }
 QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
 QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
-    background: #e0e0e0;
+    background: #3d8bfd;
+}
+QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed,
+QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {
+    background: #0a58ca;
+}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url(""" + _ARROW_UP_WHITE + """);
+    width: 10px;
+    height: 10px;
+}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url(""" + _ARROW_DOWN_WHITE + """);
+    width: 10px;
+    height: 10px;
 }
 
 QCheckBox { color: #333; spacing: 6px; }
@@ -582,6 +637,9 @@ _LIGHT_MPL = {
     'legend.facecolor':  '#ffffff',
     'legend.edgecolor':  '#cccccc',
     'legend.labelcolor': '#333333',
+    # Pin font family + size so plots render identically across access paths
+    'font.family':       'DejaVu Sans',
+    'font.size':         10.0,
 }
 
 # ============================================================

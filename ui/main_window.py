@@ -30,6 +30,7 @@ _ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
 _CATEGORY_ORDER = ["Profiles", "Time Traces", "Spectral", "Imaging",
                     "EFIT",
                     "BiProfile Profiles", "BiProfile Time Traces",
+                    "BiProfile Derived",
                     "TRANSP Input",
                     "TRANSP Output Profiles", "TRANSP Output Time Traces",
                     "Other"]
@@ -48,6 +49,7 @@ _TAB_TYPE_TO_CATEGORY = {
     'neutron': "Time Traces",
     'bi_profile': "BiProfile Profiles",
     'bi_timetrace': "BiProfile Time Traces",
+    'bi_derived': "BiProfile Derived",
     'transp_profile': "TRANSP Output Profiles",
     'transp_timetrace': "TRANSP Output Time Traces",
     'transp_ufile': "TRANSP Input",
@@ -174,7 +176,7 @@ class SidebarNav(QWidget):
 
         categorized = _categorize_tabs(self.tab_configs)
         _DIAG = {"Profiles", "Time Traces", "Spectral", "Imaging"}
-        _BI = {"BiProfile Profiles", "BiProfile Time Traces"}
+        _BI = {"BiProfile Profiles", "BiProfile Time Traces", "BiProfile Derived"}
         _TR_UFILE = {"TRANSP Input"}
         _TR_CDF = {"TRANSP Output Profiles", "TRANSP Output Time Traces"}
         _EF = {"EFIT"}
@@ -207,7 +209,7 @@ class SidebarNav(QWidget):
             g.setFlags(Qt.ItemIsEnabled)
             g.setData(0, Qt.UserRole + 1, name)
             f = g.font(0)
-            f.setBold(True); f.setPointSize(10)
+            f.setBold(True); f.setPointSize(8)
             g.setFont(0, f)
             g.setForeground(0, QColor("#0d6efd"))
             g.setExpanded(exp)
@@ -257,8 +259,12 @@ class SidebarNav(QWidget):
         # ── BiProfile ──
         g = _add_group("BiProfile")
         for cat_name, items in bi:
-            sub = cat_name.replace("BiProfile ", "")
-            _add_cat(g, cat_name, items, display_name=sub)
+            if cat_name == "BiProfile Derived":
+                # Single-tab category: render as direct leaf under BiProfile group
+                _add_flat(g, items)
+            else:
+                sub = cat_name.replace("BiProfile ", "")
+                _add_cat(g, cat_name, items, display_name=sub)
 
         _add_divider()
 
@@ -337,7 +343,7 @@ class SidebarNav(QWidget):
             c.setFlags(Qt.ItemIsEnabled)
             c.setData(0, Qt.UserRole + 1, cat_name)
             f = c.font(0)
-            f.setBold(True); f.setPointSize(10)
+            f.setBold(True); f.setPointSize(8)
             c.setFont(0, f)
             c.setForeground(0, QColor("#0d6efd"))
             c.setExpanded(exp)
@@ -372,7 +378,7 @@ class SidebarNav(QWidget):
             root.setData(0, Qt.UserRole + 1, label)
             font = root.font(0)
             font.setBold(True)
-            font.setPointSize(10)
+            font.setPointSize(8)
             root.setFont(0, font)
             root.setForeground(0, QColor("#888888"))
             self._cat_items[label] = root
@@ -385,6 +391,13 @@ class SidebarNav(QWidget):
                         child.setData(0, Qt.UserRole, tab_index)
             else:
                 for cat_name, items in cats:
+                    # Single-tab "BiProfile Derived" category: render as direct leaf
+                    if cat_name == "BiProfile Derived":
+                        for tab_index, tab_name, tab_type in items:
+                            child = QTreeWidgetItem(root)
+                            child.setText(0, f"{P_T}{tab_name}")
+                            child.setData(0, Qt.UserRole, tab_index)
+                        continue
                     cat_key = f"{label}/{cat_name}"
                     cat_expanded = cat_key not in collapsed_cats
                     cat_arrow = A_E if cat_expanded else A_C
@@ -592,13 +605,15 @@ class PRISMApp(QMainWindow):
         """Build tab configs for BiProfile viewer mode"""
         self.tab_configs = [
             {'diagnostic': None, 'tab_type': 'bi_profile',
-             'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
+             'tab_name': 'Ion', 'bi_params': ('Ti', 'vT')},
             {'diagnostic': None, 'tab_type': 'bi_profile',
-             'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
+             'tab_name': 'Electron', 'bi_params': ('ne', 'Te')},
             {'diagnostic': None, 'tab_type': 'bi_timetrace',
-             'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
+             'tab_name': 'Ion', 'bi_params': ('Ti', 'vT')},
             {'diagnostic': None, 'tab_type': 'bi_timetrace',
-             'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
+             'tab_name': 'Electron', 'bi_params': ('ne', 'Te')},
+            {'diagnostic': None, 'tab_type': 'bi_derived',
+             'tab_name': 'Derived'},
         ]
 
     def _build_bi_tab_configs(self):
@@ -780,13 +795,15 @@ class PRISMApp(QMainWindow):
         # BiProfile tabs
         self.tab_configs.extend([
             {'diagnostic': None, 'tab_type': 'bi_profile',
-             'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
+             'tab_name': 'Ion', 'bi_params': ('Ti', 'vT')},
             {'diagnostic': None, 'tab_type': 'bi_profile',
-             'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
+             'tab_name': 'Electron', 'bi_params': ('ne', 'Te')},
             {'diagnostic': None, 'tab_type': 'bi_timetrace',
-             'tab_name': 'Ti, vT', 'bi_params': ('Ti', 'vT')},
+             'tab_name': 'Ion', 'bi_params': ('Ti', 'vT')},
             {'diagnostic': None, 'tab_type': 'bi_timetrace',
-             'tab_name': 'ne, Te', 'bi_params': ('ne', 'Te')},
+             'tab_name': 'Electron', 'bi_params': ('ne', 'Te')},
+            {'diagnostic': None, 'tab_type': 'bi_derived',
+             'tab_name': 'Derived'},
         ])
 
         # TRANSP UFILE tab (single — handles all classes via dropdown)
@@ -995,6 +1012,8 @@ class PRISMApp(QMainWindow):
             title = f"BiProfile {tab_name} Profile"
         elif tab_type == 'bi_timetrace':
             title = f"BiProfile {tab_name} Time Trace"
+        elif tab_type == 'bi_derived':
+            title = "BiProfile Derived"
         elif tab_type == 'transp_profile':
             title = f"TRANSP CDF Profile"
         elif tab_type == 'transp_timetrace':
@@ -1144,7 +1163,7 @@ class PRISMApp(QMainWindow):
         config = self.tab_configs[tab_index]
 
         # BiProfile / TRANSP tabs (custom, not via TabFactory)
-        if config['tab_type'] in ('bi_profile', 'bi_timetrace'):
+        if config['tab_type'] in ('bi_profile', 'bi_timetrace', 'bi_derived'):
             tab = self._create_bi_tab(config)
         elif config['tab_type'] in (
             'transp_profile', 'transp_timetrace', 'transp_ufile',
@@ -1171,12 +1190,17 @@ class PRISMApp(QMainWindow):
 
     def _create_bi_tab(self, config):
         """Create a BiProfile tab instance"""
-        if config['tab_type'] == 'bi_profile':
+        tt = config['tab_type']
+        if tt == 'bi_profile':
             from ui.tabs.biprofile.biprofile_profile_tab import BiProfileTab
             return BiProfileTab(self, config['bi_params'])
-        else:
+        if tt == 'bi_timetrace':
             from ui.tabs.biprofile.biprofile_timetrace_tab import BiTimeTraceTab
             return BiTimeTraceTab(self, config['bi_params'])
+        if tt == 'bi_derived':
+            from ui.tabs.biprofile.biprofile_derived_profile_tab import BiProfileDerivedTab
+            return BiProfileDerivedTab(self)
+        raise ValueError(f"Unknown BiProfile tab type: {tt}")
 
     def _create_transp_tab(self, config):
         """Create a TRANSP tab instance (UFILE or CDF)"""
@@ -1339,13 +1363,16 @@ class _SingleTabWindow(QMainWindow):
 
         # Create the tab
         tt = tab_config['tab_type']
-        if tt in ('bi_profile', 'bi_timetrace'):
+        if tt in ('bi_profile', 'bi_timetrace', 'bi_derived'):
             if tt == 'bi_profile':
                 from ui.tabs.biprofile.biprofile_profile_tab import BiProfileTab
                 self.tab = BiProfileTab(self, tab_config['bi_params'])
-            else:
+            elif tt == 'bi_timetrace':
                 from ui.tabs.biprofile.biprofile_timetrace_tab import BiTimeTraceTab
                 self.tab = BiTimeTraceTab(self, tab_config['bi_params'])
+            else:  # bi_derived
+                from ui.tabs.biprofile.biprofile_derived_profile_tab import BiProfileDerivedTab
+                self.tab = BiProfileDerivedTab(self)
         elif tt in ('transp_profile', 'transp_timetrace', 'transp_ufile'):
             if tt == 'transp_profile':
                 from ui.tabs.transp.transp_profile_tab import TranspProfileTab

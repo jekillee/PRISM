@@ -1,5 +1,5 @@
 """
-Ti/vT Time Trace tab with CES and XICS integration
+Ion (Ti, vT) Time Trace tab with CES and XICS integration
 """
 
 import re
@@ -12,14 +12,16 @@ from PySide6.QtWidgets import (
 )
 
 from ui.tabs.timetrace_base_tab import TimeTraceBaseTab
-from ui.ui_constants import get_icon
+from ui.ui_constants import apply_shot_arrow_icons
 from ui.theme import ThemeManager
 
 
-class TiVTTimeTraceTab(TimeTraceBaseTab):
-    """Ti/vT Time Trace tab with CES and XICS support"""
+class IonTimeTraceTab(TimeTraceBaseTab):
+    """Ion (Ti, vT) Time Trace tab with CES and XICS support"""
 
-    TAB_NAME = "Ti/vT"
+    TAB_NAME = "Ion"
+    Y2_VT_LABEL = 'v$_T$ [km/s]'
+    Y2_OMEGA_LABEL = r'$\omega_T$ [krad/s]'
 
     def __init__(self, parent, app_config, diagnostic_name, tab_type,
                  data_loader, efit_loader, plot_manager, file_parser):
@@ -28,6 +30,75 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
         self.file_parser = file_parser
         self.xics_loader = None
         self.xics_data_cache = {}
+
+    # ---------- vT / ω display helpers ----------
+
+    def _is_omega_mode(self):
+        return getattr(self, 'param2_combo', None) is not None \
+            and self.param2_combo.currentText().startswith('ωT')
+
+    def _y2_label(self):
+        return self.Y2_OMEGA_LABEL if self._is_omega_mode() else self.Y2_VT_LABEL
+
+    def _to_y2_trace(self, vT_trace, vT_err_trace, R_scalar):
+        """Time trace: divide by scalar R per channel when in omega mode."""
+        if not self._is_omega_mode():
+            return vT_trace, vT_err_trace
+        if R_scalar is None or R_scalar <= 0:
+            return np.full_like(vT_trace, np.nan), np.full_like(vT_err_trace, np.nan)
+        return vT_trace / R_scalar, vT_err_trace / R_scalar
+
+    def _create_plot_controls(self, parent):
+        """Plot controls: Plot/Option + vT/ω toggle (mirrors MSE q/j pattern)."""
+        from PySide6.QtWidgets import QFrame as _QFrame, QGroupBox as _QGB
+        group = _QGB("3. Plot")
+        group_layout = QVBoxLayout(group)
+
+        row1 = QHBoxLayout()
+        self.param2_combo = QComboBox()
+        self.param2_combo.addItems(['vT [km/s]', 'ωT [krad/s]'])
+        self.param2_combo.setCurrentText('vT [km/s]')
+        self.param2_combo.setFixedWidth(110)
+        self.param2_combo.currentTextChanged.connect(lambda _t: self.plot_data())
+        row1.addWidget(self.param2_combo)
+        plot_button = QPushButton("Plot")
+        plot_button.clicked.connect(self.plot_data)
+        row1.addWidget(plot_button, 2)
+        style_btn = QPushButton("Option")
+        style_btn.clicked.connect(self._show_style_dialog)
+        row1.addWidget(style_btn, 1)
+        group_layout.addLayout(row1)
+
+        self.color_mode_combo = QComboBox()
+        self.color_mode_combo.addItems([
+            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
+            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
+        ])
+        self.color_mode_combo.setCurrentText("Gradient(viridis)")
+        self.color_mode_combo.hide()
+        self.label_fontsize = 12
+        self.legend_fontsize = 8
+        self.tick_fontsize = 10
+
+        parent.layout().addWidget(group)
+
+    def _restore_shot_from_settings(self):
+        super()._restore_shot_from_settings()
+        from config.user_settings import get_tab_settings
+        s = get_tab_settings(self._settings_key)
+        if hasattr(self, 'param2_combo'):
+            saved = s.get('y2_mode', 'vT [km/s]')
+            idx = self.param2_combo.findText(saved)
+            if idx >= 0:
+                self.param2_combo.setCurrentIndex(idx)
+
+    def save_settings(self):
+        super().save_settings()
+        from config.user_settings import get_tab_settings, set_tab_settings
+        s = get_tab_settings(self._settings_key)
+        if hasattr(self, 'param2_combo'):
+            s['y2_mode'] = self.param2_combo.currentText()
+        set_tab_settings(self._settings_key, s)
 
     def _create_shot_input(self, parent):
         """Create data loading section with analysis type selection"""
@@ -49,17 +120,16 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
         btn_updown_layout.setSpacing(0)
         mini_btn_style = "padding: 0px; border-radius: 2px;"
         up_btn = QPushButton()
-        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
         up_btn.setFixedSize(24, 15)
         up_btn.setStyleSheet(mini_btn_style)
         up_btn.clicked.connect(lambda: self._adjust_shot(1))
         btn_updown_layout.addWidget(up_btn)
         down_btn = QPushButton()
-        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
         down_btn.setFixedSize(24, 15)
         down_btn.setStyleSheet(mini_btn_style)
         down_btn.clicked.connect(lambda: self._adjust_shot(-1))
         btn_updown_layout.addWidget(down_btn)
+        apply_shot_arrow_icons(up_btn, down_btn)
         grid.addWidget(btn_updown, 0, 2)
 
         analysis_types = list(self.diag_config['analysis_types'].keys())
@@ -335,7 +405,7 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
 
         self.ax1.set_ylabel(self.param1['label'])
         self.ax2.set_xlabel('Time [s]')
-        self.ax2.set_ylabel(self.param2['label'])
+        self.ax2.set_ylabel(self._y2_label())
 
         selected_entries = [self.selected_listbox.item(i).text()
                            for i in range(self.selected_listbox.count())]
@@ -365,6 +435,9 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
 
                     Ti_trace = Ti_data[0, :]
                     vT_trace = vT_data[0, :]
+                    vT_err_x = vT_err[0, :] if vT_err is not None else 0 * vT_trace
+                    # XICS R fixed at 1.8 m (TXCS calibration); apply ω conversion if needed
+                    vT_trace, _ = self._to_y2_trace(vT_trace, vT_err_x, 1.8)
 
                     ti_max = max(ti_max, np.nanpercentile(Ti_trace, 98))
                     vt_min = min(vt_min, np.nanpercentile(vT_trace, 2))
@@ -413,6 +486,9 @@ class TiVTTimeTraceTab(TimeTraceBaseTab):
                     Ti_err_trace = Ti_err[radius_idx, :]
                     vT_trace = vT_data[radius_idx, :]
                     vT_err_trace = vT_err[radius_idx, :]
+
+                    # ω conversion: divide by channel's R when omega mode is on
+                    vT_trace, vT_err_trace = self._to_y2_trace(vT_trace, vT_err_trace, actual_R)
 
                     ti_max = max(ti_max, np.nanpercentile(Ti_trace, 98))
                     vt_min = min(vt_min, np.nanpercentile(vT_trace, 2))

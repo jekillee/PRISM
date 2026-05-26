@@ -349,6 +349,80 @@ def get_default_params(func_name: str, param_type: str) -> Dict[str, Tuple[float
     return func_defaults.get(param_type, {})
 
 
+# Default sol_b (slope of linear SOL decay; b=3 → SOL reaches 0 at psi_N=4/3)
+_DEFAULT_SOL_B = (3.0, 0.01, 50.0)
+
+
+def _apply_sol_post(result, x_data, y_data, sigma=None, sol_b_param=None):
+    """Post-process a FitResult to add a linear SOL tail for psi_N > 1.
+
+    Strategy:
+      1. The core fit (already in `result`) was run on psi_N ≤ 1 data only,
+         so y_fit is unaffected by SOL data and represents the pedestal/core
+         extrapolation alone.
+      2. Anchor y_one = y_fit at psi_N = 1 (interpolated from result.x_fit).
+      3. Fit a single-parameter linear decay  y = y_one · max(1 - b·(ψ-1), 0)
+         to the data points with psi_N > 1. Continuity at LCFS is automatic.
+      4. Overwrite result.y_fit in the psi_N > 1 region with the SOL line.
+
+    sol_b_param: optional (value, min, max, fixed). If fixed, use value as-is.
+                 Otherwise use value as p0 and (min, max) as bounds.
+    """
+    if not result.success or len(result.x_fit) == 0:
+        return result
+
+    x_fit = np.asarray(result.x_fit, dtype=float)
+    y_fit = np.asarray(result.y_fit, dtype=float).copy()
+
+    # Anchor at psi_N = 1
+    y_one = float(np.interp(1.0, x_fit, y_fit))
+
+    # Default config
+    val0, lb, ub, fixed = _DEFAULT_SOL_B + (False,)
+    if sol_b_param is not None:
+        val0, lb, ub, fixed = sol_b_param
+
+    sol_b = val0
+    sol_b_err = 0.0
+    if not fixed:
+        # SOL data
+        x_data_arr = np.asarray(x_data, dtype=float)
+        y_data_arr = np.asarray(y_data, dtype=float)
+        mask = (x_data_arr > 1.0) & np.isfinite(x_data_arr) & np.isfinite(y_data_arr)
+        x_sol = x_data_arr[mask]
+        y_sol = y_data_arr[mask]
+        sig_sol = sigma[mask] if sigma is not None else None
+        if len(x_sol) >= 1 and y_one != 0:
+            def _sol_model(x, b):
+                return y_one * np.maximum(1.0 - b * (x - 1.0), 0.0)
+            try:
+                popt, pcov = curve_fit(
+                    _sol_model, x_sol, y_sol, p0=[val0],
+                    bounds=([lb], [ub]),
+                    sigma=sig_sol, absolute_sigma=False, maxfev=5000)
+                sol_b = float(popt[0])
+                sol_b_err = float(np.sqrt(pcov[0, 0]))
+            except Exception:
+                pass
+
+    # Overlay SOL on output curve
+    sol_curve_mask = x_fit > 1.0
+    if np.any(sol_curve_mask):
+        y_fit[sol_curve_mask] = y_one * np.maximum(
+            1.0 - sol_b * (x_fit[sol_curve_mask] - 1.0), 0.0)
+        result.y_fit = y_fit
+
+    # Store sol_b in params
+    result.params = dict(result.params)
+    result.params['sol_b'] = sol_b
+    if result.param_errors is None:
+        result.param_errors = {}
+    else:
+        result.param_errors = dict(result.param_errors)
+    result.param_errors['sol_b'] = sol_b_err
+    return result
+
+
 def fit_profile(x_data: np.ndarray, y_data: np.ndarray,
                 func_name: str = 'mtanh',
                 param_type: str = 'Ti',
@@ -356,23 +430,35 @@ def fit_profile(x_data: np.ndarray, y_data: np.ndarray,
                 sigma: Optional[np.ndarray] = None,
                 x_fit_range: Tuple[float, float] = (0.0, 1.2),
                 n_fit_points: int = 200,
-                n_bases: Optional[int] = None) -> FitResult:
+                n_bases: Optional[int] = None,
+                sol_enable: bool = False) -> FitResult:
     """Fit a profile using the specified function.
 
     Args:
         x_data: x coordinates (e.g., psi_N, rho_pol)
         y_data: y values to fit
-        func_name: Fitting function name ('mtanh', 'ptanh', 'EPED', 'spline')
+        func_name: Fitting function name ('mtanh', 'ptanh', 'EPED', 'spline', 'RBF', 'GPR')
         param_type: Parameter type for defaults ('Ti', 'Te', 'ne', 'vT')
         user_params: User-specified parameters {name: (value, min, max, fixed)}
                      If None, uses defaults.
         sigma: Uncertainties for weighted fitting (same length as y_data)
         x_fit_range: Range for fitted curve output
         n_fit_points: Number of points in fitted curve
+        sol_enable: If True, restrict core fit to psi_N ≤ 1 then post-process
+                    with a linear SOL tail anchored at y(psi_N=1) for psi_N > 1.
 
     Returns:
         FitResult object
     """
+    # Snapshot the full (unfiltered) data for SOL post-processing. The core
+    # fit uses the same data set whether SOL is on or off — SOL is purely a
+    # post-process that overlays a linear tail onto the psi_N > 1 region of
+    # the output curve, so toggling SOL never changes the psi_N <= 1 fit.
+    x_data_full = np.asarray(x_data)
+    y_data_full = np.asarray(y_data)
+    sigma_full = sigma
+    x_output_range = tuple(x_fit_range)
+
     # Remove NaN/Inf values and limit to fitting range
     valid = np.isfinite(x_data) & np.isfinite(y_data)
     valid &= (x_data >= x_fit_range[0]) & (x_data <= x_fit_range[1])
@@ -408,15 +494,27 @@ def fit_profile(x_data: np.ndarray, y_data: np.ndarray,
     if sig is not None:
         sig = sig[sort_idx]
 
-    x_fine = np.linspace(x_fit_range[0], x_fit_range[1], n_fit_points)
+    # Use x_output_range for the output curve so SOL region (psi_N > 1) is
+    # still drawn even though the core fit is restricted to psi_N <= 1.
+    x_fine = np.linspace(x_output_range[0], x_output_range[1], n_fit_points)
+
+    sol_b_user = None
+    if sol_enable and user_params and 'sol_b' in user_params:
+        sol_b_user = user_params['sol_b']
+
+    def _maybe_apply_sol(result):
+        if sol_enable:
+            return _apply_sol_post(result, x_data_full, y_data_full,
+                                   sigma_full, sol_b_param=sol_b_user)
+        return result
 
     # Non-parametric fitting
     if func_name == 'spline':
-        return _fit_spline(x, y, sig, x_fine)
+        return _maybe_apply_sol(_fit_spline(x, y, sig, x_fine))
     if func_name == 'RBF':
-        return _fit_rbf(x, y, sig, x_fine, n_bases=n_bases)
+        return _maybe_apply_sol(_fit_rbf(x, y, sig, x_fine, n_bases=n_bases))
     if func_name == 'GPR':
-        return _fit_gpr(x, y, sig, x_fine)
+        return _maybe_apply_sol(_fit_gpr(x, y, sig, x_fine))
 
     # Parametric fitting
     func_info = FIT_FUNCTIONS.get(func_name)
@@ -429,7 +527,7 @@ def fit_profile(x_data: np.ndarray, y_data: np.ndarray,
         )
 
     func = func_info['func']
-    param_names = func_info['param_names']
+    param_names = list(func_info['param_names'])
 
     # Get initial values and bounds
     defaults = get_default_params(func_name, param_type)
@@ -511,7 +609,7 @@ def fit_profile(x_data: np.ndarray, y_data: np.ndarray,
         dof = len(x) - n_free
         reduced_chi2 = chi2 / dof if dof > 0 else chi2
 
-        return FitResult(
+        result = FitResult(
             x_fit=x_fine, y_fit=y_fine,
             params=params, param_errors=param_errors,
             func_name=func_name,
@@ -519,6 +617,7 @@ def fit_profile(x_data: np.ndarray, y_data: np.ndarray,
             success=True,
             message="Fit converged"
         )
+        return _maybe_apply_sol(result)
 
     except Exception as e:
         return FitResult(

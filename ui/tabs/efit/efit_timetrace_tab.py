@@ -18,7 +18,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QShortcut, QKeySequence
 
-from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_icon
+from ui.ui_constants import (
+    CONTROL_PANEL_WIDTH, apply_dark_figure_style, apply_shot_arrow_icons,
+)
 from ui.theme import ThemeManager
 
 
@@ -100,13 +102,12 @@ class EfitScalarTab:
         bl.setContentsMargins(0, 0, 0, 0); bl.setSpacing(0)
         sty = "padding: 0px; border-radius: 2px;"
         up = QPushButton()
-        up.setIcon(get_icon(QStyle.SP_ArrowUp))
         up.setFixedSize(24, 15); up.setStyleSheet(sty)
         up.clicked.connect(lambda: self._adjust_shot(1)); bl.addWidget(up)
         dn = QPushButton()
-        dn.setIcon(get_icon(QStyle.SP_ArrowDown))
         dn.setFixedSize(24, 15); dn.setStyleSheet(sty)
         dn.clicked.connect(lambda: self._adjust_shot(-1)); bl.addWidget(dn)
+        apply_shot_arrow_icons(up, dn)
         grid.addWidget(btn_updown, 0, 2)
 
         self.tree_combo = QComboBox()

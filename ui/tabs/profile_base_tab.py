@@ -1,5 +1,5 @@
 """
-Base class for profile tabs (TiVT, NeTe, MSE)
+Base class for profile tabs (Ion, Electron, MSE)
 Extracts common functionality from concrete profile tabs
 """
 
@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QColor
 
 from ui.tabs.base_tab import BaseTab
 from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style
@@ -29,7 +29,7 @@ class ProfileBaseTab(BaseTab):
     Provides common functionality for profile-type tabs:
     - Dual-axis plot setup (param1 on left, param2 on right)
     - R profile plotting with EFIT mapping
-    - Secondary diagnostic overlay (XICS for TiVT, ECE for NeTe)
+    - Secondary diagnostic overlay (XICS for Ion, ECE for Electron)
     """
 
     # Override in subclass for console logging prefix
@@ -46,6 +46,7 @@ class ProfileBaseTab(BaseTab):
         self.fit_func_combos: Dict[str, Any] = {}  # {param_type: QComboBox}
         self.fit_user_params: Dict[str, Dict[str, Any]] = {}  # {param_name: {a1: (val, min, max, fixed), ...}}
         self.fit_nonparam_options: Dict[str, Dict[str, Any]] = {}  # {param_type: {option: value}}
+        self.fit_sol_enable: Dict[str, bool] = {}  # {param_type: SOL post-process on/off}
         self._click_points: List[Tuple] = []  # [(x, y, channel_key, ax), ...]
         self.r_shift_entries: Dict[str, Any] = {}  # {diag_name: QLineEdit}
 
@@ -451,7 +452,7 @@ class ProfileBaseTab(BaseTab):
 
     def _get_rshift_diagnostics(self) -> List[str]:
         """Return list of diagnostic names that support R-shift.
-        Override in subclass. E.g., ['CES'] for TiVT, ['Thomson', 'ECE'] for NeTe."""
+        Override in subclass. E.g., ['CES'] for Ion, ['Thomson', 'ECE'] for Electron."""
         return []
 
     def _get_rshift(self, diag_name: str) -> float:
@@ -554,10 +555,16 @@ class ProfileBaseTab(BaseTab):
             return
 
         func_info = FIT_FUNCTIONS[func_name]
-        param_names = func_info['param_names']
-        param_descs = func_info.get('param_descriptions', {})
-        defaults = get_default_params(func_name, ptype)
+        param_names = list(func_info['param_names'])
+        param_descs = dict(func_info.get('param_descriptions', {}))
+        defaults = dict(get_default_params(func_name, ptype))
         user = self.fit_user_params.get(ptype, {})
+        sol_on = self.fit_sol_enable.get(ptype, False)
+        # Always include sol_b row; it's greyed when the SOL toggle is off.
+        from core.fitting import _DEFAULT_SOL_B
+        param_names.append('sol_b')
+        defaults['sol_b'] = _DEFAULT_SOL_B
+        param_descs['sol_b'] = 'SOL linear-decay slope (ψ_N > 1 region)'
 
         dialog = QDialog(self.frame)
         dialog.setWindowTitle(f"{ptype} — {func_name}")
@@ -578,6 +585,22 @@ class ProfileBaseTab(BaseTab):
         formula_widget = self._render_formula_widget(dialog, func_info.get('formula_latex', ''))
         if formula_widget:
             dlg_layout.addWidget(formula_widget)
+
+        # SOL toggle — appears in every Option dialog. Greys out the sol_b row.
+        sol_row_layout = QHBoxLayout()
+        sol_cb = QCheckBox("Add SOL tail:")
+        sol_cb.setChecked(sol_on)
+        sol_cb.setToolTip(
+            "Replaces the ψ_N > 1 region of the fitted curve with a linear\n"
+            "tail  y = y(ψ=1) · max(1 − sol_b·(ψ−1), 0).\n"
+            "sol_b is fitted on ψ_N > 1 data (or fixed via the table row).\n"
+            "Toggling SOL never changes the ψ_N ≤ 1 portion of the fit.")
+        sol_row_layout.addWidget(sol_cb)
+        sol_formula = QLabel("y_SOL = y(ψ=1) · max(1 − sol_b·(ψ−1), 0)")
+        sol_formula.setStyleSheet("color: #888; font-style: italic;")
+        sol_row_layout.addWidget(sol_formula)
+        sol_row_layout.addStretch()
+        dlg_layout.addLayout(sol_row_layout)
 
         # Parameter table
         table = QTableWidget(len(param_names), 5)
@@ -624,6 +647,40 @@ class ProfileBaseTab(BaseTab):
 
         dlg_layout.addWidget(table)
 
+        # Enable/disable the sol_b row visually based on SOL toggle.
+        # Pick colors that read as disabled vs normal in both themes.
+        from ui.theme import ThemeManager
+        if ThemeManager.current_theme == 'dark':
+            _enabled_brush = QColor('#cccccc')
+            _disabled_brush = QColor('#666666')
+        else:
+            _enabled_brush = QColor('#202020')
+            _disabled_brush = QColor('#a0a0a0')
+        def _set_sol_row_enabled(enabled: bool):
+            try:
+                row = param_names.index('sol_b')
+            except ValueError:
+                return
+            for col in range(4):
+                it = table.item(row, col)
+                if it is None:
+                    continue
+                flags = it.flags()
+                if enabled:
+                    if col != 0:
+                        it.setFlags(flags | Qt.ItemIsEditable)
+                    it.setForeground(_enabled_brush)
+                else:
+                    it.setFlags(flags & ~Qt.ItemIsEditable)
+                    it.setForeground(_disabled_brush)
+            cell = table.cellWidget(row, 4)
+            if cell is not None:
+                cb = cell.findChild(QCheckBox)
+                if cb is not None:
+                    cb.setEnabled(enabled)
+        _set_sol_row_enabled(sol_on)
+        sol_cb.toggled.connect(_set_sol_row_enabled)
+
         # Buttons
         btn_layout = QHBoxLayout()
 
@@ -663,6 +720,7 @@ class ProfileBaseTab(BaseTab):
                         f"Invalid value for {ptype}/{pname}")
                     return
             self.fit_user_params[ptype] = params
+            self.fit_sol_enable[ptype] = sol_cb.isChecked()
             dialog.accept()
         apply_btn.clicked.connect(apply_params)
         btn_layout.addWidget(apply_btn)
@@ -839,6 +897,7 @@ class ProfileBaseTab(BaseTab):
 
                 user_params = self.fit_user_params.get(ptype, None)
                 nonparam_opts = self.fit_nonparam_options.get(ptype, {})
+                sol_enable = self.fit_sol_enable.get(ptype, False)
 
                 result = fit_profile(
                     x_data, y_data,
@@ -847,7 +906,8 @@ class ProfileBaseTab(BaseTab):
                     user_params=user_params,
                     sigma=sigma,
                     x_fit_range=x_fit_range,
-                    n_bases=nonparam_opts.get('n_bases', 5)
+                    n_bases=nonparam_opts.get('n_bases', 5),
+                    sol_enable=sol_enable,
                 )
 
                 entry_results[ptype] = result
@@ -859,8 +919,8 @@ class ProfileBaseTab(BaseTab):
                     if result.params and func_name in ('mtanh', 'ptanh', 'EPED'):
                         from core.fitting import FIT_FUNCTIONS, get_default_params
                         fi = FIT_FUNCTIONS.get(func_name, {})
-                        pnames = fi.get('param_names', [])
-                        defaults = get_default_params(func_name, ptype)
+                        pnames = list(fi.get('param_names', []))
+                        defaults = dict(get_default_params(func_name, ptype))
                         up = self.fit_user_params.get(ptype, {})
                         print(f"[Fitting]     {'Param':>5}  {'Value':>10}  {'Error':>10}  {'Min':>10}  {'Max':>10}  Fixed")
                         print(f"[Fitting]     {'─'*5}  {'─'*10}  {'─'*10}  {'─'*10}  {'─'*10}  ─────")
@@ -878,6 +938,24 @@ class ProfileBaseTab(BaseTab):
                             ub_s = 'inf' if ub == np.inf else f'{ub:.4g}'
                             fx_s = 'Y' if fixed else ''
                             print(f"[Fitting]     {pn:>5}  {val:10.4f}  {err:10.4f}  {lb_s:>10}  {ub_s:>10}  {fx_s:>5}")
+                    # SOL slope (any function), printed once after the core table
+                    if sol_enable and 'sol_b' in (result.params or {}):
+                        b = result.params['sol_b']
+                        b_err = (result.param_errors or {}).get('sol_b', 0.0)
+                        up = self.fit_user_params.get(ptype, {})
+                        if 'sol_b' in up:
+                            _, lb, ub, fx = up['sol_b']
+                        else:
+                            lb, ub, fx = 0.01, 50.0, False
+                        lb_s = '-inf' if lb == -np.inf else f'{lb:.4g}'
+                        ub_s = 'inf' if ub == np.inf else f'{ub:.4g}'
+                        fx_s = 'Y' if fx else ''
+                        # Reuse the parametric table format for sol_b
+                        if not (result.params and func_name in ('mtanh', 'ptanh', 'EPED')):
+                            print(f"[Fitting]     {'Param':>5}  {'Value':>10}  {'Error':>10}  {'Min':>10}  {'Max':>10}  Fixed")
+                            print(f"[Fitting]     {'─'*5}  {'─'*10}  {'─'*10}  {'─'*10}  {'─'*10}  ─────")
+                        print(f"[Fitting]     {'sol_b':>5}  {b:10.4f}  {b_err:10.4f}  {lb_s:>10}  {ub_s:>10}  {fx_s:>5}")
+                        print(f"[Fitting]     SOL: y_SOL = y(ψ=1)·max(1 − {b:.3f}·(ψ−1), 0)")
                     # Pedestal summary (PRISM style — sentence-case, ± sign,
                     # parenthesized physical units).
                     ped_map = self._PEDESTAL_PARAMS.get(func_name, {})
@@ -1457,7 +1535,7 @@ class ProfileBaseTab(BaseTab):
 
     @abstractmethod
     def _get_secondary_loader(self) -> Any:
-        """Get secondary data loader (XICS for TiVT, ECE for NeTe)
+        """Get secondary data loader (XICS for Ion, ECE for Electron)
 
         Returns:
             Loader instance for secondary diagnostic, or None

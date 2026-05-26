@@ -16,13 +16,13 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QGroupBox, QLabel, QLineEdit, QPushButton, QComboBox,
     QListWidget, QAbstractItemView, QCheckBox, QRadioButton,
-    QButtonGroup, QMessageBox, QFileDialog, QApplication, QStyle,
+    QButtonGroup, QMessageBox, QFileDialog, QApplication,
     QDialog, QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
-from ui.ui_constants import CONTROL_PANEL_WIDTH, get_icon
+from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_listbox_arrow_icons
 
 
 class BaseTab(ABC):
@@ -33,17 +33,17 @@ class BaseTab(ABC):
 
     # Mapping from diagnostic_name to settings key prefix
     _SETTINGS_KEY_MAP = {
-        'CES': 'tivt',
-        'Thomson': 'nete',
+        'CES': 'ion',
+        'Thomson': 'electron',
         'MSE': 'mse',
     }
 
     # Mapping from diagnostic_name + tab_type to status bar prefix
     _STATUS_PREFIX_MAP = {
-        ('CES', 'profile'): 'Ti, vT Profile',
-        ('CES', 'timetrace'): 'Ti, vT Time Trace',
-        ('Thomson', 'profile'): 'ne, Te Profile',
-        ('Thomson', 'timetrace'): 'ne, Te Time Trace',
+        ('CES', 'profile'): 'Ion Profile',
+        ('CES', 'timetrace'): 'Ion Time Trace',
+        ('Thomson', 'profile'): 'Electron Profile',
+        ('Thomson', 'timetrace'): 'Electron Time Trace',
         ('MSE', 'profile'): 'MSE Profile',
         ('MSE', 'timetrace'): 'MSE Time Trace',
     }
@@ -80,7 +80,7 @@ class BaseTab(ABC):
         else:
             self.param2 = None
 
-        # Determine settings key for this tab (e.g. "mse_profile", "tivt_timetrace")
+        # Determine settings key for this tab (e.g. "mse_profile", "ion_timetrace")
         prefix = self._SETTINGS_KEY_MAP.get(diagnostic_name, diagnostic_name.lower())
         self._settings_key = f"{prefix}_{tab_type}"
 
@@ -246,17 +246,17 @@ class BaseTab(ABC):
         button_layout = QVBoxLayout()
         button_layout.addStretch()
         add_button = QPushButton()
-        add_button.setIcon(get_icon(QStyle.SP_ArrowForward))
         add_button.setFixedWidth(30)
         add_button.clicked.connect(self.add_selected_items)
         button_layout.addWidget(add_button)
         remove_button = QPushButton()
-        remove_button.setIcon(get_icon(QStyle.SP_ArrowBack))
         remove_button.setFixedWidth(30)
         remove_button.clicked.connect(self.remove_selected_items)
         button_layout.addWidget(remove_button)
         button_layout.addStretch()
         content_layout.addLayout(button_layout)
+
+        apply_listbox_arrow_icons(add_button, remove_button)
 
         # Selected list column
         selected_column = QVBoxLayout()

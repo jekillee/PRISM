@@ -98,3 +98,12 @@ SKILL.md
 # Local settings
 settings.local.json
 nul
+
+# Vendored third-party packages (populate via setup_vendor.sh; never commit)
+vendor/
+
+# Ad-hoc benchmark/scratch artifacts
+benchmark_*.py
+convert_*.py
+dalpha_*.npz
+elm_*.png

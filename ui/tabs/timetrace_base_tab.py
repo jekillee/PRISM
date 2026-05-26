@@ -1,5 +1,5 @@
 """
-Base class for time trace tabs (TiVT, NeTe, MSE)
+Base class for time trace tabs (Ion, Electron, MSE)
 Extracts common functionality from concrete time trace tabs
 """
 

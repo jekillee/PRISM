@@ -1,5 +1,5 @@
 """
-ne, Te Profile tab with Thomson/ECE selection
+Electron (ne, Te) Profile tab with Thomson/ECE selection
 """
 
 import numpy as np
@@ -11,13 +11,13 @@ from PySide6.QtWidgets import (
 )
 
 from ui.tabs.profile_base_tab import ProfileBaseTab
-from ui.ui_constants import get_icon
+from ui.ui_constants import apply_shot_arrow_icons
 
 
-class NeTeProfileTab(ProfileBaseTab):
-    """ne, Te Profile tab supporting Thomson and/or ECE"""
+class ElectronProfileTab(ProfileBaseTab):
+    """Electron (ne, Te) Profile tab supporting Thomson and/or ECE"""
 
-    TAB_NAME = "ne/Te"
+    TAB_NAME = "Electron"
 
     # TCI tangent radii [m] and round-trip path lengths [m] (from KSTAR TCI spec)
     TCI_CHANNELS = {
@@ -58,17 +58,16 @@ class NeTeProfileTab(ProfileBaseTab):
         btn_layout.setSpacing(0)
         mini_btn_style = "padding: 0px; border-radius: 2px;"
         up_btn = QPushButton()
-        up_btn.setIcon(get_icon(QStyle.SP_ArrowUp))
         up_btn.setFixedSize(24, 15)
         up_btn.setStyleSheet(mini_btn_style)
         up_btn.clicked.connect(lambda: self._adjust_shot(1))
         btn_layout.addWidget(up_btn)
         down_btn = QPushButton()
-        down_btn.setIcon(get_icon(QStyle.SP_ArrowDown))
         down_btn.setFixedSize(24, 15)
         down_btn.setStyleSheet(mini_btn_style)
         down_btn.clicked.connect(lambda: self._adjust_shot(-1))
         btn_layout.addWidget(down_btn)
+        apply_shot_arrow_icons(up_btn, down_btn)
         grid.addWidget(btn_updown, 0, 2)
 
         diag_options = ['TS+ECE', 'TS', 'ECE (100Hz)', 'ECE (1kHz)']

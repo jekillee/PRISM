@@ -18,7 +18,10 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QShortcut, QKeySequence
 
-from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_icon
+from ui.ui_constants import (
+    CONTROL_PANEL_WIDTH, apply_dark_figure_style, apply_listbox_arrow_icons,
+    apply_shot_arrow_icons,
+)
 from ui.theme import ThemeManager
 
 UNITS = {'Ti': 'keV', 'vT': 'km/s', 'Te': 'keV', 'ne': r'$10^{19}$/m$^3$'}
@@ -105,13 +108,12 @@ class BiTimeTraceTab:
         bl.setContentsMargins(0, 0, 0, 0); bl.setSpacing(0)
         sty = "padding: 0px; border-radius: 2px;"
         up = QPushButton()
-        up.setIcon(QApplication.style().standardIcon(QStyle.SP_ArrowUp))
         up.setFixedSize(24, 15); up.setStyleSheet(sty)
         up.clicked.connect(lambda: self._adjust_shot(1)); bl.addWidget(up)
         dn = QPushButton()
-        dn.setIcon(QApplication.style().standardIcon(QStyle.SP_ArrowDown))
         dn.setFixedSize(24, 15); dn.setStyleSheet(sty)
         dn.clicked.connect(lambda: self._adjust_shot(-1)); bl.addWidget(dn)
+        apply_shot_arrow_icons(up, dn)
         grid.addWidget(btn_updown, 0, 2)
         self.fetch_button = QPushButton("Fetch")
         self.fetch_button.setFixedWidth(70)
@@ -144,16 +146,15 @@ class BiTimeTraceTab:
         btn_col = QVBoxLayout()
         btn_col.addStretch()
         add_btn = QPushButton()
-        add_btn.setIcon(get_icon(QStyle.SP_ArrowForward))
         add_btn.setFixedWidth(30)
         add_btn.clicked.connect(self._add_items)
         btn_col.addWidget(add_btn)
         rm_btn = QPushButton()
-        rm_btn.setIcon(get_icon(QStyle.SP_ArrowBack))
         rm_btn.setFixedWidth(30)
         rm_btn.clicked.connect(self._remove_items)
         btn_col.addWidget(rm_btn)
         btn_col.addStretch()
+        apply_listbox_arrow_icons(add_btn, rm_btn)
         lists_row.addLayout(btn_col)
 
         sel_col = QVBoxLayout()

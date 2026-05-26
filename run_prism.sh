@@ -16,12 +16,8 @@ SERVER_HOST=$(hostname)
 
 if [[ "$SERVER_HOST" == nkstar* ]]; then
     PRISM_HOME="/home/users/jklee/PRISM"
-    PYTHON_PATH="/usr/bin/python38"
-    PYSIDE6_SITE="/home/users/jklee/.local/lib/python3.8/site-packages"
 elif [[ "$SERVER_HOST" == ukstar* ]]; then
     PRISM_HOME="/UKSTAR_HOME/jklee/PRISM"
-    PYTHON_PATH="/usr/bin/python3.8"
-    PYSIDE6_SITE="/UKSTAR_HOME/jklee/.local/lib/python3.8/site-packages"
 else
     echo "========================================================"
     echo "  PRISM: Unknown server '$SERVER_HOST'"
@@ -31,9 +27,19 @@ else
     exit 1
 fi
 
+# Bundled Python interpreter + third-party packages (no system dependency).
+PYTHON_PATH="$PRISM_HOME/vendor/cpython-3.8/bin/python3.8"
+
 # Check if directory exists
 if [ ! -d "$PRISM_HOME" ]; then
     echo "Error: PRISM directory not found at $PRISM_HOME"
+    exit 1
+fi
+
+# Check if bundled Python exists
+if [ ! -x "$PYTHON_PATH" ]; then
+    echo "Error: bundled Python not found at $PYTHON_PATH"
+    echo "       run setup_vendor.ps1 on the office PC and redeploy."
     exit 1
 fi
 
@@ -43,8 +49,12 @@ if [ ! -f "$PRISM_HOME/main.py" ]; then
     exit 1
 fi
 
-# Set PYTHONPATH to PRISM directory and jklee's site-packages only
-export PYTHONPATH="$PRISM_HOME:$PYSIDE6_SITE"
+# PYTHONPATH only needs PRISM_HOME (third-party packages live inside the
+# bundled Python's own site-packages, which Python finds automatically).
+# PYTHONNOUSERSITE: hard-disable ~/.local/lib/python3.8/site-packages so the
+# bundled stack is the only one loaded, regardless of who runs PRISM.
+export PYTHONPATH="$PRISM_HOME"
+export PYTHONNOUSERSITE=1
 
 # Suppress WAYLAND_DISPLAY warning on Gnome (NoMachine)
 unset WAYLAND_DISPLAY
