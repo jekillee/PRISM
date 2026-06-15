@@ -5,8 +5,8 @@ Global application configuration
 
 import os
 
-VERSION = "2.6.0"
-UPDATE_DATE = "2026-05-26"
+VERSION = "2.6.1"
+UPDATE_DATE = "2026-06-15"
 APP_NAME = "PRISM"
 APP_FULL_NAME = "Plasma Research Integrated System for Multi-diagnostics"
 
@@ -17,6 +17,27 @@ AUTHOR_NAME = "Jekil Lee"
 # Application root directory (where config/ lives → parent)
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Shared scratch root on the servers (nkstar/ukstar). Everything PRISM caches or
+# computes outside the GUI lives here under a per-subsystem subdir:
+#   <PRISM_TMP_ROOT>/nmode/<shot>/...   headless n-mode archive (batch SDK)
+#   <PRISM_TMP_ROOT>/irvb/...           IRVB .mat download cache
+# Override with the PRISM_TMP_ROOT env var. World-writable so multiple users share
+# one tree. (Note: /tmp is ephemeral — cleared on reboot; this is a cache, not
+# durable storage.)
+PRISM_TMP_ROOT = os.environ.get('PRISM_TMP_ROOT', '/tmp/prism')
+
+
+def ensure_shared_dir(path, mode=0o777):
+    """Create `path` (and parents) and best-effort chmod to `mode` so multiple
+    users on a shared server can read/write one /tmp/prism. chmod failures (e.g.
+    not the directory owner) are ignored. Returns the path."""
+    os.makedirs(path, exist_ok=True)
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        pass
+    return path
+
 
 class AppConfig:
     """Global application settings"""
@@ -24,8 +45,9 @@ class AppConfig:
         # MDS+ connection
         self.MDS_IP = 'mdsr.kstar.kfe.re.kr:8005'
 
-        # IRVB data server
-        self.IRVB_SERVER = 'http://172.17.112.125/data_ana'
+        # IRVB data server (Flask app since 2025; static .mat files live under
+        # /data/ for recent shots and /data/afterCampaign/ for post-campaign shots).
+        self.IRVB_SERVER = 'http://172.17.112.125/data'
 
         # EFIT tree options
         self.EFIT_TREES = {

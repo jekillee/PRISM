@@ -42,6 +42,7 @@ BibTeX:
 - **IP Fault Time Masking**: Automatic filtering of post-discharge data
 - **Spectrogram Analysis**: FFT-based spectrogram for ECE, Mirnov, BES, TCI, ECEI
 - **n-Mode Spectrum Analysis**: Toroidal mode number analysis from Mirnov coils
+- **Headless n-Mode Batch**: Compute n-mode spectra without the GUI via `prism nmode` (single shot, `--shots`, or `--shot-range`), caching one `.npz` per shot under `/tmp/prism/nmode/` (same layout as the GUI's saved NPZ). Also a Python SDK: `from batch import run, run_many, NModeJobSpec`
 - **TV Image Viewer**: Sequential image viewer for visible camera data with line drawing
 - **TV Startup Comparison**: Compare plasma startup sequences across multiple shots
 - **IRVB Viewer**: 2D radiation profile with EFIT overlay and regional Prad analysis
@@ -88,6 +89,7 @@ BibTeX:
 | `prism -b`, `prism --biprofile` | BiProfile viewer |
 | `prism -t`, `prism --transp` | TRANSP CDF viewer |
 | `prism -s`, `prism --select` | Select and launch individual viewers |
+| `prism nmode [args]` | Headless n-mode compute + cache, no GUI (see `prism nmode -h`) |
 | `prism -h`, `prism --help` | Show help |
 
 ## Installation
@@ -119,7 +121,7 @@ prism -s
 | Server | PRISM Path | Python | Note |
 |--------|-----------|--------|------|
 | nkstar | `/home/users/jklee/PRISM` | bundled `vendor/cpython-3.8/bin/python3.8` (3.8.20) | All tabs |
-| ukstar | `/UKSTAR_HOME/jklee/PRISM` | bundled `vendor/cpython-3.8/bin/python3.8` (3.8.20) | TV/IRVB excluded |
+| ukstar | `/UKSTAR_HOME/jklee/PRISM` | bundled `vendor/cpython-3.8/bin/python3.8` (3.8.20) | All tabs except TV viewers (nkstar-only); IRVB available |
 
 ### For External Users
 
@@ -163,7 +165,16 @@ PRISM/
 │   ├── data_structures.py       # Data classes
 │   ├── derived_quantities.py    # Derived plasma quantities (neoclassical, Sauter, ...)
 │   ├── file_parser.py           # File parser
-│   └── fitting.py               # Profile fitting functions
+│   ├── ufile_parser.py          # TRANSP UFILE parser
+│   ├── fitting.py               # Profile fitting functions
+│   └── nmode.py                 # Qt-free n-mode compute core (shared by GUI/SDK/CLI)
+├── batch/                       # Headless n-mode batch SDK + CLI
+│   ├── jobspec.py               # NModeJobSpec (cache-key inputs)
+│   ├── compute.py               # compute_nmode (wraps core/nmode.py)
+│   ├── results.py               # NModeResult (+ .npz save/load)
+│   ├── archive.py               # per-shot .npz cache
+│   ├── runner.py                # run / run_many
+│   └── cli.py                   # prism nmode
 ├── data_loaders/
 │   ├── base_loader.py           # Base loader class
 │   ├── ces_loader.py            # CES loader

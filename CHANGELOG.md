@@ -5,6 +5,30 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] - 2026-06-15
+
+### Added — Headless n-mode batch SDK + `prism nmode` CLI
+- **`batch/` package** — compute n-mode (toroidal mode-number) spectra without the GUI (no PySide6 / X11) and cache each result as an `.npz`. Modules: `jobspec` (`NModeJobSpec`), `compute` (`compute_nmode`), `results` (`NModeResult`), `archive` (npz cache), `runner` (`run` / `run_many`), `cli` (`prism nmode`).
+- **`prism nmode` subcommand** (wired into `run_prism.sh`): `--shot N` / `--shots N N` / `--shot-range A B` (inclusive), `--tmin` / `--tmax` (omit = full shot), `--fmin` / `--fmax`, `--t-interval`, `--msign`, `--nmodes`, `--tol`, `--frac`, `--integrate`, `--no-detrend`. See `prism nmode -h` for the full list.
+- **Python SDK** — `from batch import NModeJobSpec, run, run_many, NModeResult`. `run_many` runs shots sequentially (one MDS+ load at a time) and isolates per-shot failures, so one bad shot never aborts the batch.
+- **Per-shot result cache** at `$PRISM_ARCHIVE_ROOT/nmode/nmode_<shot>.npz` (default `/tmp/prism`), byte-compatible with the GUI's "Save as .npz". Writes are atomic (unique tmp + `os.replace`); a torn or incomplete cache file self-heals (recompute).
+- **Overwrite handling** — when shots already exist, the duplicate list is shown first, then you choose overwrite / skip per shot with `[a]ll` / `[s]kip-all` / `[q]uit` for batches. Non-interactive (piped / cron) runs default to skip.
+
+### Added — Qt-free n-mode compute core (`core/nmode.py`)
+- The n-mode numerical pipeline (`load_mirnov_data` -> `calculate_fft` -> `calculate_mode_numbers`) was extracted from the GUI tab into `core/nmode.py`, so the **GUI tab, Python SDK, and CLI share one implementation**. `MDSplus` is imported lazily, so the core (and its FFT / mode math) imports on a host without MDSplus.
+
+### Added — Shared `/tmp/prism` scratch tree
+- The headless n-mode archive (`/tmp/prism/nmode/`) and the IRVB download cache (`/tmp/prism/irvb/`) now live under one world-writable `/tmp/prism` tree so users on nkstar / ukstar share it. Overridable via `PRISM_ARCHIVE_ROOT` (n-mode) / `PRISM_TMP_ROOT`.
+
+### Fixed — IRVB server migration (recovers IRVB fetch)
+- The IRVB data server was rebuilt as a web app; reconstructed data moved from the old static `/data_ana/` path to `/data/` (recent shots) and `/data/afterCampaign/` (post-campaign shots), which broke **all** IRVB fetches including previously-working shots. `IRVB_SERVER` is updated to `http://172.17.112.125/data`, and the loader now tries both locations, reports a clear "no IRVB data for shot #N" on 404, and removes partial files left by a failed download.
+
+### Fixed — n-mode saved-NPZ mode labels for sign = neg / all
+- `n_modes_list` stored in the saved n-mode NPZ now follows the physical amplitude row order (`[+1..+n, -1..-n]`). Previously, for the `neg` and `all` sign settings, the bundled example reader paired amplitude rows with reversed labels. Fixed consistently in the GUI tab and the batch SDK; `pos` / `abs` were already correct.
+
+### Changed — `prism --help`
+- Redesigned launcher help: a **Quick start** block, a clear split between **GUI viewers** and the **headless batch**, removed duplicated entries, and the full n-mode flag reference with examples.
+
 ## [2.6.0] - 2026-05-26
 
 ### Added — Profile fitting: SOL (Scrape-off Layer) tail
