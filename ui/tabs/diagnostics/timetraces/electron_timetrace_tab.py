@@ -19,6 +19,15 @@ class ElectronTimeTraceTab(TimeTraceBaseTab):
 
     TAB_NAME = "Electron"
 
+    # Line-averaged ne from interferometers, shown whenever the node exists for
+    # the shot. (label, MDS node, scale, description) — result in 1e19 m^-3.
+    INTERFEROMETER_CHANNELS = [
+        ('ne_mmW', '\\NE_INTER01', 1.0 / 2.0,
+         'Line-averaged ne at midplane (mm-wave interferometer)'),
+        ('ne_FIR', '\\NE_INTER02', 1.0 / (2.0 * 1.7),
+         'Line-averaged ne through vertical line at R=1.8m (FIR)'),
+    ]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ece_loader = None
@@ -26,6 +35,37 @@ class ElectronTimeTraceTab(TimeTraceBaseTab):
         self.tci_loader = None
         self.tci_data_cache = {}
         self.ts_ne_avg_cache = {}  # {shot: {'time': ndarray, 'data': ndarray}}
+        self.interf_cache = {}     # {shot: {ch_label: {'time': ndarray, 'data': ndarray}}}
+
+    def _load_interferometer(self, shot_number):
+        """Load line-averaged ne from interferometer nodes (\\NE_INTER01/02) for a
+        shot. Returns {ch_label: {'time', 'data'}} for channels that exist; nodes
+        missing for the shot are silently skipped. Result cached per shot."""
+        if shot_number in self.interf_cache:
+            return self.interf_cache[shot_number]
+
+        result = {}
+        try:
+            from MDSplus import Connection
+            mds = Connection(self.app_config.MDS_IP)
+            mds.openTree('kstar', shot_number)
+            for ch_label, node, scale, _desc in self.INTERFEROMETER_CHANNELS:
+                try:
+                    data = np.asarray(mds.get(node).data(), dtype=float) * scale
+                    time = np.asarray(mds.get(f'dim_of({node})').data(), dtype=float)
+                    if time.size > 0 and data.shape == time.shape:
+                        result[ch_label] = {'time': time, 'data': data}
+                except Exception as e:
+                    print(f"[Interf] {ch_label} ({node}) not available: {str(e).strip()[:60]}")
+            try:
+                mds.closeTree('kstar', shot_number)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[Interf] MDS connection failed for #{shot_number}: {str(e)}")
+
+        self.interf_cache[shot_number] = result
+        return result
 
     def _create_shot_input(self, parent):
         """Create data loading section with diagnostic selection"""
@@ -59,11 +99,11 @@ class ElectronTimeTraceTab(TimeTraceBaseTab):
         apply_shot_arrow_icons(up_btn, down_btn)
         grid.addWidget(btn_updown, 0, 2)
 
-        diag_options = ['TS', 'ECE (100Hz)', 'ECE (1kHz)', 'TCI (100Hz)', 'TCI (1kHz)']
+        diag_options = ['TS', 'ECE (100Hz)', 'ECE (1kHz)', 'Interferometer']
         self.diag_combo = QComboBox()
         self.diag_combo.addItems(diag_options)
         self.diag_combo.setCurrentText('TS')
-        self.diag_combo.setFixedWidth(110)
+        self.diag_combo.setFixedWidth(120)
         grid.addWidget(self.diag_combo, 0, 3)
 
         self.fetch_button = QPushButton('Fetch')
@@ -112,10 +152,18 @@ class ElectronTimeTraceTab(TimeTraceBaseTab):
             load_thomson = False
             load_ece = False
             load_tci = False
+            load_interf = False
             sampling_rate = None
             sampling_key = None
+            tci_rates = []   # (sampling_rate, sampling_key) pairs to load for TCI
 
-            if selection.startswith('ECE'):
+            if selection == 'Interferometer':
+                # Single entry: load every interferometer-based ne that exists —
+                # mmW/FIR (\NE_INTER01/02) and TCI at both sampling rates.
+                load_interf = True
+                load_tci = True
+                tci_rates = [(0.01, '100Hz'), (0.001, '1kHz')]
+            elif selection.startswith('ECE'):
                 load_ece = True
                 if '100Hz' in selection:
                     sampling_rate = 0.01
@@ -125,14 +173,6 @@ class ElectronTimeTraceTab(TimeTraceBaseTab):
                     sampling_key = '1kHz'
             elif selection == 'TS':
                 load_thomson = True
-            elif selection.startswith('TCI'):
-                load_tci = True
-                if '100Hz' in selection:
-                    sampling_rate = 0.01
-                    sampling_key = '100Hz'
-                else:  # 1kHz
-                    sampling_rate = 0.001
-                    sampling_key = '1kHz'
 
             if load_thomson:
                 # Load Thomson data
@@ -208,28 +248,49 @@ class ElectronTimeTraceTab(TimeTraceBaseTab):
                     print(f"[ECE] Not available: {str(e)}")
 
             if load_tci:
-                # Load TCI data with resampling
+                # Load TCI for each requested sampling rate (both, under Interferometer)
+                for tci_rate, tci_key in tci_rates:
+                    try:
+                        loader = self._get_tci_loader()
+                        tci_data = loader.load_data(shot_number, sampling_rate=tci_rate)
+                        cache_key = f'{shot_number}_TCI_{tci_key}'
+                        self.tci_data_cache[cache_key] = tci_data
+
+                        channels = tci_data.measurements['ne']['channels']
+                        for i, ch in enumerate(channels):
+                            ch_label = f'TCI{ch:02d}'
+                            all_channels.append({
+                                'R': ch,  # Use channel number for sorting
+                                'label': f'{shot_number:06d} ({ch_label}) [{tci_key}]',
+                                'source': 'TCI',
+                                'channel_idx': i,
+                                'ch_label': ch_label,
+                                'sampling_key': tci_key
+                            })
+
+                        print(f"[TCI] Data loaded: {len(channels)} channels @ {tci_key}")
+                    except Exception as e:
+                        print(f"[TCI] {tci_key} Not available: {str(e)}")
+
+            if load_interf:
+                # Line-averaged ne from interferometers (load if the node exists)
                 try:
-                    loader = self._get_tci_loader()
-                    tci_data = loader.load_data(shot_number, sampling_rate=sampling_rate)
-                    cache_key = f'{shot_number}_TCI_{sampling_key}'
-                    self.tci_data_cache[cache_key] = tci_data
-
-                    channels = tci_data.measurements['ne']['channels']
-                    for i, ch in enumerate(channels):
-                        ch_label = f'TCI{ch:02d}'
-                        all_channels.append({
-                            'R': ch,  # Use channel number for sorting
-                            'label': f'{shot_number:06d} ({ch_label}) [{sampling_key}]',
-                            'source': 'TCI',
-                            'channel_idx': i,
-                            'ch_label': ch_label,
-                            'sampling_key': sampling_key
-                        })
-
-                    print(f"[TCI] Data loaded: {len(channels)} channels @ {sampling_key}")
+                    interf = self._load_interferometer(shot_number)
+                    for ch_label, _node, _scale, _desc in self.INTERFEROMETER_CHANNELS:
+                        if ch_label in interf:
+                            all_channels.append({
+                                'R': -1,  # no R; group ahead of TS/ECE
+                                'label': f'{shot_number:06d} ({ch_label})',
+                                'source': 'INTERF',
+                                'channel_idx': 0,
+                                'ch_label': ch_label,
+                            })
+                    if interf:
+                        print(f"[Interf] Loaded: {', '.join(interf.keys())}")
+                    else:
+                        print(f"[Interf] No interferometer data for #{shot_number}")
                 except Exception as e:
-                    print(f"[TCI] Not available: {str(e)}")
+                    print(f"[Interf] Not available: {str(e)}")
 
             if not all_channels:
                 self._set_status(f"No data for #{shot_number}", 'red')
@@ -296,6 +357,9 @@ class ElectronTimeTraceTab(TimeTraceBaseTab):
             source = 'TCI'
             channel = int(diag_label.replace('TCI', ''))
             return shot_number, channel, source, diag_label, sampling_key
+        elif diag_label in ('ne_mmW', 'ne_FIR'):
+            source = 'INTERF'
+            return shot_number, 0, source, diag_label, sampling_key
         else:
             # Fallback
             radius = float(parts[1]) / 1e3 if len(parts) > 1 and parts[1] else 0
@@ -368,6 +432,20 @@ class ElectronTimeTraceTab(TimeTraceBaseTab):
                     'shot': shot,
                     'source': 'TCI',
                 })
+
+        # Interferometer line-averaged ne (no R; on ne axis) — only if fetched
+        interf = self.interf_cache.get(shot, {})
+        for ch_label, cached in interf.items():
+            channels.append({
+                'entry': f'{shot:06d} ({ch_label})',
+                'label': ch_label,
+                'time': cached['time'],
+                'param1': None,
+                'param2': cached['data'],
+                'R': None,
+                'shot': shot,
+                'source': 'INTERF',
+            })
 
         # Sort by R when available (TS, ECE), then by entry for the rest (TCI)
         channels.sort(key=lambda c: (c.get('R') is None, c.get('R') or 0, c['entry']))
@@ -535,6 +613,21 @@ class ElectronTimeTraceTab(TimeTraceBaseTab):
                         self.ax2.plot(x_data, ne_trace, '-', color=color,
                                      linewidth=1.5, label=label, zorder=5)
 
+                elif source == 'INTERF':
+                    # Line-averaged ne from interferometer (\NE_INTER01/02)
+                    interf = self._load_interferometer(shot_number)
+                    cached = interf.get(ch_label)
+                    if cached is None:
+                        continue
+                    x_data = cached['time']
+                    ne_trace = cached['data']
+
+                    ne_max = max(ne_max, np.nanpercentile(ne_trace, 98))
+
+                    label = f'#{shot_number} ({ch_label})'
+                    self.ax2.plot(x_data, ne_trace, '-', color=color,
+                                 linewidth=1.5, label=label, zorder=5)
+
             except Exception as e:
                 print(f"[ne/Te] Error plotting {entry}: {str(e)}")
 
@@ -646,4 +739,14 @@ class ElectronTimeTraceTab(TimeTraceBaseTab):
                             f.write(" %10d,%10.3f,%10s,%10s,%10s,%10s,%10.3f,%10s,%10s,%10s\n" % (
                                 shot_number, tci_data.time[i], 'NaN',
                                 'NaN', 'NaN', 'NaN', ne_trace[i], 'NaN', 'NaN', 'TCI'
+                            ))
+
+                elif source == 'INTERF':
+                    interf = self._load_interferometer(shot_number)
+                    cached = interf.get(ch_label)
+                    if cached is not None:
+                        for i in range(len(cached['time'])):
+                            f.write(" %10d,%10.3f,%10s,%10s,%10s,%10s,%10.3f,%10s,%10s,%10s\n" % (
+                                shot_number, cached['time'][i], 'NaN',
+                                'NaN', 'NaN', 'NaN', cached['data'][i], 'NaN', 'NaN', ch_label
                             ))

@@ -132,7 +132,7 @@ class IonTimeTraceTab(TimeTraceBaseTab):
         apply_shot_arrow_icons(up_btn, down_btn)
         grid.addWidget(btn_updown, 0, 2)
 
-        analysis_types = list(self.diag_config['analysis_types'].keys())
+        analysis_types = list(self.diag_config['analysis_types'].keys()) + ['XICS']
         self.analysis_combo = QComboBox()
         self.analysis_combo.addItems(analysis_types)
         self.analysis_combo.setCurrentText('mod')
@@ -178,48 +178,42 @@ class IonTimeTraceTab(TimeTraceBaseTab):
             QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
             return
 
-        analysis_type = self.analysis_combo.currentText()
-        self._set_status(f"Loading #{shot_number} ({analysis_type})...", 'blue')
+        selection = self.analysis_combo.currentText()
+        self._set_status(f"Loading #{shot_number} ({selection})...", 'blue')
         ces_loaded = False
         xics_loaded = False
         data = None
         xics_data = None
+        analysis_type = selection if selection != 'XICS' else None
 
-        # Try to load CES data
-        try:
-            data = self.data_loader.load_data(shot_number, analysis_type)
-            cache_key = f'{shot_number}_{analysis_type}'
-            self.data[cache_key] = data
-            ces_loaded = True
-            print(f"[CES] {analysis_type} Data loaded: {len(data.radius)} channels, {len(data.time)} timepoints")
-        except Exception as e:
-            print(f"[CES] {analysis_type} Not available: {str(e)}")
+        # Load only the selected diagnostic; load if present, skip if not.
+        if selection == 'XICS':
+            try:
+                loader = self._get_xics_loader()
+                xics_data = loader.load_data(shot_number)
+                if xics_data is not None:
+                    self.xics_data_cache[f'{shot_number}_XICS'] = xics_data
+                    xics_loaded = True
+                    print(f"[XICS] Data loaded: {len(xics_data.time)} timepoints")
+            except Exception as e:
+                print(f"[XICS] Not available: {str(e)}")
+        else:
+            try:
+                data = self.data_loader.load_data(shot_number, analysis_type)
+                self.data[f'{shot_number}_{analysis_type}'] = data
+                ces_loaded = True
+                print(f"[CES] {analysis_type} Data loaded: {len(data.radius)} channels, {len(data.time)} timepoints")
+            except Exception as e:
+                print(f"[CES] {analysis_type} Not available: {str(e)}")
 
-        # Try to load XICS data
-        try:
-            loader = self._get_xics_loader()
-            xics_data = loader.load_data(shot_number)
-            if xics_data is not None:
-                xics_cache_key = f'{shot_number}_XICS'
-                self.xics_data_cache[xics_cache_key] = xics_data
-                xics_loaded = True
-                print(f"[XICS] Data loaded: {len(xics_data.time)} timepoints")
-        except Exception as e:
-            print(f"[XICS] Not available: {str(e)}")
-
-        # Check if any data loaded
+        # Check if data loaded
         if not ces_loaded and not xics_loaded:
-            self._set_status(
-                f"No CES ({analysis_type}) or XICS data for #{shot_number}", 'red')
-            QMessageBox.critical(self.frame, "Error", f"No CES ({analysis_type}) or XICS data available for shot #{shot_number}")
+            self._set_status(f"No {selection} data for #{shot_number}", 'red')
+            QMessageBox.critical(self.frame, "Error",
+                                 f"No {selection} data available for shot #{shot_number}")
             return
 
-        sources = []
-        if ces_loaded:
-            sources.append(f"CES ({analysis_type})")
-        if xics_loaded:
-            sources.append("XICS")
-        self._set_status(f"#{shot_number} loaded: {', '.join(sources)}", 'green')
+        self._set_status(f"#{shot_number} loaded ({selection})", 'green')
 
         # Build list of all channels with R positions
         all_channels = []
@@ -252,7 +246,7 @@ class IonTimeTraceTab(TimeTraceBaseTab):
             self.browse_button.setEnabled(True)
             self.browse_button.setText(f"Browse #{shot_number}")
             self._last_shot = shot_number
-            self._last_source = analysis_type
+            self._last_source = selection
 
     def load_file_data(self):
         """Load CES data from result file, sorted by R"""

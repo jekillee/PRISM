@@ -33,32 +33,18 @@ BibTeX:
 
 ## Features
 
-- **Modular Architecture**: Easily extensible for new diagnostics
-- **Sidebar Navigation**: Categorized tree view with on-demand tabs
-- **Profile & Time Trace Views**: For each diagnostic system
-- **EFIT Mapping**: Support for multiple EFIT trees (efitrt1, efitrt2, efit01, efit02, efit04)
-- **Multiple Data Sources**: MDS+ and file-based data
-- **Unified Thomson/ECE Viewer**: Overlay ECE data on Thomson profiles
-- **IP Fault Time Masking**: Automatic filtering of post-discharge data
-- **Spectrogram Analysis**: FFT-based spectrogram for ECE, Mirnov, BES, TCI, ECEI
-- **n-Mode Spectrum Analysis**: Toroidal mode number analysis from Mirnov coils, with selectable per-mode amplitude (peak/**Max** or band-sum/**Sum**)
-- **Headless n-Mode Batch**: Compute n-mode spectra without the GUI via `prism nmode` (single shot, `--shots`, or `--shot-range`), caching one `.npz` per shot under `~/prism_results/nmode/` (same layout as the GUI's saved NPZ). Also a Python SDK: `from batch import run, run_many, NModeJobSpec`
-- **Raw-Mirnov archive**: Mirnov coil signals are auto-archived to the PRISM NAS (`/PRISM/mirnov_archive/`) on first load (HDF5, int16+blosc-zstd); subsequent n-mode runs read the local archive instead of MDS+
-- **TV Image Viewer**: Sequential image viewer for visible camera data with line drawing
-- **TV Startup Comparison**: Compare plasma startup sequences across multiple shots
-- **IRVB Viewer**: 2D radiation profile with EFIT overlay and regional Prad analysis
-- **Profile Fitting**: mtanh, ptanh, EPED, spline, RBF, GPR with PRISM-style pedestal output (Height / Top / Foot / Width / Location in normalized + physical units, ± uncertainties). Optional **SOL (Scrape-off Layer) tail** post-processing — adds a continuous linear decay for ψ_N > 1 with a fittable slope (Value / Min / Max / Fix)
-- **X-axis Selection**: R / ψ_N / ρ_pol / ρ_tor radio buttons in profile plot section. Fit-overlay tracks the axis it was fit on (no mismatched curves)
-- **Interactive Channel Toggle**: Double-click data points to exclude/include channels from fitting
-- **Dark/Light Theme**: Runtime theme switching with persistence (now covering QSpinBox/QDoubleSpinBox)
-- **Data Preview & Save**: Spreadsheet-style preview before exporting data, with p-file (PEQDSK) format export for fitted profiles
-- **Figure Save**: Custom matplotlib toolbar with PNG / SVG / EPS save buttons
-- **Profile Browse**: 2D / 3D toggle (mpl_toolkits surface) with slider playback. **Dα signal selector** dropdown (`\TOR_HA*`, `\POL_HA*`, `\DIV_KHA*`, `\DIV_GHA*`) with raw-data (`:FOO`) toggle for inter-ELM window selection
-- **Time Averaging**: dt-based profile averaging for fitting and visualization with proper RMS error propagation. Markers reflect the same averaged data used in the fit
-- **Collapsible Sidebar**: Expand/collapse category groups with state persistence
-- **TRANSP Viewer**: Two-pane workflow — **Input > UFILE** loads a TRANSP run directory and dispatches by UFILE type (1D time traces, profile×time with 2D/3D radio, NBI/ECP heating multi-channel, MMX Fourier-reconstructed flux surfaces, LIM auto-overlay); **Output** tabs handle CDF files for profiles and time traces with variable filter/search and cross-run comparison
-- **EFIT Viewer**: Time traces (AEQDSK scalars), profiles (GEQDSK), 2D equilibrium contours with rational-surface overlay (q = 1, 3/2, 2, 5/2, 3, 4, 5), and p-file viewer with MDS+ and file support. Multi-tree accumulation across efitrt1/efit01/...; cgs↔SI auto-detection
-- **Grouped Sidebar**: Collapsible groups (Diagnostics/EFIT/BiProfile/TRANSP) with expand/collapse state persistence
+- **Modular, sidebar-driven GUI** — categorized tree (Diagnostics / EFIT / BiProfile / TRANSP) with on-demand tabs, collapsible groups, and dark/light themes; all UI state persists across sessions.
+- **Profile & time-trace views for every diagnostic** — selectable R / ψ_N / ρ_pol / ρ_tor x-axis with EFIT mapping across multiple trees (efitrt1/2, efit01/02/04) and automatic IP-fault time masking.
+- **Electron & ion diagnostics** — ne/Te from Thomson + ECE, Ti/vT from CES + XICS, and line-averaged density via the **Interferometer** group (TCI, mm-wave, FIR).
+- **Profile fitting** — mtanh / ptanh / EPED / spline / RBF / GPR with PRISM-style pedestal output (height / top / foot / width / location in normalized + physical units, ± uncertainties) and an optional SOL-tail; interactive channel toggle, dt time-averaging with RMS error propagation, and 2D/3D browse with playback.
+- **Spectral analysis** — FFT spectrogram (ECE, Mirnov, BES, TCI, ECEI) and toroidal **n-mode spectrum** from Mirnov coils with selectable per-mode amplitude (peak/Max or band-sum/Sum).
+- **Headless n-mode batch + SDK** — compute spectra without the GUI via `prism nmode` (single / `--shots` / `--shot-range`) or `from batch import run, run_many, NModeJobSpec`; one `.npz` per shot under `~/prism_results/nmode/`.
+- **Raw-Mirnov NAS archive** — coil signals are auto-archived to `/PRISM/mirnov_archive/` on first load (HDF5, int16 + blosc-zstd); later n-mode runs read the local archive instead of MDS+.
+- **Imaging** — TV visible-camera viewer with startup comparison, and IRVB 2D radiation profile with EFIT overlay and regional P_rad analysis.
+- **EFIT viewer** — AEQDSK scalars, GEQDSK profiles, 2D equilibrium contours with rational-surface overlay (q = 1, 3/2, 2, 5/2, 3, 4, 5), and p-file; multi-tree accumulation with cgs↔SI auto-detection.
+- **BiProfile & derived quantities** — bundled Ti/vT/ne/Te profiles plus neoclassical/transport derived quantities (pressures, gradients, β, ν*, E_r, bootstrap current, …).
+- **TRANSP viewer** — UFILE input (1D traces, profile×time, NBI/ECP, MMX flux surfaces, LIM overlay) and CDF output (profiles, time traces, cross-run comparison).
+- **Data & figure export** — spreadsheet-style preview before export, text and PEQDSK p-file output, and PNG / SVG / EPS figure save.
 
 ## Supported Diagnostics
 
@@ -72,6 +58,7 @@ BibTeX:
 | MSE | Motional Stark Effect | gamma, q, j |
 | BES | Beam Emission Spectroscopy | Spectrogram |
 | TCI | Two-Color Interferometer | ne, Spectrogram |
+| Interferometer | mm-wave (midplane) / FIR (R=1.8 m) | ne (line-averaged) |
 | Mirnov | Magnetic Probes | Spectrogram, n-mode |
 | Neutron | Fusion Neutron (near J-port) | Fission, He3, Diamond |
 | TV | Visible Camera (IVIS) | Image sequence |
@@ -189,10 +176,10 @@ PRISM/
 │   ├── tci_loader.py            # TCI loader
 │   ├── irvb_loader.py           # IRVB loader
 │   ├── neutron_loader.py        # Neutron loader
-│   ├── efit_loader.py           # EFIT loader
-│   ├── biprofile_loader.py     # BiProfile loader (BIPROFILE + DIAG_PARAMS + raw)
-│   ├── transp_cdf_loader.py   # TRANSP CDF (netCDF) loader
-│   └── efit_viewer_loader.py  # EFIT viewer loader (MDS+, g-file, a-file)
+│   ├── efit_loader.py           # EFIT loader (profile-mapping ψ_N)
+│   ├── biprofile_loader.py      # BiProfile loader (BIPROFILE + DIAG_PARAMS + raw)
+│   ├── transp_cdf_loader.py     # TRANSP CDF (netCDF) loader
+│   └── efit_viewer_loader.py    # EFIT viewer loader (MDS+, g-file, a-file)
 ├── ui/
 │   ├── theme.py                       # Theme manager (dark/light QSS, palette, mpl)
 │   ├── ui_constants.py                # UI constants and helpers
@@ -213,22 +200,22 @@ PRISM/
 │       │   │   ├── electron_profile_tab.py   # Electron (ne, Te) profile  (Thomson + ECE)
 │       │   │   └── mse_profile_tab.py        # MSE q/j profile
 │       │   ├── timetraces/
-│       │   │   ├── ion_timetrace_tab.py
-│       │   │   ├── electron_timetrace_tab.py
-│       │   │   ├── mse_timetrace_tab.py
-│       │   │   └── neutron_timetrace_tab.py
+│       │   │   ├── ion_timetrace_tab.py        # Ion Ti/vT time trace  (CES + XICS)
+│       │   │   ├── electron_timetrace_tab.py   # Electron ne/Te time trace  (Thomson/ECE/Interferometer)
+│       │   │   ├── mse_timetrace_tab.py        # MSE q/j time trace
+│       │   │   └── neutron_timetrace_tab.py    # Neutron rate time trace
 │       │   ├── spectral/
-│       │   │   ├── spectrogram_tab.py
-│       │   │   └── nmode_spectrum_tab.py
+│       │   │   ├── spectrogram_tab.py          # FFT spectrogram (ECE/Mirnov/BES/TCI/ECEI)
+│       │   │   └── nmode_spectrum_tab.py       # Toroidal n-mode spectrum (Mirnov)
 │       │   └── imaging/
-│       │       ├── tv_tab.py
-│       │       ├── tv_startup_tab.py
-│       │       ├── tv_utils.py
-│       │       └── irvb_tab.py
+│       │       ├── tv_tab.py                   # TV visible-camera image viewer
+│       │       ├── tv_startup_tab.py           # TV startup comparison
+│       │       ├── tv_utils.py                 # TV image helpers
+│       │       └── irvb_tab.py                 # IRVB 2D Prad viewer
 │       ├── biprofile/
-│       │   ├── biprofile_profile_tab.py
-│       │   ├── biprofile_timetrace_tab.py
-│       │   └── biprofile_derived_profile_tab.py
+│       │   ├── biprofile_profile_tab.py        # BiProfile Ti/vT, ne/Te profiles
+│       │   ├── biprofile_timetrace_tab.py      # BiProfile time traces
+│       │   └── biprofile_derived_profile_tab.py # Derived quantities (neoclassical, transport)
 │       ├── transp/
 │       │   ├── transp_profile_tab.py         # CDF Output - Profiles
 │       │   ├── transp_timetrace_tab.py       # CDF Output - Time Traces
@@ -293,5 +280,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- KSTAR Diagnostics Team at KFE
-- Contributors to the diagnostic data analysis routines
+This research was supported by the R&D Programs "High Performance Tokamak Plasma Research & Development (EN2601-17)" and "Korea-US Collaboration Research for High Performance Plasma on Tungsten Divertor (EN2603-02)" through the Korea Institute of Fusion Energy (KFE), and by the National Research Foundation (NRF) (No. RS-2026-25545529), funded by the Korean government (MSIT), Republic of Korea.

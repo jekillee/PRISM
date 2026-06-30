@@ -5,6 +5,18 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.3] - 2026-06-30
+
+### Added — Interferometer line-averaged density (Electron Time Trace)
+- New **Interferometer** entry in the Electron (ne, Te) Time Trace diagnostic dropdown. Selecting it and fetching loads — only when the node exists for the shot — the line-averaged electron density signals:
+  - **ne_mmW** = `\NE_INTER01 / 2` — line-averaged ne at midplane (mm-wave interferometer)
+  - **ne_FIR** = `\NE_INTER02 / (2·1.7)` — line-averaged ne through the vertical line at R=1.8 m (FIR)
+  - **TCI** channels at both 100 Hz and 1 kHz
+- Missing signals are skipped silently (load-if-present). The two former standalone TCI dropdown entries are consolidated into this single Interferometer entry, so all line-averaged-density sources live under one selection. Plotted on the ne axis; included in Browse preview and text export.
+
+### Changed — Ion Time Trace: XICS is a dropdown selection
+- In the Ion (Ti, vT) Time Trace tab, **XICS** is now chosen from the analysis dropdown (`mod` / `nn` / `XICS`) and loaded only when selected (load-if-present), matching the TCI/Interferometer behaviour. Previously XICS was loaded automatically alongside CES on every fetch.
+
 ## [2.6.2] - 2026-06-30
 
 ### Added — Raw-Mirnov NAS archive (skip MDS+ re-downloads)
