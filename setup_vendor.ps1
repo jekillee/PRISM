@@ -92,6 +92,8 @@ $CorePackages = @(
     'Pillow',
     'netCDF4',
     'scikit-learn',
+    'h5py',                  # raw-Mirnov NAS archive (manylinux wheel bundles libHDF5; gzip built-in)
+    'hdf5plugin',            # blosc-zstd filter for the archive (default compression)
     # Conditional deps that pip cross-install (`--python-version 3.8` on
     # a Windows 3.10 host) skips because environment markers are evaluated
     # against the host Python, not the target. Explicitly listing them

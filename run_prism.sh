@@ -56,10 +56,10 @@ fi
 export PYTHONPATH="$PRISM_HOME"
 export PYTHONNOUSERSITE=1
 
-# Headless batch archive root (n-mode result cache). Lives under the shared
-# /tmp/prism tree (alongside /tmp/prism/irvb). Override by exporting
-# PRISM_ARCHIVE_ROOT before launching. (/tmp is ephemeral — a cache, not storage.)
-export PRISM_ARCHIVE_ROOT="${PRISM_ARCHIVE_ROOT:-/tmp/prism}"
+# n-mode batch results default to ~/prism_results/nmode/ (config.app_config
+# PRISM_RESULTS_ROOT). We intentionally do NOT force PRISM_ARCHIVE_ROOT here so
+# that per-user default applies; export PRISM_ARCHIVE_ROOT before launching to
+# override. (Raw Mirnov archive: /PRISM/mirnov_archive; IRVB cache: /PRISM/irvb.)
 
 # Suppress WAYLAND_DISPLAY warning on Gnome (NoMachine)
 unset WAYLAND_DISPLAY
@@ -131,7 +131,7 @@ show_help() {
     echo "    --frac F                  amplitude threshold fraction (default 0.01)"
     echo "    --integrate               integrate dB/dt -> B"
     echo "    --no-detrend              disable per-window detrend"
-    echo "  Output: \$PRISM_ARCHIVE_ROOT/nmode/nmode_<shot>.npz  (default /tmp/prism)"
+    echo "  Output: \$PRISM_ARCHIVE_ROOT/nmode/nmode_<shot>.npz  (default ~/prism_results)"
     echo "  Full per-flag help: prism nmode -h"
     echo "  Examples:"
     echo "    prism nmode --shot 40848                          # full shot, defaults"
@@ -145,7 +145,11 @@ show_help() {
     echo "  File   TV images, TRANSP UFILE dirs, TRANSP CDF, EFIT g/a/p-files"
     echo ""
     echo "Settings:  ~/.config/prism/settings.json"
-    echo "Env:       PRISM_ARCHIVE_ROOT = n-mode cache root (default /tmp/prism)"
+    echo "Archives:"
+    echo "    n-mode results    ~/prism_results/nmode/      (per-user; \$PRISM_ARCHIVE_ROOT overrides)"
+    echo "    raw Mirnov        /PRISM/mirnov_archive/     (shared, auto-saved on first load)"
+    echo "    IRVB cache        /PRISM/irvb/               (shared)"
+    echo "Env:       PRISM_ARCHIVE_ROOT = n-mode result root (default ~/prism_results)"
     echo ""
     echo "Jekil Lee (jklee@kfe.re.kr)"
     echo ""

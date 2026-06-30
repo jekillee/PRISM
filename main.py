@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 """
-PRISM v2.6.0
+PRISM v2.6.2
 Main entry point
 
 Plasma Research Integrated System for Multi-diagnostics

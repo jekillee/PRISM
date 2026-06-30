@@ -18,9 +18,10 @@ from batch.compute import compute_nmode
 from batch.results import NModeResult
 
 try:
-    from config.app_config import PRISM_TMP_ROOT, ensure_shared_dir
+    from config.app_config import PRISM_TMP_ROOT, PRISM_RESULTS_ROOT, ensure_shared_dir
 except Exception:  # pragma: no cover - config should always import (Qt-free)
     PRISM_TMP_ROOT = "/tmp/prism"
+    PRISM_RESULTS_ROOT = os.path.expanduser("~/prism_results")
     def ensure_shared_dir(path, mode=0o777):
         os.makedirs(path, exist_ok=True)
         return path
@@ -41,11 +42,11 @@ class JobOutcome:
 
 
 def _resolve_archive_root(archive_root):
-    # Precedence: explicit arg > $PRISM_ARCHIVE_ROOT > the shared /tmp/prism default.
-    root = archive_root or os.environ.get("PRISM_ARCHIVE_ROOT") or PRISM_TMP_ROOT
-    # When using the shared default tree, make the root + nmode/ subdir world-writable
-    # so multiple users on nkstar/ukstar share one /tmp/prism (nmode files land in
-    # <root>/nmode/<shot>/). A user-supplied root is left untouched.
+    # Precedence: explicit arg > $PRISM_ARCHIVE_ROOT > per-user /PRISM/<user>.
+    root = archive_root or os.environ.get("PRISM_ARCHIVE_ROOT") or PRISM_RESULTS_ROOT
+    # Only the legacy shared /tmp/prism tree is made world-writable (multi-user
+    # shared cache). The per-user /PRISM/<user> default is owned by the user, and
+    # an explicitly supplied root is left untouched.
     if os.path.abspath(root) == os.path.abspath(PRISM_TMP_ROOT):
         ensure_shared_dir(PRISM_TMP_ROOT)
         ensure_shared_dir(os.path.join(root, "nmode"))

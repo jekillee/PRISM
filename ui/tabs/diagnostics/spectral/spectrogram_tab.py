@@ -1066,6 +1066,7 @@ class SpectrogramTab:
         elapsed = tclock.time() - t0
         self._update_status(f'Done ({elapsed:.1f}s)', 'green')
         print(f"[Spectrogram] Completed in {elapsed:.2f}s")
+        print("[Spectrogram] " + "=" * 60 + "\n")
 
         # Enable save button
         self.save_button.setEnabled(True)

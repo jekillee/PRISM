@@ -16,6 +16,9 @@ same value as the default so existing callers are unaffected.
 """
 
 import json
+import os
+import getpass
+from datetime import datetime
 from pathlib import Path
 import time as tclock
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -23,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 from scipy.signal import detrend
 from scipy.fft import fft
+from scipy.ndimage import uniform_filter
 # NOTE: MDSplus is imported lazily inside _load_single_channel so this module can be
 # imported (and its FFT / mode-number math used) on a host without MDSplus.
 
@@ -39,6 +43,10 @@ with open(_MIRNOV_CONFIG_PATH, 'r') as f:
 class NModeConfig:
     """N-Mode spectrum configuration"""
     MDS_SERVER = 'mdsr.kstar.kfe.re.kr:8005'
+
+    # Local raw-Mirnov archive (PRISM NAS, mounted at /PRISM on nkstar & ukstar).
+    # If a shot's archive exists here it is read instead of MDS+.
+    ARCHIVE_DIR = '/PRISM/mirnov_archive'
 
     DEFAULT_SHOT = 0
     DEFAULT_TMIN = 0.0
@@ -162,41 +170,303 @@ def _load_single_channel(args):
         }
 
 
-def load_mirnov_data(shot, tmin, tmax, *, mds_server=None):
-    """Load Mirnov coil data from MDS+ with parallel processing"""
+# =============================================================================
+# Raw-Mirnov NAS archive (HDF5)
+# =============================================================================
+
+def _archive_path(shot, archive_dir):
+    """Path of a shot's archive file inside archive_dir."""
+    return os.path.join(archive_dir, f"mirnov_{shot}.h5")
+
+
+def _compression_kwargs(compression):
+    """h5py create_dataset compression kwargs. Default is blosc-zstd (fastest to
+    write AND smallest: ~1s / ~760MB per full shot) via hdf5plugin. If hdf5plugin
+    is not installed it falls back to lzf (built into h5py, ~2s / ~1140MB) so a
+    write never fails. gzip (~37s / ~940MB) and none are also selectable."""
+    if compression in (None, 'none'):
+        return {}
+    if compression == 'gzip':
+        return {'compression': 'gzip', 'compression_opts': 4}
+    if compression == 'lzf':
+        return {'compression': 'lzf'}
+    # default / 'zstd' / 'blosc': blosc-zstd, falling back to lzf without the plugin
+    try:
+        import hdf5plugin
+        return dict(hdf5plugin.Blosc(cname='zstd', clevel=5,
+                                     shuffle=hdf5plugin.Blosc.BITSHUFFLE))
+    except Exception:
+        print("[n-Mode] hdf5plugin unavailable; using lzf instead of blosc-zstd")
+        return {'compression': 'lzf'}
+
+
+def _chmod_quiet(path, mode):
+    """Best-effort chmod so a shared NAS archive stays writable by all users.
+    Failures (e.g. not the owner) are ignored."""
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        pass
+
+
+def _ensure_archive_dir(archive_dir):
+    """Create the archive dir and make it world-writable so any user can add /
+    refresh shots in the shared NAS archive."""
+    os.makedirs(archive_dir, exist_ok=True)
+    _chmod_quiet(archive_dir, 0o777)
+
+
+def _set_archive_attrs(f, shot, year, mds_server):
+    """Write file-level provenance attributes."""
+    f.attrs['shot'] = shot
+    f.attrs['year'] = year
+    f.attrs['mds_server'] = mds_server
+    f.attrs['units'] = 'physical = int16 * scale (polarity applied at load)'
+    f.attrs['created'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    f.attrs['created_by'] = getpass.getuser()
+
+
+def _write_channel(f, name, raw, t, comp):
+    """Write one raw (polarity-free) channel as int16 + scale/timebase attrs."""
+    raw = np.asarray(raw)
+    n = raw.size
+    t0 = float(t[0])
+    dt = float((t[100] - t[0]) / 100.0) if n > 100 else float((t[-1] - t[0]) / max(n - 1, 1))
+    m = float(np.max(np.abs(raw))) or 1.0
+    scale = m / 32767.0
+    q = np.round(raw / scale).astype(np.int16)
+    ds = f.create_dataset(name, data=q, chunks=(min(1_000_000, n),), **comp)
+    ds.attrs.update({'scale': scale, 't0': t0, 'dt': dt, 'n': n})
+
+
+def _auto_archive_from_results(shot, results, archive_dir, mds_server, compression='zstd'):
+    """Archive an MDS+ download to the NAS so later loads skip MDS+. Best-effort:
+    any failure (no h5py, unwritable NAS, partial data) is logged and ignored so
+    it never breaks the analysis. Skips if an archive already exists.
+
+    `results` come from the MDS+ path where data = raw*sign; the stored value is
+    raw (sign removed) so the read path can re-apply the current config polarity.
+    """
+    if not archive_dir:
+        return
+    path = _archive_path(shot, archive_dir)
+    if os.path.isfile(path):
+        return
+    try:
+        import h5py
+    except Exception:
+        return
+    tmp = path + '.tmp'
+    try:
+        _ensure_archive_dir(archive_dir)
+        year = get_shot_year(shot)
+        comp = _compression_kwargs(compression)
+        with h5py.File(tmp, 'w') as f:
+            _set_archive_attrs(f, shot, year, mds_server)
+            for r in results:
+                if r.get('error') or r.get('data') is None:
+                    continue
+                raw = np.asarray(r['data']) * np.float32(r['sign'])   # data was raw*sign
+                _write_channel(f, r['name'], raw, r['time'], comp)
+        os.replace(tmp, path)
+        _chmod_quiet(path, 0o666)   # let other users overwrite/refresh
+        size_mb = os.path.getsize(path) / 1024 / 1024
+        print(f"[n-Mode] Auto-archived shot #{shot} -> {path} ({size_mb:.0f} MB)")
+    except Exception as e:
+        print(f"[n-Mode] Auto-archive skipped ({e})")
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+
+
+def archive_info(shot, archive_dir=None):
+    """Return archive provenance for a shot ({created, created_by, shot, year,
+    n_channels, size_mb, path}) or {} if not archived. Read-only, no data load."""
+    if archive_dir is None:
+        archive_dir = NModeConfig.ARCHIVE_DIR
+    path = _archive_path(shot, archive_dir)
+    if not os.path.isfile(path):
+        return {}
+    try:
+        import h5py
+        with h5py.File(path, 'r') as f:
+            info = {k: f.attrs.get(k) for k in ('shot', 'year', 'created', 'created_by', 'mds_server')}
+            info['n_channels'] = len(list(f.keys()))
+    except Exception:
+        return {}
+    info['path'] = path
+    info['size_mb'] = round(os.path.getsize(path) / 1024 / 1024, 1)
+    return info
+
+
+def _read_mirnov_archive(shot, tmin, tmax, archive_dir, config):
+    """Read the [tmin, tmax] window for a shot from its HDF5 archive.
+
+    Returns a results list compatible with the MDS+ loader (one dict per
+    channel), or None if no usable archive is present. Stored data is raw
+    int16*scale (no polarity); the current config sign/angle are applied here,
+    exactly as the MDS+ path does.
+    """
+    if not archive_dir:
+        return None
+    path = _archive_path(shot, archive_dir)
+    if not os.path.isfile(path):
+        return None
+    try:
+        import h5py
+    except Exception as e:
+        print(f"[n-Mode] Archive present but h5py unavailable ({e}); using MDS+")
+        return None
+    # Register the blosc-zstd filter so zstd-compressed archives can be read.
+    # Harmless (and unneeded) for lzf/gzip/uncompressed files if it's absent.
+    try:
+        import hdf5plugin  # noqa: F401
+    except Exception:
+        pass
+
+    results = []
+    try:
+        with h5py.File(path, 'r') as f:
+            # Normalize older ISO timestamps (2026-06-29T16:32:50) for display
+            created = str(f.attrs.get('created', 'unknown')).replace('T', ' ')
+            created_by = f.attrs.get('created_by', 'unknown')
+            print(f"[n-Mode] Loaded shot #{shot} from archive: {path}")
+            print(f"[n-Mode]   archived {created} by {created_by}")
+            for name, angle, sign in zip(config['names'], config['angles'], config['signs']):
+                if name not in f:
+                    continue
+                ds = f[name]
+                t0 = float(ds.attrs['t0']); dt = float(ds.attrs['dt'])
+                n = int(ds.attrs['n']); scale = float(ds.attrs['scale'])
+                i0 = 0 if tmin is None else max(0, int(np.floor((tmin - t0) / dt)))
+                i1 = n if tmax is None else min(n, int(np.ceil((tmax - t0) / dt)) + 1)
+                if i1 <= i0:               # requested window outside data -> take all
+                    i0, i1 = 0, n
+                raw = ds[i0:i1].astype(np.float32)
+                data = raw * np.float32(scale) * np.float32(sign)
+                time_arr = (t0 + dt * np.arange(i0, i1)).astype(np.float32)
+                results.append({'name': name, 'angle': angle, 'sign': sign,
+                                'data': data, 'time': time_arr,
+                                'n_points': len(data), 'error': None})
+    except Exception as e:
+        print(f"[n-Mode] Failed to read archive {path} ({e}); falling back to MDS+")
+        return None
+    return results if results else None
+
+
+def archive_mirnov(shot, *, mds_server=None, archive_dir=None, compression='zstd', overwrite=False):
+    """Download a full shot's toroidal Mirnov channels from MDS+ and archive them
+    to archive_dir as one HDF5 file (int16 + per-channel scale, blosc-zstd by default).
+
+    One-time operation; afterwards load_mirnov_data reads the shot from the
+    archive instead of MDS+. If the archive already exists it is kept and the
+    download is skipped unless overwrite=True (use that to re-download a shot).
+    Returns the archive file path.
+    """
+    import h5py
+    from MDSplus import Connection
+
     if mds_server is None:
         mds_server = NModeConfig.MDS_SERVER
+    if archive_dir is None:
+        archive_dir = NModeConfig.ARCHIVE_DIR
+    _ensure_archive_dir(archive_dir)
+
+    year = get_shot_year(shot)
+    config = get_mirnov_config(year)
+    names, angles, signs = config['names'], config['angles'], config['signs']
+    path = _archive_path(shot, archive_dir)
+    tmp = path + '.tmp'
+    comp = _compression_kwargs(compression)
+
+    if os.path.isfile(path) and not overwrite:
+        info = archive_info(shot, archive_dir)
+        print(f"[Archive] shot #{shot} already archived (archived {info.get('created','?')} "
+              f"by {info.get('created_by','?')}); skipping. Use overwrite=True to re-download.")
+        return path
+
+    print(f"[Archive] shot #{shot} (year {year}, {len(names)} ch) from MDS+ -> {path}")
+    t_start = tclock.time()
+    mds = Connection(mds_server)
+    mds.openTree('kstar', shot)
+    try:
+        with h5py.File(tmp, 'w') as f:
+            _set_archive_attrs(f, shot, year, mds_server)
+            for i, name in enumerate(names, 1):
+                raw = np.asarray(mds.get('\\' + name).data())
+                t = np.asarray(mds.get(f'dim_of(\\{name})').data())
+                _write_channel(f, name, raw, t, comp)
+                print(f"[Archive]   {i:>2d}/{len(names)} {name}  n={raw.size:,}", flush=True)
+    finally:
+        mds.closeTree('kstar', shot)
+    os.replace(tmp, path)
+    _chmod_quiet(path, 0o666)   # let other users overwrite/refresh
+    size_mb = os.path.getsize(path) / 1024 / 1024
+    print(f"[Archive] done: {path}  ({size_mb:.0f} MB, {tclock.time() - t_start:.0f}s)")
+    return path
+
+
+def load_mirnov_data(shot, tmin, tmax, *, mds_server=None, archive_dir=None, auto_archive=True):
+    """Load Mirnov coil data, preferring the local NAS archive over MDS+.
+
+    If an HDF5 archive for this shot exists under archive_dir (default
+    NModeConfig.ARCHIVE_DIR, the PRISM NAS), the requested [tmin, tmax] window is
+    read from it (partial read, no MDS+ traffic). Otherwise the data is fetched
+    from MDS+ in parallel and, when auto_archive is True, written to the archive
+    so subsequent loads of this shot skip MDS+. This applies equally to GUI and
+    batch/API runs. Set auto_archive=False to disable the automatic save.
+    """
+    if mds_server is None:
+        mds_server = NModeConfig.MDS_SERVER
+    if archive_dir is None:
+        archive_dir = NModeConfig.ARCHIVE_DIR
 
     year = get_shot_year(shot)
     config = get_mirnov_config(year)
     n_channels = len(config['names'])
 
-    print(f"[n-Mode] Loading Mirnov data for shot #{shot} (year {year})...")
-    print(f"[n-Mode]   Time range: {tmin:.2f} - {tmax:.2f} s")
-    print(f"[n-Mode]   Channels ({n_channels}):")
-    for i, (name, angle) in enumerate(zip(config['names'], config['angles']), 1):
-        print(f"[n-Mode]     {i:>2d}. {name}  {angle:>6.2f}°")
-    print(f"[n-Mode]   Threads: {n_channels}")
+    # --- Prefer the local archive (it prints its own provenance line) ---
+    results = _read_mirnov_archive(shot, tmin, tmax, archive_dir, config)
+    if results is None:
+        # Explain why we are going to MDS+ (not in archive / unreadable)
+        apath = _archive_path(shot, archive_dir) if archive_dir else None
+        if apath and not os.path.isfile(apath):
+            note = " (will auto-archive)" if auto_archive else ""
+            print(f"[n-Mode] Shot #{shot} not in archive ({apath}); fetching from MDS+{note}")
+        else:
+            print(f"[n-Mode] Archive for shot #{shot} unavailable; fetching from MDS+")
+        print(f"[n-Mode] Loading Mirnov data for shot #{shot} (year {year}) from MDS+ ...")
+        print(f"[n-Mode]   Time range: {tmin:.2f} - {tmax:.2f} s")
+        print(f"[n-Mode]   Channels ({n_channels}):")
+        for i, (name, angle) in enumerate(zip(config['names'], config['angles']), 1):
+            print(f"[n-Mode]     {i:>2d}. {name}  {angle:>6.2f}°")
+        print(f"[n-Mode]   Threads: {n_channels}")
 
-    args_list = [
-        (shot, name, angle, sign, tmin, tmax, mds_server)
-        for name, angle, sign in zip(config['names'], config['angles'], config['signs'])
-    ]
+        args_list = [
+            (shot, name, angle, sign, tmin, tmax, mds_server)
+            for name, angle, sign in zip(config['names'], config['angles'], config['signs'])
+        ]
 
-    results = []
-    completed = 0
-    t0 = tclock.time()
+        results = []
+        completed = 0
+        t0 = tclock.time()
 
-    with ThreadPoolExecutor(max_workers=n_channels) as executor:
-        futures = {executor.submit(_load_single_channel, args): args[1] for args in args_list}
-        for future in as_completed(futures):
-            results.append(future.result())
-            completed += 1
-            progress = completed / n_channels
-            bar = '█' * int(40 * progress) + '░' * (40 - int(40 * progress))
-            print(f'\r[n-Mode]   [{bar}] {completed}/{n_channels}', end='', flush=True)
+        with ThreadPoolExecutor(max_workers=n_channels) as executor:
+            futures = {executor.submit(_load_single_channel, args): args[1] for args in args_list}
+            for future in as_completed(futures):
+                results.append(future.result())
+                completed += 1
+                progress = completed / n_channels
+                bar = '█' * int(40 * progress) + '░' * (40 - int(40 * progress))
+                print(f'\r[n-Mode]   [{bar}] {completed}/{n_channels}', end='', flush=True)
 
-    print(f'\n[n-Mode]   Completed in {tclock.time() - t0:.2f} sec')
+        print(f'\n[n-Mode]   Completed in {tclock.time() - t0:.2f} sec')
+
+        # Auto-archive the freshly downloaded shot so later loads skip MDS+
+        if auto_archive:
+            _auto_archive_from_results(shot, results, archive_dir, mds_server)
 
     valid_results = []
     results.sort(key=lambda x: x['angle'])
@@ -284,8 +554,13 @@ def calculate_fft(mirnov, t_interval, integrate=False, run_detrend=True, tmin=No
     dt = (time[100] - time[0]) / 100.0
     fs = 1.0 / dt
 
+    # Window the record into q intervals of p samples. p is fixed to the
+    # requested t_interval (p = int(t_interval/dt)) -- NOT n_points/q -- so the
+    # window length, and hence the frequency resolution (1/(p*dt)), always equals
+    # the requested t_interval regardless of record length, matching MCspectrogram.
+    # Trailing samples beyond q*p (< one window) are dropped, as in the reference.
     q = int(n_points * dt / t_interval)
-    p = int(n_points / q)
+    p = int(t_interval / dt)
     n_windows, points_per_window = q, p
 
     print(f"[n-Mode] FFT: fs={fs/1e6:.2f}MHz, windows={n_windows}, pts/win={points_per_window}")
@@ -363,8 +638,14 @@ def calculate_fft(mirnov, t_interval, integrate=False, run_detrend=True, tmin=No
 # Mode Number Calculation
 # =============================================================================
 
-def calculate_mode_numbers(fft_result, fmin, fmax, tol, nmodes, frac, msign, integrate=False):
-    """Calculate toroidal mode numbers"""
+def calculate_mode_numbers(fft_result, fmin, fmax, tol, nmodes, frac, msign,
+                           integrate=False, amp_mode='max'):
+    """Calculate toroidal mode numbers
+
+    amp_mode: how to reduce per-mode amplitude across the [fmin, fmax] band into
+              the amplitude-evolution trace -- 'max' (peak bin, default) or
+              'sum' (band sum, matching MCspectrogram's active code path).
+    """
     t0 = tclock.time()
 
     amp = fft_result.amp
@@ -416,13 +697,45 @@ def calculate_mode_numbers(fft_result, fmin, fmax, tol, nmodes, frac, msign, int
     kmn_neg = std_neg.argmin(axis=1)
     mn_neg = std_neg[np.arange(len(kmn_neg)), kmn_neg]
 
-    pos_assign = (mn_pos <= mn_neg) & (mn_pos <= tol)
-    neg_assign = (mn_pos > mn_neg) & (mn_neg <= tol)
+    # Assign every bin within tolerance to its best positive mode, then let the
+    # negative assignment overwrite any bin that is also within tolerance for a
+    # negative mode. This reproduces MCspectrogram's behaviour exactly (its
+    # `indices22 = indices20 and indices21` collapses to just `mn <= tol`, so the
+    # negative pass overwrites the positive one). NOTE: this is intentionally the
+    # reference's logic, not a min-std mutually-exclusive choice, so PRISM's
+    # mode map / amplitude traces match MCspectrogram.
+    pos_assign = mn_pos <= tol
+    neg_assign = mn_neg <= tol
 
     mode[wh_i[pos_assign], wh_j[pos_assign]] = kmn_pos[pos_assign] + 1
     mode[wh_i[neg_assign], wh_j[neg_assign]] = -kmn_neg[neg_assign] - 1
 
-    amp_for_evolution = np.abs(amp[:, :, 0]).copy()
+    amp_evolution = compute_amp_evolution(
+        amp, freq, mode, fmin, fmax, nmodes, integrate, amp_mode, nch
+    )
+
+    print(f"[n-Mode] Mode calculation completed in {tclock.time() - t0:.2f} sec")
+    return mode, freq, amp_evolution
+
+
+def compute_amp_evolution(amp, freq, mode, fmin, fmax, nmodes,
+                          integrate=False, amp_mode='max', nch=1):
+    """Build the per-mode amplitude-evolution trace from an existing mode map.
+
+    Separated from calculate_mode_numbers so the GUI can switch between 'max'
+    and 'sum' reductions (and re-plot) without re-running the FFT / mode fit.
+
+    amp:      FFT amplitude array (n_time, n_freq, n_channels)
+    mode:     toroidal mode-number map (n_time, n_freq)
+    amp_mode: 'max' -> peak amplitude bin in [fmin, fmax] (default, raw)
+              'sum' -> sum of amplitude over [fmin, fmax], then a size-3 moving
+                       average over time (matches MCspectrogram's active path)
+    nch:      representative coil channel index used for the amplitude trace
+              (1, matching the threshold channel and MCspectrogram)
+    """
+    n_time = amp.shape[0]
+
+    amp_for_evolution = np.abs(amp[:, :, nch]).copy()
     if not integrate:
         amp_for_evolution = 2.0 * amp_for_evolution
         freq_hz = freq * 1e3
@@ -440,8 +753,11 @@ def calculate_mode_numbers(fft_result, fmin, fmax, tol, nmodes, frac, msign, int
             ind1 = np.where(mode == sign_mult * (i + 1))
             if len(ind1[0]) > 0:
                 temp[ind1] = amp_for_evolution[ind1]
-                amp_evolution[i + offset, :] = temp[:, freq_idx].max(axis=1)
+                if amp_mode == 'sum':
+                    trace = temp[:, freq_idx].sum(axis=1)
+                    amp_evolution[i + offset, :] = uniform_filter(trace, size=3)
+                else:
+                    amp_evolution[i + offset, :] = temp[:, freq_idx].max(axis=1)
                 temp[ind1] = 0.0
 
-    print(f"[n-Mode] Mode calculation completed in {tclock.time() - t0:.2f} sec")
-    return mode, freq, amp_evolution
+    return amp_evolution

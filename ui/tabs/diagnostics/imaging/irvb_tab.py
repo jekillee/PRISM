@@ -1115,6 +1115,7 @@ class IRVBTab:
         elapsed = tclock.time() - t0
         self._update_status(f"Done ({elapsed:.1f}s)", color='green')
         print(f"[IRVB] Plot completed in {elapsed:.2f}s")
+        print("[IRVB] " + "=" * 60 + "\n")
 
     def _update_frame_controls(self):
         """Update frame controls after data slicing"""

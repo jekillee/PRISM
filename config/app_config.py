@@ -5,8 +5,8 @@ Global application configuration
 
 import os
 
-VERSION = "2.6.1"
-UPDATE_DATE = "2026-06-15"
+VERSION = "2.6.2"
+UPDATE_DATE = "2026-06-30"
 APP_NAME = "PRISM"
 APP_FULL_NAME = "Plasma Research Integrated System for Multi-diagnostics"
 
@@ -25,6 +25,18 @@ _APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # one tree. (Note: /tmp is ephemeral — cleared on reboot; this is a cache, not
 # durable storage.)
 PRISM_TMP_ROOT = os.environ.get('PRISM_TMP_ROOT', '/tmp/prism')
+
+# Durable results root in the user's HOME directory (~/prism_results). Kept
+# separate from the PRISM install dir (~/PRISM) so results never mix with code.
+# Batch/API n-mode outputs are written under a per-subsystem subdir here:
+#   <PRISM_RESULTS_ROOT>/nmode/nmode_<shot>.npz   ->  ~/prism_results/nmode/nmode_<shot>.npz
+# Override the whole root with the PRISM_RESULTS_ROOT env var.
+PRISM_RESULTS_ROOT = os.environ.get('PRISM_RESULTS_ROOT', os.path.expanduser('~/prism_results'))
+
+# Shared PRISM NAS root (mounted at /PRISM on nkstar & ukstar). Shared caches that
+# are not per-user live here, e.g. the IRVB .mat cache (<PRISM_NAS_ROOT>/irvb) and
+# the raw-Mirnov archive. Override the mount point with the PRISM_NAS_ROOT env var.
+PRISM_NAS_ROOT = os.environ.get('PRISM_NAS_ROOT', '/PRISM')
 
 
 def ensure_shared_dir(path, mode=0o777):

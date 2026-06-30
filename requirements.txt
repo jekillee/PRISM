@@ -24,3 +24,8 @@ scikit-learn>=1.0.0
 
 # KSTAR MDS+ connection (Python bindings; system libMdsShr.so still required)
 MDSplus>=7.0.0
+
+# Raw-Mirnov NAS archive (HDF5). h5py covers lzf/gzip; hdf5plugin adds the
+# blosc-zstd filter used by default (fastest write + smallest files).
+h5py>=3.1.0
+hdf5plugin>=3.0.0

@@ -55,38 +55,50 @@ class XICSLoader(BaseDiagnosticLoader):
         mds.closeTree('kstar', shot_number)
         return None, None, None
     
-    def _calculate_vt_offset(self, xics_time, xics_vt, ces_time, ces_vt):
-        """Calculate vT offset using first overlapping time point"""
+    # Minimum number of valid overlap points required to trust the offset
+    MIN_OVERLAP_POINTS = 5
+
+    def _calculate_vt_offset(self, xics_time, xics_vt, ces_time, ces_vt, shot_number):
+        """Calculate the XICS vT zero-point offset against CES.
+
+        Offset = median of (XICS - CES) over ALL overlapping, valid (flat-top)
+        time points, rather than a single point. The median is robust to CES
+        turn-on transients and spikes that wrecked the previous first-point
+        method (e.g. shot 7327, where the first overlap point gave ~107 km/s vs
+        a true ~20 km/s). NaNs are dropped and a minimum point count is required.
+        """
         if ces_time is None or ces_vt is None:
             return 0.0
-        
-        # Find overlapping time range
+
+        # Overlapping time range
         overlap_start = max(xics_time[0], ces_time[0])
         overlap_end = min(xics_time[-1], ces_time[-1])
-        
         if overlap_start >= overlap_end:
             print(f"[XICS] No time overlap with CES (XICS: {xics_time[0]:.2f}-{xics_time[-1]:.2f}s, "
                   f"CES: {ces_time[0]:.2f}-{ces_time[-1]:.2f}s)")
             return 0.0
-        
-        # Find first XICS time point within overlap
-        overlap_mask = (xics_time >= overlap_start) & (xics_time <= overlap_end)
-        if not np.any(overlap_mask):
+
+        # Restrict to the valid plasma window (flat-top) and the overlap range,
+        # reusing the shared IP-fault masking from the base loader.
+        ip_fault_time = self.get_ip_fault_time(shot_number)
+        valid_mask = self.get_valid_time_mask(xics_time, ip_fault_time)
+        mask = valid_mask & (xics_time >= overlap_start) & (xics_time <= overlap_end)
+        if not np.any(mask):
             return 0.0
-        
-        first_overlap_idx = np.where(overlap_mask)[0][0]
-        first_overlap_time = xics_time[first_overlap_idx]
-        first_xics_vt = xics_vt[first_overlap_idx]
-        
-        # Interpolate CES vT at this time
-        ces_vt_interp = np.interp(first_overlap_time, ces_time, ces_vt)
-        
-        # Offset = XICS - CES (to be subtracted from XICS)
-        offset = first_xics_vt - ces_vt_interp
-        
-        print(f"[XICS] Offset calc at t={first_overlap_time:.3f}s: "
-              f"XICS_vT={first_xics_vt:.1f}, CES_vT={ces_vt_interp:.1f}")
-        
+
+        # Difference at every overlapping XICS time point (CES interpolated)
+        ces_vt_interp = np.interp(xics_time[mask], ces_time, ces_vt)
+        diff = xics_vt[mask] - ces_vt_interp
+        diff = diff[np.isfinite(diff)]
+
+        if diff.size < self.MIN_OVERLAP_POINTS:
+            print(f"[XICS] Too few valid overlap points ({diff.size} < {self.MIN_OVERLAP_POINTS}); "
+                  f"offset not applied")
+            return 0.0
+
+        offset = float(np.median(diff))
+        print(f"[XICS] Offset = median over {diff.size} overlap pts: {offset:.1f} km/s "
+              f"(mean {np.mean(diff):.1f}, std {np.std(diff):.1f})")
         return offset
     
     def load_data(self, shot_number, analysis_type=None):
@@ -111,7 +123,7 @@ class XICSLoader(BaseDiagnosticLoader):
             ces_time, ces_vt, ces_type = self._load_ces_vt_ch01(shot_number)
             
             # Calculate and apply offset
-            offset = self._calculate_vt_offset(time_arr, vt_data, ces_time, ces_vt)
+            offset = self._calculate_vt_offset(time_arr, vt_data, ces_time, ces_vt, shot_number)
             vt_data_corrected = vt_data - offset
             
             if ces_type:

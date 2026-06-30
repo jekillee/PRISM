@@ -34,6 +34,7 @@ from config.user_settings import get_tab_settings, set_tab_settings
 from core.nmode import (
     NModeConfig, MirnovData, FFTResult,
     load_mirnov_data, calculate_fft, calculate_mode_numbers,
+    compute_amp_evolution,
 )
 
 
@@ -63,16 +64,18 @@ data = np.load(filepath, allow_pickle=True)
 time = data['time']                   # Time array [s]
 frequency = data['frequency']         # Frequency array [kHz]
 mode_spectrum = data['mode_spectrum'] # Mode number array (time, freq)
-amplitude = data['amplitude']         # Amplitude evolution (2*nmodes, time)
+amplitude = data['amplitude']         # Amplitude evolution (2*nmodes, time) [Gauss]
 
 # Get metadata
 metadata = data['metadata'].item()
+amp_mode = metadata.get('amp_mode', 'max')   # 'max' = peak bin in band, 'sum' = band sum
 print(f"Shot: {metadata['shot']}")
 print(f"Time range: {metadata['time_range']} s")
 print(f"Freq range: {metadata['freq_range']} kHz")
 print(f"n-modes: {metadata['n_modes']}")
 print(f"n_modes_list: {metadata['n_modes_list']}")
 print(f"Sign: {metadata['sign']}")
+print(f"Amplitude mode: {amp_mode}")
 
 # Plot settings
 n_modes_list = metadata['n_modes_list']
@@ -112,7 +115,7 @@ for i, n in enumerate(n_modes_list):
     ax2.plot(time, amplitude[i], color=color, label=f'n={n}')
 
 ax2.set_xlabel('Time [s]')
-ax2.set_ylabel('Amplitude [a.u.]')
+ax2.set_ylabel(f'Amplitude ({amp_mode.capitalize()}) [Gauss]')
 ax2.set_xlim(tmin, tmax)
 ax2.legend(loc='upper right', fontsize=8)
 ax2.grid(True, alpha=0.3)
@@ -267,9 +270,12 @@ def plot_mode_spectrum(ax, fft_result, mode, freq_use, amp_evolution,
 
 def plot_amplitude_evolution(ax, fft_result, amp_evolution, tmin, tmax, nmodes, msign,
                               colors=None, legend_fontsize=8, label_fontsize=None, tick_fontsize=None,
-                              amp_linewidth=1.5, selected_modes=None):
+                              amp_linewidth=1.5, selected_modes=None, amp_mode='max'):
     """Plot amplitude evolution for each mode"""
     ax.clear()
+
+    # y-label reflects the reduction: peak bin (Max) vs band-sum (Sum)
+    ylabel = f"Amplitude ({'Sum' if amp_mode == 'sum' else 'Max'}) [Gauss]"
 
     time = fft_result.time
     j1 = np.argmin(np.abs(time - tmin))
@@ -296,10 +302,10 @@ def plot_amplitude_evolution(ax, fft_result, amp_evolution, tmin, tmax, nmodes, 
 
     if label_fontsize:
         ax.set_xlabel('Time [s]', fontsize=label_fontsize)
-        ax.set_ylabel('Amplitude [Gauss]', fontsize=label_fontsize)
+        ax.set_ylabel(ylabel, fontsize=label_fontsize)
     else:
         ax.set_xlabel('Time [s]')
-        ax.set_ylabel('Amplitude [Gauss]')
+        ax.set_ylabel(ylabel)
     if tick_fontsize:
         ax.tick_params(labelsize=tick_fontsize)
     ax.set_xlim(tmin, tmax)
@@ -352,8 +358,8 @@ class NModeSpectrumTab:
         self.ax1.set_ylabel('Frequency [kHz]', fontsize=self.label_fontsize)
         self.ax1.set_label('Frequency [kHz]')
         self.ax2.set_xlabel('Time [s]', fontsize=self.label_fontsize)
-        self.ax2.set_ylabel('Amplitude [Gauss]', fontsize=self.label_fontsize)
-        self.ax2.set_label('Amplitude [Gauss]')
+        self.ax2.set_ylabel('Amplitude (Max) [Gauss]', fontsize=self.label_fontsize)
+        self.ax2.set_label('Amplitude (Max) [Gauss]')
         for ax in [self.ax1, self.ax2]:
             ax.tick_params(labelsize=self.tick_fontsize)
             import matplotlib as mpl
@@ -680,6 +686,40 @@ class NModeSpectrumTab:
         grid.addWidget(self.contour_levels_entry, row, 1)
         row += 1
 
+        # Amplitude reduction (Max / Sum across the frequency band)
+        grid.addWidget(QLabel('Amplitude'), row, 0)
+
+        amp_mode_widget = QWidget()
+        amp_mode_layout = QHBoxLayout(amp_mode_widget)
+        amp_mode_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.amp_mode_button_group = QButtonGroup()
+        self._amp_mode_value = 'max'
+
+        radio_amp_max = QRadioButton('Max')
+        radio_amp_max.setProperty('amp_mode_value', 'max')
+        radio_amp_max.setChecked(True)
+        amp_mode_layout.addWidget(radio_amp_max)
+        self.amp_mode_button_group.addButton(radio_amp_max)
+
+        radio_amp_sum = QRadioButton('Sum')
+        radio_amp_sum.setProperty('amp_mode_value', 'sum')
+        amp_mode_layout.addWidget(radio_amp_sum)
+        self.amp_mode_button_group.addButton(radio_amp_sum)
+        amp_mode_layout.addStretch()
+
+        self.amp_mode_button_group.buttonClicked.connect(self._on_amp_mode_changed)
+
+        grid.addWidget(amp_mode_widget, row, 1, 1, 3)
+        row += 1
+
+        # Equalize control-row heights so vertical spacing is uniform: line edits
+        # are naturally taller than radio/checkbox rows, which otherwise makes the
+        # gaps between n-modes / Plot type / Contour levels / Amplitude uneven.
+        row_h = self.contour_levels_entry.sizeHint().height()
+        for w in (nmodes_widget, plot_type_widget, self.contour_levels_entry, amp_mode_widget):
+            w.setFixedHeight(row_h)
+
         # Update Plot button
         update_btn = QPushButton('Update Plot')
         update_btn.clicked.connect(self._update_plot)
@@ -826,6 +866,7 @@ class NModeSpectrumTab:
                 'sign': sign_str.get(msign, 'pos'),
                 'integrate': self.integrate_checkbox.isChecked(),
                 'detrend': self.detrend_checkbox.isChecked(),
+                'amp_mode': self._amp_mode_value,   # 'max' (peak bin) | 'sum' (band sum)
             }
 
             # Save to NPZ
@@ -1016,6 +1057,26 @@ class NModeSpectrumTab:
         """Handle sign radio button change"""
         self._msign_value = button.property('sign_value')
 
+    def _on_amp_mode_changed(self, button):
+        """Handle Max/Sum amplitude reduction change: recompute and replot"""
+        self._amp_mode_value = button.property('amp_mode_value')
+
+        # Recompute the amplitude evolution with the selected reduction without
+        # re-running the FFT / mode fit, then replot.
+        if self.fft_result is None or self.mode_result is None:
+            return
+        try:
+            fmin = float(self.fmin_entry.text())
+            fmax = float(self.fmax_entry.text())
+            integrate = self.integrate_checkbox.isChecked()
+            self.amp_evolution = compute_amp_evolution(
+                self.fft_result.amp, self.freq_use, self.mode_result,
+                fmin, fmax, 5, integrate, self._amp_mode_value
+            )
+            self._update_plot()
+        except Exception as e:
+            QMessageBox.critical(self.frame, "Error", f"Failed: {str(e)}")
+
     def _adjust_shot(self, delta):
         """Adjust shot number by delta"""
         try:
@@ -1111,7 +1172,8 @@ class NModeSpectrumTab:
             self._set_status('Calculating modes...', 'blue')
 
             self.mode_result, self.freq_use, self.amp_evolution = calculate_mode_numbers(
-                self.fft_result, fmin, fmax, tol, nmodes, frac, msign, integrate
+                self.fft_result, fmin, fmax, tol, nmodes, frac, msign, integrate,
+                self._amp_mode_value
             )
             gc.collect()
 
@@ -1121,6 +1183,7 @@ class NModeSpectrumTab:
             self._set_status(f'Done ({elapsed:.1f}s)', 'green')
             self.run_button.setEnabled(True)
             print(f"[n-Mode] Total calculation completed in {elapsed:.2f}s")
+            print("[n-Mode] " + "=" * 60 + "\n")
 
             # Enable save button
             self.save_button.setEnabled(True)
@@ -1177,9 +1240,21 @@ class NModeSpectrumTab:
                                     label_fontsize=self.label_fontsize,
                                     tick_fontsize=self.tick_fontsize,
                                     amp_linewidth=self.amp_linewidth,
-                                    selected_modes=selected_modes)
+                                    selected_modes=selected_modes,
+                                    amp_mode=self._amp_mode_value)
 
             self.canvas.draw()
+
+            # Reset the navigation history so the toolbar's Home button returns
+            # to the view just drawn. Without this, after replotting (e.g.
+            # switching Max <-> Sum, which rescales the amplitude axis) Home
+            # would jump back to the stale view captured for the previous data.
+            if self.toolbar is not None:
+                try:
+                    self.toolbar.update()
+                    self.toolbar.push_current()
+                except Exception:
+                    pass
         except Exception as e:
             QMessageBox.critical(self.frame, "Error", f"Plot failed: {str(e)}")
 
@@ -1201,6 +1276,7 @@ class NModeSpectrumTab:
             "detrend": self.detrend_checkbox.isChecked(),
             "plot_type": self._plot_type_value,
             "contour_levels": self.contour_levels_entry.text(),
+            "amp_mode": self._amp_mode_value,
             "color_mode": self.color_mode,
             "label_fontsize": self.label_fontsize,
             "title_fontsize": self.title_fontsize,
@@ -1271,6 +1347,13 @@ class NModeSpectrumTab:
 
         if settings.get("contour_levels"):
             self.contour_levels_entry.setText(str(settings["contour_levels"]))
+
+        if settings.get("amp_mode"):
+            self._amp_mode_value = settings["amp_mode"]
+            for button in self.amp_mode_button_group.buttons():
+                if button.property('amp_mode_value') == self._amp_mode_value:
+                    button.setChecked(True)
+                    break
 
         if settings.get("color_mode"):
             self.color_mode = settings["color_mode"]

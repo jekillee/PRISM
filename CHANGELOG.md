@@ -5,6 +5,45 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.2] - 2026-06-30
+
+### Added — Raw-Mirnov NAS archive (skip MDS+ re-downloads)
+- **Local HDF5 archive of raw Mirnov coil signals** on the PRISM NAS (`/PRISM/mirnov_archive/mirnov_<shot>.h5`). `load_mirnov_data` now reads a shot from the archive when present (partial read of just the requested `[tmin, tmax]` window) instead of MDS+; this applies to the **GUI, the Python SDK, and the `prism nmode` CLI** alike.
+- **Auto-archive on first load** — when a shot is fetched from MDS+ it is written to the archive automatically (best-effort: a failed/forbidden write is logged and never breaks the analysis), so the next load of that shot needs no MDS+ traffic.
+- **Compact, near-lossless storage** — each channel is stored as `int16 + per-channel scale` (≈3e-5 relative error, negligible for FFT amplitude/phase) with the timebase kept as `t0/dt/n` attributes. Default compression is **blosc-zstd** (~1 s write, ~0.76 GB/shot) via `hdf5plugin`, falling back to built-in **lzf** if the plugin is unavailable; `gzip`/`none` selectable. ~3× smaller than raw float32.
+- **Provenance** — each archive records `created` / `created_by`; loading prints `archived <when> by <who>`. `archive_mirnov(shot, overwrite=True)` re-downloads; `archive_info(shot)` reports provenance without loading data.
+- **New dependencies**: `h5py`, `hdf5plugin` (added to `requirements.txt` and `setup_vendor.ps1`; manylinux wheels bundle libHDF5 + the blosc filters, so no system HDF5 is required).
+
+### Added — n-mode amplitude reduction: Max vs Sum
+- **`Amplitude` selector (Max / Sum)** in the n-Mode Spectrum tab's Plot panel. **Max** = peak amplitude bin in the band (raw); **Sum** = band sum with a size-3 moving average over time (matching MCspectrogram). Toggling re-plots instantly without recomputing the FFT, and the amplitude y-axis label reflects the choice (`Amplitude (Max) [Gauss]` / `Amplitude (Sum) [Gauss]`).
+- The selected mode is recorded as `amp_mode` in the saved NPZ metadata, and the bundled **Example Script** reads it back to label the amplitude axis accordingly (defaults to `max` for older files without the field).
+
+### Changed — n-mode compute aligned with MCspectrogram (verified)
+- **FFT window length now honors `dt`**: points-per-window is `int(t_interval/dt)` (was `n_points/q`), so the window length — and hence the frequency resolution `1/(p·dt)` — is exactly the requested `dt` regardless of record length (previously the spectrum was finer for some shots).
+- **Amplitude-evolution channel** corrected to the same representative coil used for the detection threshold.
+- **Toroidal mode assignment** reproduces MCspectrogram's behaviour exactly. Validated end-to-end against MCspectrogram on identical input (shots 23878/23879): bit-identical interior, the only residual differences being known MCspectrogram edge artifacts (first/last windows) that PRISM does not reproduce.
+
+### Changed — durable result & cache locations
+- **Headless n-mode results** now default to the per-user **`~/prism_results/nmode/nmode_<shot>.npz`** (was `/tmp/prism`), kept separate from the PRISM install dir (`~/PRISM`). Override with `PRISM_ARCHIVE_ROOT`. (`PRISM_RESULTS_ROOT` / `PRISM_NAS_ROOT` added to `config/app_config.py`.)
+- **IRVB cache** moved to the NAS (`/PRISM/irvb/`, was `/tmp/prism/irvb/`).
+- The shared NAS archive dirs are created world-writable (and files `0o666`) so any account can populate/refresh them.
+
+### Changed — XICS vT offset is now robust
+- The XICS vT zero-point offset against CES is computed as the **median of (XICS − CES) over all overlapping, flat-top time points**, instead of a single first-overlap point. The old single-point method could anchor to a CES turn-on transient (e.g. shot 7327: ~107 km/s vs the correct ~20 km/s); the median is unaffected by such spikes.
+
+### Changed — IRVB always fetches a fresh copy
+- IRVB now re-downloads the shot's `.mat` every run (reconstructions can be updated), writing atomically so an existing good file survives a failed re-fetch. The "Using cached file" / "Download complete" lines were removed.
+
+### Changed — console output
+- n-Mode, IRVB, and Spectrogram print a separator line after a run completes, so consecutive runs are visually distinct.
+- n-Mode Plot-panel control rows (n-modes / Plot type / Contour levels / Amplitude) are vertically aligned to a uniform height.
+
+### Fixed — CES on old shots (missing radius nodes)
+- For old shots where the `\CES_RTxx` channel-position nodes do not exist in MDS+, the whole CES load used to fail (`%TREE-W-NNF`). The loader now falls back to channel radii from `config/radius_tces.csv` (nearest shot-range row), so Ti/vT load normally.
+
+### Fixed — n-mode toolbar Home button
+- After re-plotting (e.g. switching Max↔Sum, which rescales the amplitude axis), the matplotlib toolbar's **Home** button now returns to the freshly drawn view instead of a stale view from the previous data.
+
 ## [2.6.1] - 2026-06-15
 
 ### Added — Headless n-mode batch SDK + `prism nmode` CLI

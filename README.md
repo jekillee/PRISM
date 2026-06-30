@@ -41,8 +41,9 @@ BibTeX:
 - **Unified Thomson/ECE Viewer**: Overlay ECE data on Thomson profiles
 - **IP Fault Time Masking**: Automatic filtering of post-discharge data
 - **Spectrogram Analysis**: FFT-based spectrogram for ECE, Mirnov, BES, TCI, ECEI
-- **n-Mode Spectrum Analysis**: Toroidal mode number analysis from Mirnov coils
-- **Headless n-Mode Batch**: Compute n-mode spectra without the GUI via `prism nmode` (single shot, `--shots`, or `--shot-range`), caching one `.npz` per shot under `/tmp/prism/nmode/` (same layout as the GUI's saved NPZ). Also a Python SDK: `from batch import run, run_many, NModeJobSpec`
+- **n-Mode Spectrum Analysis**: Toroidal mode number analysis from Mirnov coils, with selectable per-mode amplitude (peak/**Max** or band-sum/**Sum**)
+- **Headless n-Mode Batch**: Compute n-mode spectra without the GUI via `prism nmode` (single shot, `--shots`, or `--shot-range`), caching one `.npz` per shot under `~/prism_results/nmode/` (same layout as the GUI's saved NPZ). Also a Python SDK: `from batch import run, run_many, NModeJobSpec`
+- **Raw-Mirnov archive**: Mirnov coil signals are auto-archived to the PRISM NAS (`/PRISM/mirnov_archive/`) on first load (HDF5, int16+blosc-zstd); subsequent n-mode runs read the local archive instead of MDS+
 - **TV Image Viewer**: Sequential image viewer for visible camera data with line drawing
 - **TV Startup Comparison**: Compare plasma startup sequences across multiple shots
 - **IRVB Viewer**: 2D radiation profile with EFIT overlay and regional Prad analysis
@@ -143,8 +144,8 @@ vendor/
     ├── bin/python3.8
     └── lib/python3.8/
         ├── (stdlib)
-        └── site-packages/             # PySide6, numpy, scipy, matplotlib,
-                                       # Pillow, netCDF4, scikit-learn, MDSplus
+        └── site-packages/             # PySide6, numpy, scipy, matplotlib, Pillow,
+                                       # netCDF4, scikit-learn, MDSplus, h5py, hdf5plugin
 ```
 
 `vendor/` is git-ignored and distributed via the existing rsync deploy flow rather than git.
@@ -160,7 +161,8 @@ PRISM/
 │   ├── diagnostic_config.py     # Diagnostic metadata
 │   ├── user_settings.py         # User settings persistence
 │   ├── thomson_positions.json   # Thomson channel R positions by shot range
-│   └── mirnov_config.json       # Mirnov coil configurations by year
+│   ├── mirnov_config.json       # Mirnov coil configurations by year
+│   └── radius_tces.csv          # CES channel radii by shot range (RT-node fallback)
 ├── core/
 │   ├── data_structures.py       # Data classes
 │   ├── derived_quantities.py    # Derived plasma quantities (neoclassical, Sauter, ...)
@@ -252,6 +254,8 @@ PRISM/
 - numpy, scipy - Numerical computation
 - scikit-learn - GPR fitting (optional)
 - Pillow - Image processing (TV tab)
+- netCDF4 - TRANSP CDF loading
+- h5py, hdf5plugin - raw-Mirnov HDF5 archive (blosc-zstd)
 - MDSplus - KSTAR data access (KFE internal)
 
 ## Note for External Users

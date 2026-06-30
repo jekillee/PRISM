@@ -26,14 +26,14 @@ import sys
 os.environ.setdefault("MDSPLUS_DEBUG", "0")
 
 try:
-    from config.app_config import PRISM_TMP_ROOT
+    from config.app_config import PRISM_RESULTS_ROOT
 except Exception:  # pragma: no cover - config should always import (Qt-free)
-    PRISM_TMP_ROOT = "/tmp/prism"
+    PRISM_RESULTS_ROOT = os.path.expanduser("~/prism_results")
 
 
 def _resolve_root():
-    """Archive root: $PRISM_ARCHIVE_ROOT if set, else /tmp/prism."""
-    return os.environ.get("PRISM_ARCHIVE_ROOT") or PRISM_TMP_ROOT
+    """Archive root: $PRISM_ARCHIVE_ROOT if set, else ~/prism_results."""
+    return os.environ.get("PRISM_ARCHIVE_ROOT") or PRISM_RESULTS_ROOT
 
 
 def _build_nmode_parser(subparsers):
