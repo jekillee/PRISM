@@ -23,6 +23,7 @@ from PySide6.QtGui import QFont, QColor, QTextCharFormat, QSyntaxHighlighter, QG
 
 from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, apply_dark_figure_style, apply_shot_arrow_icons,
+    save_file_async,
 )
 from config.user_settings import get_tab_settings, set_tab_settings
 from data_loaders.ecei_loader import ECEILoader
@@ -551,14 +552,17 @@ class SpectrogramTab:
         # Default filename
         default_name = f"spectrogram_{shot}_{channel}_{t_min:.1f}-{t_max:.1f}s.npz"
 
-        # File dialog
-        filepath, _ = QFileDialog.getSaveFileName(
-            self.frame,
-            'Save Spectrogram Data',
+        # Non-modal save dialog; the write runs in the callback so the main
+        # window stays movable while the dialog is open.
+        save_file_async(
+            self.frame, 'Save Spectrogram Data',
             os.path.join(os.path.expanduser("~"), default_name),
-            'NumPy NPZ (*.npz)'
+            'NumPy NPZ (*.npz)',
+            lambda filepath: self._write_npz(filepath, shot, t_min, t_max, f_min, f_max),
         )
 
+    def _write_npz(self, filepath, shot, t_min, t_max, f_min, f_max):
+        """Write the spectrogram NPZ to `filepath` (non-modal save-dialog callback)."""
         if not filepath:
             return
 
@@ -916,6 +920,20 @@ class SpectrogramTab:
             if diag_type == 'TCI' and '(raw)' in channel_str:
                 time = time[1:]
 
+            # Guard against MDS+ returning a signal and its dim_of with
+            # mismatched lengths (e.g. Mirnov on some shots: data 1048576 vs
+            # time 1048575, dim_of one sample short). The unmatched sample is
+            # the trailing one, so trim both to the shorter length; otherwise
+            # the time-window mask (built from `time`) fails to index `data`.
+            data = np.asarray(data)
+            time = np.asarray(time)
+            if len(data) != len(time):
+                n = min(len(data), len(time))
+                print(f"[Spectrogram] {channel_str}: data/time length mismatch "
+                      f"({len(data)} vs {len(time)}); trimming to {n}")
+                data = data[:n]
+                time = time[:n]
+
             # Check for bad channel (mean == 0)
             if np.mean(data) == 0:
                 QMessageBox.warning(self.frame, "Bad Channel",
@@ -984,92 +1002,104 @@ class SpectrogramTab:
             self._update_status('Error', 'red')
             return
 
-        # Time slice
-        time = signal['time']
-        data = signal['data']
+        # Any failure below (bad data, mismatched shapes, empty freq band, ...)
+        # must surface as a dialog + status reset, never leave the UI stuck on
+        # "Loading" with only a console traceback.
+        try:
+            # Time slice
+            time = signal['time']
+            data = signal['data']
 
-        mask = (time >= t_min) & (time <= t_max)
-        if np.sum(mask) < nfft:
-            QMessageBox.critical(self.frame, "Error", "Time range too short for selected NFFT")
+            mask = (time >= t_min) & (time <= t_max)
+            if np.sum(mask) < nfft:
+                QMessageBox.critical(self.frame, "Error", "Time range too short for selected NFFT")
+                self._update_status('Error', 'red')
+                return
+
+            time_slice = time[mask]
+            data_slice = data[mask]
+
+            # Calculate sampling frequency
+            fs = 1.0 / (time[1] - time[0])
+
+            # Calculate spectrogram
+            self._update_status('Calculating spectrogram...', 'blue')
+            print(f"[Spectrogram] Calculating (NFFT={nfft}, fs={fs/1e6:.2f}MHz)...")
+            f, t_spec, Sxx = spectrogram(data_slice, fs, nperseg=nfft)
+
+            # Convert to log scale (a.u.)
+            Sxx_log = np.log10(Sxx + 1e-20)  # Avoid log(0)
+            vmax = np.max(Sxx_log)
+
+            # Store spectrogram data
+            self.spectrogram_data = {
+                'f': f,
+                't': t_spec + t_min,  # Offset to actual time
+                'Sxx_log': Sxx_log,
+                'vmax': vmax
+            }
+
+            # Clear figure and recreate subplot (avoids colorbar.remove() issues)
+            self._update_status('Plotting...', 'blue')
+            self.figure.clear()
+            self.ax = self.figure.add_subplot(111)
+            self.ax.set_label('Spectrogram')
+            self.figure.subplots_adjust(left=0.10, right=0.97, top=0.92, bottom=0.10)
+            apply_dark_figure_style(self.figure)
+
+            # Frequency mask
+            f_mask = (f >= f_min) & (f <= f_max)
+
+            # Calculate vmin from dynamic range slider
+            dyn_range = self._dyn_range_value
+            vmin = vmax - dyn_range
+
+            self.im = self.ax.imshow(
+                Sxx_log[f_mask, :],
+                aspect='auto',
+                origin='lower',
+                extent=[t_spec[0] + t_min, t_spec[-1] + t_min,
+                        f[f_mask][0]/1e3, f[f_mask][-1]/1e3],
+                vmin=vmin,
+                vmax=vmax,
+                cmap=self.selected_colormap
+            )
+
+            self.ax.set_xlabel('Time [s]', fontsize=self.label_fontsize)
+            self.ax.set_ylabel('Frequency [kHz]', fontsize=self.label_fontsize)
+            self.ax.tick_params(labelsize=self.tick_fontsize)
+
+            # Build title with position info for ECEI and sampling rate
+            if signal.get('diag_type', '').startswith('ECEI-') and 'R' in signal:
+                R = signal['R']
+                Z = signal['Z']
+                ch_name = signal['channel'].split('(')[0].strip()
+                title = f"#{signal['shot']} ECEI_{ch_name} (R={R:.3f}m, Z={Z:.3f}m)"
+            else:
+                title = f"#{signal['shot']} {signal['channel']}"
+
+            # Add sampling rate to title
+            fs_str = self._format_frequency(fs)
+            title += f" - {fs_str}"
+            self.ax.set_title(title, fontsize=self.title_fontsize)
+
+            self.canvas.draw()
+
+            elapsed = tclock.time() - t0
+            self._update_status(f'Done ({elapsed:.1f}s)', 'green')
+            print(f"[Spectrogram] Completed in {elapsed:.2f}s")
+            print("[Spectrogram] " + "=" * 60 + "\n")
+
+            # Enable save button
+            self.save_button.setEnabled(True)
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self.frame, "Error",
+                                 f"Failed to plot spectrogram: {e}")
             self._update_status('Error', 'red')
             return
-
-        time_slice = time[mask]
-        data_slice = data[mask]
-
-        # Calculate sampling frequency
-        fs = 1.0 / (time[1] - time[0])
-
-        # Calculate spectrogram
-        self._update_status('Calculating spectrogram...', 'blue')
-        print(f"[Spectrogram] Calculating (NFFT={nfft}, fs={fs/1e6:.2f}MHz)...")
-        f, t_spec, Sxx = spectrogram(data_slice, fs, nperseg=nfft)
-
-        # Convert to log scale (a.u.)
-        Sxx_log = np.log10(Sxx + 1e-20)  # Avoid log(0)
-        vmax = np.max(Sxx_log)
-
-        # Store spectrogram data
-        self.spectrogram_data = {
-            'f': f,
-            't': t_spec + t_min,  # Offset to actual time
-            'Sxx_log': Sxx_log,
-            'vmax': vmax
-        }
-
-        # Clear figure and recreate subplot (avoids colorbar.remove() issues)
-        self._update_status('Plotting...', 'blue')
-        self.figure.clear()
-        self.ax = self.figure.add_subplot(111)
-        self.ax.set_label('Spectrogram')
-        self.figure.subplots_adjust(left=0.10, right=0.97, top=0.92, bottom=0.10)
-        apply_dark_figure_style(self.figure)
-
-        # Frequency mask
-        f_mask = (f >= f_min) & (f <= f_max)
-
-        # Calculate vmin from dynamic range slider
-        dyn_range = self._dyn_range_value
-        vmin = vmax - dyn_range
-
-        self.im = self.ax.imshow(
-            Sxx_log[f_mask, :],
-            aspect='auto',
-            origin='lower',
-            extent=[t_spec[0] + t_min, t_spec[-1] + t_min,
-                    f[f_mask][0]/1e3, f[f_mask][-1]/1e3],
-            vmin=vmin,
-            vmax=vmax,
-            cmap=self.selected_colormap
-        )
-
-        self.ax.set_xlabel('Time [s]', fontsize=self.label_fontsize)
-        self.ax.set_ylabel('Frequency [kHz]', fontsize=self.label_fontsize)
-        self.ax.tick_params(labelsize=self.tick_fontsize)
-
-        # Build title with position info for ECEI and sampling rate
-        if signal.get('diag_type', '').startswith('ECEI-') and 'R' in signal:
-            R = signal['R']
-            Z = signal['Z']
-            ch_name = signal['channel'].split('(')[0].strip()
-            title = f"#{signal['shot']} ECEI_{ch_name} (R={R:.3f}m, Z={Z:.3f}m)"
-        else:
-            title = f"#{signal['shot']} {signal['channel']}"
-
-        # Add sampling rate to title
-        fs_str = self._format_frequency(fs)
-        title += f" - {fs_str}"
-        self.ax.set_title(title, fontsize=self.title_fontsize)
-
-        self.canvas.draw()
-
-        elapsed = tclock.time() - t0
-        self._update_status(f'Done ({elapsed:.1f}s)', 'green')
-        print(f"[Spectrogram] Completed in {elapsed:.2f}s")
-        print("[Spectrogram] " + "=" * 60 + "\n")
-
-        # Enable save button
-        self.save_button.setEnabled(True)
 
     def save_settings(self):
         """Save current tab settings"""

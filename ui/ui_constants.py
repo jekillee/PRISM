@@ -4,11 +4,31 @@ Common UI constants for consistent styling across all tabs
 
 import os
 
-from PySide6.QtWidgets import QStyle, QApplication
-from PySide6.QtCore import QSize
+from PySide6.QtWidgets import QStyle, QApplication, QFileDialog
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon
 
 _ICONS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons')
+
+
+def save_file_async(parent, caption, default_path, name_filter, on_selected):
+    """Show a NON-MODAL, non-native "Save file" dialog; call on_selected(path)
+    when the user picks a file.
+
+    Unlike the static QFileDialog.getSaveFileName (modal + native), this keeps the
+    main window movable and responsive while the dialog is open -- important over
+    remote X11, where a modal native dialog locks onto the main window. The dialog
+    is parented to `parent` (so it survives until closed) and shown asynchronously,
+    so the caller returns immediately and the write runs in on_selected.
+    """
+    dlg = QFileDialog(parent, caption, default_path, name_filter)
+    dlg.setAcceptMode(QFileDialog.AcceptSave)
+    dlg.setOption(QFileDialog.DontUseNativeDialog, True)
+    dlg.setWindowModality(Qt.NonModal)
+    dlg.setAttribute(Qt.WA_DeleteOnClose, True)
+    dlg.fileSelected.connect(on_selected)
+    dlg.show()
+    return dlg
 _LISTBOX_ARROW_SIZE = QSize(10, 10)
 
 # Control panel dimensions (pixels)

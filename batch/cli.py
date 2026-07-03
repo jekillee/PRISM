@@ -65,6 +65,25 @@ def _build_nmode_parser(subparsers):
     return p
 
 
+def _build_irvb_parser(subparsers):
+    p = subparsers.add_parser(
+        "irvb", help="Compute IRVB 2D radiation + regional Prad (one or many shots) and cache it"
+    )
+    p.add_argument("--shot", type=int, help="single shot number")
+    p.add_argument("--shots", type=int, nargs="+", metavar="N",
+                   help="multiple shot numbers")
+    p.add_argument("--shot-range", type=int, nargs=2, metavar=("START", "END"),
+                   help="inclusive shot range (e.g. --shot-range 40000 40100)")
+    p.add_argument("--efit-tree", default="efit01",
+                   help="EFIT tree for the psi map/boundary (default efit01; "
+                        "e.g. efitrt1, efit02)")
+    p.add_argument("--psi-boundaries", type=float, nargs="+", default=[0.7, 1.0],
+                   metavar="PSI",
+                   help="psi_N region boundaries, ascending, up to 5 "
+                        "(default: 0.7 1.0)")
+    return p
+
+
 def _shots_from_args(args):
     shots = []
     if args.shot is not None:
@@ -79,7 +98,7 @@ def _shots_from_args(args):
     return [s for s in shots if not (s in seen or seen.add(s))]
 
 
-def _specs_from_args(args, shots):
+def _nmode_specs_from_args(args, shots):
     from batch import NModeJobSpec
     return [
         NModeJobSpec(
@@ -87,6 +106,17 @@ def _specs_from_args(args, shots):
             fmin=args.fmin, fmax=args.fmax, tol=args.tol, nmodes=args.nmodes,
             frac=args.frac, msign=args.msign, integrate=args.integrate,
             detrend=args.detrend,
+        )
+        for s in shots
+    ]
+
+
+def _irvb_specs_from_args(args, shots):
+    from batch import IRVBJobSpec
+    return [
+        IRVBJobSpec(
+            shot=s, efit_tree=args.efit_tree,
+            psi_boundaries=tuple(args.psi_boundaries),
         )
         for s in shots
     ]
@@ -125,21 +155,9 @@ def _ask_overwrite(shot, path):
         print("  please answer y / n / a / s / q")
 
 
-def _run_nmode(args):
-    shots = _shots_from_args(args)
-    if not shots:
-        print("error: provide --shot, --shots, or --shot-range", file=sys.stderr)
-        return 2
-    nonfinite = [n for n, v in (
-        ("--tmin", args.tmin), ("--tmax", args.tmax), ("--t-interval", args.t_interval),
-        ("--fmin", args.fmin), ("--fmax", args.fmax), ("--tol", args.tol),
-        ("--frac", args.frac),
-    ) if v is not None and not math.isfinite(v)]
-    if nonfinite:
-        print(f"error: non-finite value for {', '.join(nonfinite)}", file=sys.stderr)
-        return 2
-
-    specs = _specs_from_args(args, shots)
+def _process_specs(specs):
+    """Shared batch driver for any subsystem: categorize new vs existing shots,
+    prompt on collisions, run the chosen ones, print a summary. Returns exit code."""
     root = _resolve_root()
     from batch.archive import archive_path
 
@@ -203,15 +221,52 @@ def _run_nmode(args):
     return 1 if n_fail and not n_ok else 0
 
 
+def _run_nmode(args):
+    shots = _shots_from_args(args)
+    if not shots:
+        print("error: provide --shot, --shots, or --shot-range", file=sys.stderr)
+        return 2
+    nonfinite = [n for n, v in (
+        ("--tmin", args.tmin), ("--tmax", args.tmax), ("--t-interval", args.t_interval),
+        ("--fmin", args.fmin), ("--fmax", args.fmax), ("--tol", args.tol),
+        ("--frac", args.frac),
+    ) if v is not None and not math.isfinite(v)]
+    if nonfinite:
+        print(f"error: non-finite value for {', '.join(nonfinite)}", file=sys.stderr)
+        return 2
+    return _process_specs(_nmode_specs_from_args(args, shots))
+
+
+def _run_irvb(args):
+    shots = _shots_from_args(args)
+    if not shots:
+        print("error: provide --shot, --shots, or --shot-range", file=sys.stderr)
+        return 2
+    bounds = args.psi_boundaries
+    if len(bounds) > 5:
+        print("error: at most 5 --psi-boundaries allowed", file=sys.stderr)
+        return 2
+    if any((not math.isfinite(b)) or b <= 0 for b in bounds):
+        print("error: --psi-boundaries must be finite and > 0", file=sys.stderr)
+        return 2
+    if list(bounds) != sorted(bounds):
+        print("error: --psi-boundaries must be in ascending order", file=sys.stderr)
+        return 2
+    return _process_specs(_irvb_specs_from_args(args, shots))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="prism", description="PRISM headless batch CLI")
     subparsers = parser.add_subparsers(dest="cmd", required=True)
     _build_nmode_parser(subparsers)
+    _build_irvb_parser(subparsers)
 
     args = parser.parse_args(argv)
     if args.cmd == "nmode":
         return _run_nmode(args)
+    if args.cmd == "irvb":
+        return _run_irvb(args)
     parser.error(f"unknown command: {args.cmd}")
 
 

@@ -152,15 +152,25 @@ def _load_single_channel(args):
         mds = Connection(mds_server)
         mds.openTree('kstar', shot)
         mds.get(f'SetTimeContext({tmin},{tmax},)').data()
-        data = mds.get(f'\\{name}').data()
-        time_arr = mds.get(f'dim_of(\\{name})').data()
+        data = np.array(mds.get(f'\\{name}').data(), dtype=np.float32) * sign
+        time_arr = np.array(mds.get(f'dim_of(\\{name})').data(), dtype=np.float32)
         mds.get('SetTimeContext(,,)').data()
         mds.closeTree('kstar', shot)
 
+        # MDS+ occasionally returns a signal and its time base that differ by one
+        # sample (e.g. 1048576 vs 1048575). Downstream masking/indexing assumes
+        # data and time share a length, so trim both to the shorter one here.
+        if len(data) != len(time_arr):
+            n = min(len(data), len(time_arr))
+            print(f"[n-Mode]   {name}: data/time length mismatch "
+                  f"({len(data)} vs {len(time_arr)}); trimming to {n}")
+            data = data[:n]
+            time_arr = time_arr[:n]
+
         return {
             'name': name, 'angle': angle, 'sign': sign,
-            'data': np.array(data, dtype=np.float32) * sign,
-            'time': np.array(time_arr, dtype=np.float32),
+            'data': data,
+            'time': time_arr,
             'n_points': len(data), 'error': None
         }
     except Exception as e:

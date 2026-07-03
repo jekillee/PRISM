@@ -99,3 +99,22 @@ class NModeJobSpec(JobSpec):
     detrend: bool = True
 
     SUBSYSTEM = "nmode"
+
+
+@dataclass(frozen=True)
+class IRVBJobSpec(JobSpec):
+    """IRVB 2D radiation profile + regional Prad job (mirror of the IRVB tab save).
+
+    The full shot is always used: IRVB frames are sliced to the EFIT time range
+    (0 .. EFIT end), exactly like the GUI. `efit_tree` is the MDS+ tree name
+    (e.g. 'efit01', 'efitrt1'); `psi_boundaries` splits the plasma into regions
+    [0, b1), [b1, b2), ..., [bn, inf) for the regional-Prad traces, as in the tab.
+
+    psi_boundaries is a tuple (hashable, so the frozen spec stays cacheable); the
+    compute converts it to a list.
+    """
+
+    efit_tree: str = "efit01"
+    psi_boundaries: tuple = (0.7, 1.0)
+
+    SUBSYSTEM = "irvb"

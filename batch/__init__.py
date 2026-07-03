@@ -3,19 +3,33 @@ PRISM headless batch SDK.
 
 Run expensive diagnostics computations without the GUI and cache each result as an
 .npz file (one per shot, same layout as the GUI's saved NPZ) so repeated requests
-never recompute. Currently supports n-mode (toroidal mode-number) spectra; more
-operations register into the same dispatch.
+never recompute. Supports n-mode (toroidal mode-number) spectra and IRVB (2D
+radiation + regional Prad); more operations register into the same dispatch.
 
-Quick start (run on nkstar/ukstar, inside the KSTAR network):
+Quick start — n-mode (run on nkstar/ukstar, inside the KSTAR network):
 
     from batch import NModeJobSpec, run
 
     spec = NModeJobSpec(shot=40848, tmin=2.0, tmax=8.0, fmin=0, fmax=100)
     result, status = run(spec, archive_root="/home/users/jklee/PRISM_archive")
     # status == "computed" the first time, "cached" afterwards
-    # result is an NModeResult (time, frequency, mode_spectrum, amplitude, meta)
+    # result is an NModeResult (time, frequency, mode_spectrum,
+    #                           amplitude_max, amplitude_sum, meta)
 
-Sequential batch over many shots:
+Quick start — IRVB:
+
+    from batch import IRVBJobSpec, run
+
+    spec = IRVBJobSpec(shot=40085, efit_tree="efit01", psi_boundaries=(0.7, 1.0))
+    result, status = run(spec, archive_root="/home/users/jklee/PRISM_archive")
+    # result is an IRVBResult (time, R, Z, prad_2d, psi_n, region_prad, ptot,
+    #                          efit_* arrays, meta). Full shot; frames are sliced
+    #                          to the EFIT time range, exactly like the GUI.
+    #   prad_2d      (n_frames, nZ, nR)  radiated power density [MW/m^3]
+    #   psi_n        (n_frames, nZ, nR)  psi_N on the IRVB grid (mask any region)
+    #   region_prad  (n_regions, n_frames)  per-region Prad [MW]
+
+Sequential batch over many shots (same for either spec type):
 
     from batch import NModeJobSpec, run_many
 
@@ -28,13 +42,15 @@ variable. Today it is a plain directory on each server; once the shared NAS is
 mounted, point archive_root at the NAS mount (e.g. /mnt/prism) — no code change.
 """
 
-from batch.jobspec import JobSpec, NModeJobSpec
-from batch.results import NModeResult
+from batch.jobspec import JobSpec, NModeJobSpec, IRVBJobSpec
+from batch.results import NModeResult, IRVBResult
 
 __all__ = [
     "JobSpec",
     "NModeJobSpec",
+    "IRVBJobSpec",
     "NModeResult",
+    "IRVBResult",
     "run",
     "run_many",
     "JobOutcome",

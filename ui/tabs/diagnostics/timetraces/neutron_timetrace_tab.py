@@ -22,6 +22,7 @@ from PySide6.QtGui import QFont, QKeySequence, QShortcut
 
 from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, apply_dark_figure_style, apply_shot_arrow_icons,
+    save_file_async,
 )
 from ui.widgets.custom_toolbar import QuietNavigationToolbar
 from ui.theme import ThemeManager
@@ -638,9 +639,15 @@ class NeutronTimeTraceTab:
         if not shots:
             return
 
-        file_path, _ = QFileDialog.getSaveFileName(
+        # Non-modal save dialog (keeps the main window movable); write in callback
+        save_file_async(
             self.frame, "Save Data", os.path.expanduser("~"),
-            "CSV files (*.csv);;Text files (*.txt);;All files (*.*)")
+            "CSV files (*.csv);;Text files (*.txt);;All files (*.*)",
+            lambda file_path: self._save_data_to_path(file_path, shots),
+        )
+
+    def _save_data_to_path(self, file_path, shots):
+        """Write neutron data to the chosen path (non-modal save-dialog callback)."""
         if not file_path:
             return
 

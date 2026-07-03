@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
-from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_listbox_arrow_icons
+from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_listbox_arrow_icons, save_file_async
 
 
 class BaseTab(ABC):
@@ -612,14 +612,15 @@ class BaseTab(ABC):
             QMessageBox.warning(self.frame, "Warning", "No data selected to save")
             return
 
-        # Get save file path
-        file_path, _ = QFileDialog.getSaveFileName(
-            self.frame,
-            "Save Data",
-            os.path.expanduser("~"),
-            "CSV files (*.csv);;Text files (*.txt);;All files (*.*)"
+        # Non-modal save dialog (keeps the main window movable); write in callback
+        save_file_async(
+            self.frame, "Save Data", os.path.expanduser("~"),
+            "CSV files (*.csv);;Text files (*.txt);;All files (*.*)",
+            lambda file_path: self._save_data_to_path(file_path, selected_entries),
         )
 
+    def _save_data_to_path(self, file_path, selected_entries):
+        """Write selected data to the chosen path (non-modal save-dialog callback)."""
         if not file_path:
             return
 
@@ -750,39 +751,41 @@ class BaseTab(ABC):
                 ext_filter = "CSV files (*.csv);;Text files (*.txt);;All files (*.*)"
                 default_ext = ".csv"
 
-            file_path, _ = QFileDialog.getSaveFileName(
-                dialog, "Save Data", os.path.expanduser("~"), ext_filter)
-            if not file_path:
-                return
+            def _write(file_path):
+                if not file_path:
+                    return
 
-            # Auto-append extension if missing
-            if not os.path.splitext(file_path)[1]:
-                file_path += default_ext
+                # Auto-append extension if missing
+                if not os.path.splitext(file_path)[1]:
+                    file_path += default_ext
 
-            try:
-                if mode == "Raw Data":
-                    self._write_data_to_file(file_path, selected_entries)
-                elif mode == "Averaged Data":
-                    lines = self._get_averaged_data_lines(selected_entries)
-                    with open(file_path, 'w') as f:
-                        f.writelines(lines)
-                elif mode == "Fitted Profile":
-                    lines = self._get_fit_profile_lines(selected_entries)
-                    with open(file_path, 'w') as f:
-                        f.writelines(lines)
-                elif mode == "p-File Format":
-                    lines = self._get_pfile_lines(selected_entries)
-                    with open(file_path, 'w') as f:
-                        f.writelines(lines)
-                else:  # Fit Parameters
-                    lines = self._get_fit_params_lines(selected_entries)
-                    with open(file_path, 'w') as f:
-                        f.writelines(lines)
+                try:
+                    if mode == "Raw Data":
+                        self._write_data_to_file(file_path, selected_entries)
+                    elif mode == "Averaged Data":
+                        lines = self._get_averaged_data_lines(selected_entries)
+                        with open(file_path, 'w') as f:
+                            f.writelines(lines)
+                    elif mode == "Fitted Profile":
+                        lines = self._get_fit_profile_lines(selected_entries)
+                        with open(file_path, 'w') as f:
+                            f.writelines(lines)
+                    elif mode == "p-File Format":
+                        lines = self._get_pfile_lines(selected_entries)
+                        with open(file_path, 'w') as f:
+                            f.writelines(lines)
+                    else:  # Fit Parameters
+                        lines = self._get_fit_params_lines(selected_entries)
+                        with open(file_path, 'w') as f:
+                            f.writelines(lines)
 
-                print(f"[{self.TAB_NAME}] Data saved to {file_path}")
-                QMessageBox.information(dialog, "Success", f"Data saved to {file_path}")
-            except Exception as e:
-                QMessageBox.critical(dialog, "Error", f"Failed to save data: {str(e)}")
+                    print(f"[{self.TAB_NAME}] Data saved to {file_path}")
+                    QMessageBox.information(dialog, "Success", f"Data saved to {file_path}")
+                except Exception as e:
+                    QMessageBox.critical(dialog, "Error", f"Failed to save data: {str(e)}")
+
+            # Non-modal save dialog (keeps the main window movable)
+            save_file_async(dialog, "Save Data", os.path.expanduser("~"), ext_filter, _write)
 
         save_btn.clicked.connect(_save_current_mode)
         btn_layout.addWidget(save_btn)

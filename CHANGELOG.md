@@ -5,6 +5,44 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.4] - 2026-07-03
+
+### Added — Headless IRVB batch (`prism irvb`) + SDK
+- New **`prism irvb`** subcommand (and `from batch import IRVBJobSpec, run, run_many`) computes the IRVB 2D radiation profile + regional Prad without the GUI and caches it as one `.npz` per shot under the archive root (`~/prism_results/irvb/`, or `$PRISM_ARCHIVE_ROOT`). Mirrors the GUI IRVB save exactly: full shot (frames sliced to the EFIT time range), same per-frame EFIT geometry, `psi_n` on the IRVB grid, and region masking — so **CLI-produced NPZ files are byte-compatible with the GUI's and the bundled example script reads them unchanged**.
+  - Flags: `--shot` / `--shots` / `--shot-range`, `--efit-tree` (default `efit01`), `--psi-boundaries` (ascending, up to 5; default `0.7 1.0`). Same overwrite/skip prompting and one-failure-doesn't-stop-the-batch behavior as `prism nmode`.
+  - Implemented as `batch.compute_irvb` + `IRVBResult` + `IRVBJobSpec`, registered in the same dispatch/cache machinery; the CLI's categorize/prompt/run driver is now shared between `nmode` and `irvb`.
+
+### Added — `prism python` + batch-API discoverability
+- **`prism python <script>`** (alias `prism exec`) runs a user script — or `-c "..."` — in PRISM's environment (bundled Python + `import batch` on the path, run from the user's own directory). Users no longer need to know the install path or set `PYTHONPATH` / pick the vendored interpreter to use the SDK.
+- New **`examples/`** with runnable, self-documenting scripts (`batch_nmode.py`, `batch_irvb.py`) showing how to run a job and what the result contains (incl. recomputing Prad for an arbitrary psi region from `psi_n`). **`prism examples`** lists them as ready-to-run `prism python <abs-path>` commands, so users don't need to know the install path.
+- `NModeResult` / `IRVBResult` now have a concise **`__repr__`**, so `print(result)` lists every field with its shape and units — the fastest way to see "what came out".
+- Clarified that `run()` **returns the result object as a variable** (the `.npz` is just a cache); for in-memory-only with no file, call `batch.compute.compute_nmode` / `compute_irvb` directly. README gained a Python-SDK section and the `batch` docstring an IRVB quick-start.
+
+### Changed — `prism --help` readability
+- `prism --help` no longer duplicates every batch flag (those live in `prism nmode -h` / `prism irvb -h`). The batch and SDK sections are now a compact overview — subcommands, shot selectors, output path, and one example each — plus a pointer to the runnable `examples/`.
+
+### Added — IRVB NPZ stores psi_N on the IRVB grid (arbitrary psi regions offline)
+- IRVB save now includes **`psi_n`** — normalized psi resampled onto the IRVB `(R, Z)` grid, the same grid as `prad_2d` (shape `(n_frames, nZ, nR)`). Previously only `region_prad` for the psi boundaries entered in the GUI was usable offline; `efit_psi_n` was on the coarser EFIT grid, so a saved file couldn't be masked directly by psi. With `psi_n` on the IRVB grid, **any psi_N region's Prad can be recomputed straight from the NPZ**: mask `prad_2d` by the psi range and integrate with the toroidal volume element `2·π·R·dR·dZ`.
+- The bundled **Example Script** gains a section that does exactly this for a user-chosen `[psi_lo, psi_hi)`, plotting the custom-region Prad time trace. Verified to reproduce the GUI's `region_prad` exactly (same spline + volume weighting as `_compute_regional_prad`). `efit_psi_n` (EFIT grid) is retained for reference.
+
+### Fixed — Save dialogs locked the main window (now all non-modal)
+- Static `QFileDialog.getSaveFileName` (and figure-export dialogs) are **modal + native**, so over remote X11 the file dialog locked onto the main PRISM window and the window could not be moved while a save dialog was open. All Save dialogs across the app now use a shared **non-modal, non-native** helper `save_file_async` (in `ui_constants`) shown asynchronously, with the actual write moved to a `fileSelected` callback — so the main window stays movable while any save dialog is open.
+- Converted every `getSaveFileName` call site: IRVB, n-Mode, Spectrogram, Neutron, the base profile/time-trace save + preview-save, all EFIT tabs (profile/timetrace/pfile/2d), TRANSP (profile/timetrace), biprofile (profile/timetrace/derived), and the plot toolbar's PNG/SVG/EPS figure export. Verified all modules import cleanly (no circular imports).
+
+### Fixed — Mirnov data/time length mismatch on some shots (n-Mode & Spectrogram)
+- On some shots (e.g. #6272) MDS+ returns a Mirnov signal and its `dim_of` time base one sample apart — the raw signal is `2²⁰ = 1048576` samples while `dim_of` is `1048575` (the timebase range emits one fewer point). Any boolean/time-window mask built from the time array then failed to index the longer data array. The unmatched sample is the trailing one, so both paths now trim data and time to the shorter length at load time (logged when it happens).
+  - **n-Mode Spectrum** (`Use full shot length`): fixed `boolean index did not match indexed array ... dimension is 1048576 but corresponding boolean dimension is 1048575` in `load_mirnov_data`'s common-time masking. `_load_single_channel` reconciles lengths on load. The NAS archive path was unaffected (it reconstructs time from `t0/dt/n`), which is why the download completed but processing failed.
+  - **Spectrogram** (Mirnov): the tab loaded fine but never plotted — the time-window mask in `_plot_spectrogram` raised an uncaught `IndexError` slicing `data`, leaving the status stuck on "Loading". `_load_signal_data` now reconciles data/time lengths after fetch.
+
+### Changed — n-Mode NPZ saves both Max and Sum; Example Script shows both
+- **Saved NPZ now stores both amplitude reductions**: `amplitude_max` (peak bin in band) and `amplitude_sum` (band sum with size-3 moving average over time). Previously only the currently-selected reduction was saved. `amplitude` is retained as an alias of `amplitude_max` for backward compatibility with older readers; the `amp_mode` metadata field is dropped.
+- The bundled **Example Script** now plots **three panels** — mode spectrum, Amplitude (Max), Amplitude (Sum) — reading `amplitude_max`/`amplitude_sum` (falling back to `amplitude` for older files). This lets users see both reductions from a saved file even though the GUI shows one at a time.
+- The in-app n-Mode plot is unchanged: the **Max/Sum toggle stays** and the GUI still shows the single selected reduction (two panels).
+- Applies to both the GUI and the batch/`prism nmode` pipeline (`batch.compute_nmode` / `NModeResult`), so GUI- and CLI-produced NPZ files stay identical.
+
+### Changed — Spectrogram surfaces plot failures instead of hanging
+- The spectrogram calculation/plot block in `_plot_spectrogram` is now wrapped so any unexpected error (bad data, shape mismatch, empty frequency band, …) shows an error dialog, prints a console traceback, and resets the status — instead of silently propagating and leaving the UI stuck on "Loading". Previously only the signal-load and parameter-parse steps had this protection.
+
 ## [2.6.3] - 2026-06-30
 
 ### Added — Interferometer line-averaged density (Electron Time Trace)

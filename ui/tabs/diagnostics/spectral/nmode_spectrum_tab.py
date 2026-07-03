@@ -29,6 +29,7 @@ from PySide6.QtGui import QFont, QColor, QTextCharFormat, QSyntaxHighlighter, QG
 
 from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, apply_dark_figure_style, apply_shot_arrow_icons,
+    save_file_async,
 )
 from config.user_settings import get_tab_settings, set_tab_settings
 from core.nmode import (
@@ -64,25 +65,29 @@ data = np.load(filepath, allow_pickle=True)
 time = data['time']                   # Time array [s]
 frequency = data['frequency']         # Frequency array [kHz]
 mode_spectrum = data['mode_spectrum'] # Mode number array (time, freq)
-amplitude = data['amplitude']         # Amplitude evolution (2*nmodes, time) [Gauss]
+
+# Amplitude evolution (2*nmodes, time) [Gauss], both reductions:
+#   amplitude_max = peak amplitude bin in the [fmin, fmax] band (raw)
+#   amplitude_sum = band sum with a size-3 moving average over time
+# Older files (before both were saved) only have 'amplitude' (= max).
+amplitude_max = data['amplitude_max'] if 'amplitude_max' in data.files else data['amplitude']
+amplitude_sum = data['amplitude_sum'] if 'amplitude_sum' in data.files else None
 
 # Get metadata
 metadata = data['metadata'].item()
-amp_mode = metadata.get('amp_mode', 'max')   # 'max' = peak bin in band, 'sum' = band sum
 print(f"Shot: {metadata['shot']}")
 print(f"Time range: {metadata['time_range']} s")
 print(f"Freq range: {metadata['freq_range']} kHz")
 print(f"n-modes: {metadata['n_modes']}")
 print(f"n_modes_list: {metadata['n_modes_list']}")
 print(f"Sign: {metadata['sign']}")
-print(f"Amplitude mode: {amp_mode}")
 
 # Plot settings
 n_modes_list = metadata['n_modes_list']
 fmin, fmax = metadata['freq_range']
 tmin, tmax = metadata['time_range']
 
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
 
 # Plot n-mode spectrum with colors for each mode
 for n in n_modes_list:
@@ -109,16 +114,23 @@ ax1.set_title(f"Shot #{metadata['shot']} n-mode spectrum ({metadata['sign']})")
 ax1.legend(loc='upper right', fontsize=8, markerscale=5)
 ax1.grid(True, alpha=0.3)
 
-# Plot amplitude evolution with matching colors
+# ax2 = Max reduction, ax3 = Sum reduction (matching colors)
 for i, n in enumerate(n_modes_list):
     color = get_mode_color(abs(n))
-    ax2.plot(time, amplitude[i], color=color, label=f'n={n}')
+    ax2.plot(time, amplitude_max[i], color=color, label=f'n={n}')
+    if amplitude_sum is not None:
+        ax3.plot(time, amplitude_sum[i], color=color, label=f'n={n}')
 
-ax2.set_xlabel('Time [s]')
-ax2.set_ylabel(f'Amplitude ({amp_mode.capitalize()}) [Gauss]')
+ax2.set_ylabel('Amplitude (Max) [Gauss]')
 ax2.set_xlim(tmin, tmax)
 ax2.legend(loc='upper right', fontsize=8)
 ax2.grid(True, alpha=0.3)
+
+ax3.set_xlabel('Time [s]')
+ax3.set_ylabel('Amplitude (Sum) [Gauss]')
+ax3.set_xlim(tmin, tmax)
+ax3.legend(loc='upper right', fontsize=8)
+ax3.grid(True, alpha=0.3)
 
 plt.tight_layout()
 plt.show()
@@ -686,7 +698,9 @@ class NModeSpectrumTab:
         grid.addWidget(self.contour_levels_entry, row, 1)
         row += 1
 
-        # Amplitude reduction (Max / Sum across the frequency band)
+        # Amplitude reduction (Max / Sum across the frequency band). This toggle
+        # controls only what the plot shows; the saved NPZ always stores BOTH
+        # reductions (amplitude_max and amplitude_sum).
         grid.addWidget(QLabel('Amplitude'), row, 0)
 
         amp_mode_widget = QWidget()
@@ -812,14 +826,17 @@ class NModeSpectrumTab:
         # Default filename
         default_name = f"nmode_{shot}_{tmin:.1f}-{tmax:.1f}s.npz"
 
-        # File dialog
-        filepath, _ = QFileDialog.getSaveFileName(
-            self.frame,
-            'Save N-Mode Spectrum Data',
+        # Non-modal save dialog; the write runs in the callback so the main
+        # window stays movable while the dialog is open.
+        save_file_async(
+            self.frame, 'Save N-Mode Spectrum Data',
             os.path.join(os.path.expanduser("~"), default_name),
-            'NumPy NPZ (*.npz)'
+            'NumPy NPZ (*.npz)',
+            lambda filepath: self._write_npz(filepath, shot, tmin, tmax, fmin, fmax, nmodes),
         )
 
+    def _write_npz(self, filepath, shot, tmin, tmax, fmin, fmax, nmodes):
+        """Write the n-mode NPZ to `filepath` (non-modal save-dialog callback)."""
         if not filepath:
             return
 
@@ -840,16 +857,36 @@ class NModeSpectrumTab:
             else:  # all
                 n_modes_list = list(range(1, nmodes + 1)) + list(range(-1, -nmodes - 1, -1))
 
-            # Filter mode_spectrum and amplitude by sign setting
+            # Filter mode_spectrum and amplitude by sign setting. Both the Max and
+            # Sum amplitude traces are sliced identically (same row layout
+            # [+1..+n, -1..-n]) so amplitude_max[i] / amplitude_sum[i] both map to
+            # n_modes_list[i].
+            def _slice_amp(amp):
+                if msign == 1:      # pos only
+                    return amp[:nmodes, :]
+                if msign == -1:     # neg only
+                    return amp[nmodes:, :]
+                return amp          # abs / all keep both halves
+
+            # The plot shows only the currently-selected reduction, but the NPZ
+            # stores BOTH: compute Max and Sum from the current FFT/mode result at
+            # save time (the mode map is independent of the reduction).
+            integrate = self.integrate_checkbox.isChecked()
+            amp_max_full = compute_amp_evolution(
+                self.fft_result.amp, self.freq_use, self.mode_result,
+                fmin, fmax, nmodes, integrate, 'max')
+            amp_sum_full = compute_amp_evolution(
+                self.fft_result.amp, self.freq_use, self.mode_result,
+                fmin, fmax, nmodes, integrate, 'sum')
+
             mode_save = self.mode_result.copy()
-            amp_save = self.amp_evolution.copy()
+            amp_max_save = _slice_amp(amp_max_full)
+            amp_sum_save = _slice_amp(amp_sum_full)
 
             if msign == 1:  # pos only
                 mode_save = np.where(mode_save > 0, mode_save, 0)
-                amp_save = amp_save[:nmodes, :]
             elif msign == -1:  # neg only
                 mode_save = np.where(mode_save < 0, mode_save, 0)
-                amp_save = amp_save[nmodes:, :]
             elif msign == 0:  # abs
                 mode_save = np.abs(mode_save)
 
@@ -866,16 +903,19 @@ class NModeSpectrumTab:
                 'sign': sign_str.get(msign, 'pos'),
                 'integrate': self.integrate_checkbox.isChecked(),
                 'detrend': self.detrend_checkbox.isChecked(),
-                'amp_mode': self._amp_mode_value,   # 'max' (peak bin) | 'sum' (band sum)
             }
 
-            # Save to NPZ
+            # Save to NPZ. Both amplitude reductions are stored (amplitude_max =
+            # peak bin, amplitude_sum = band sum). `amplitude` is kept as an alias
+            # of amplitude_max for backward compatibility with older readers.
             np.savez(filepath,
                      metadata=np.array(metadata),
                      time=self.fft_result.time,
                      frequency=self.freq_use,
                      mode_spectrum=mode_save,
-                     amplitude=amp_save
+                     amplitude=amp_max_save,
+                     amplitude_max=amp_max_save,
+                     amplitude_sum=amp_sum_save
             )
 
             print(f"[n-Mode] Data saved to: {filepath}")
@@ -1058,7 +1098,11 @@ class NModeSpectrumTab:
         self._msign_value = button.property('sign_value')
 
     def _on_amp_mode_changed(self, button):
-        """Handle Max/Sum amplitude reduction change: recompute and replot"""
+        """Handle Max/Sum amplitude reduction change: recompute and replot.
+
+        Only affects the displayed panel; the saved NPZ always contains both
+        reductions (see _save_data).
+        """
         self._amp_mode_value = button.property('amp_mode_value')
 
         # Recompute the amplitude evolution with the selected reduction without

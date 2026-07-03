@@ -9,6 +9,7 @@ from PySide6.QtGui import QPixmap, QIcon, QPainter, QColor
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
 
 from ui.theme import ThemeManager
+from ui.ui_constants import save_file_async
 
 
 class QuietNavigationToolbar(NavigationToolbar2QT):
@@ -100,15 +101,11 @@ class QuietNavigationToolbar(NavigationToolbar2QT):
 
     def _save_png(self):
         """Save figure as PNG with white background"""
-        initial_dir = os.path.expanduser("~")
+        # Non-modal save dialog keeps the main window movable while it's open
+        save_file_async(self, "Save figure (PNG)", os.path.expanduser("~"),
+                        "PNG files (*.png);;All files (*.*)", self._write_png)
 
-        filepath, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save figure (PNG)",
-            initial_dir,
-            "PNG files (*.png);;All files (*.*)"
-        )
-
+    def _write_png(self, filepath):
         if not filepath:
             return
 
@@ -128,15 +125,11 @@ class QuietNavigationToolbar(NavigationToolbar2QT):
 
     def _save_svg(self):
         """Save figure as SVG with white background"""
-        initial_dir = os.path.expanduser("~")
+        # Non-modal save dialog keeps the main window movable while it's open
+        save_file_async(self, "Save figure (SVG)", os.path.expanduser("~"),
+                        "SVG files (*.svg);;All files (*.*)", self._write_svg)
 
-        filepath, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save figure (SVG)",
-            initial_dir,
-            "SVG files (*.svg);;All files (*.*)"
-        )
-
+    def _write_svg(self, filepath):
         if not filepath:
             return
 
@@ -175,15 +168,11 @@ class QuietNavigationToolbar(NavigationToolbar2QT):
 
     def _save_eps(self):
         """Save figure as EPS with white background"""
-        initial_dir = os.path.expanduser("~")
+        # Non-modal save dialog keeps the main window movable while it's open
+        save_file_async(self, "Save figure (EPS)", os.path.expanduser("~"),
+                        "EPS files (*.eps);;All files (*.*)", self._write_eps)
 
-        filepath, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save figure (EPS)",
-            initial_dir,
-            "EPS files (*.eps);;All files (*.*)"
-        )
-
+    def _write_eps(self, filepath):
         if not filepath:
             return
 

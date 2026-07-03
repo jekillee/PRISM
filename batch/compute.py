@@ -15,8 +15,9 @@ from core.nmode import (
     load_mirnov_data,
     calculate_fft,
     calculate_mode_numbers,
+    compute_amp_evolution,
 )
-from batch.results import NModeResult
+from batch.results import NModeResult, IRVBResult
 
 try:
     from config.app_config import VERSION
@@ -27,24 +28,30 @@ except Exception:  # pragma: no cover - app_config should always import (Qt-free
 _SIGN_STR = {0: "abs", 1: "pos", -1: "neg", 2: "all"}
 
 
-def _apply_msign(mode, amp_evolution, msign, nmodes):
-    """Sign-filter the mode/amplitude arrays exactly as NModeSpectrumTab._save_data.
+def _filter_mode(mode, msign):
+    """Sign-filter the mode-number map exactly as NModeSpectrumTab._save_data."""
+    if msign == 1:        # positive modes only
+        return np.where(mode > 0, mode, 0)
+    if msign == -1:       # negative modes only
+        return np.where(mode < 0, mode, 0)
+    if msign == 0:        # absolute value
+        return np.abs(mode)
+    return mode.copy()    # msign == 2 (all): untouched
 
-    pos/neg zero out the other sign and slice the matching half of amp_evolution;
-    abs takes |mode|; all keeps the full signed array and both amplitude halves.
+
+def _slice_amp(amp_evolution, msign, nmodes):
+    """Slice an amplitude-evolution array to the sign-selected mode rows.
+
+    Rows are [n=+1..+nmodes, n=-1..-nmodes]; pos keeps the first half, neg the
+    second, abs/all keep both. Applied identically to the Max and Sum traces so
+    amplitude_max[i] / amplitude_sum[i] both map to n_modes_list[i].
     """
-    mode_save = mode.copy()
     amp_save = amp_evolution.copy()
     if msign == 1:        # positive modes only
-        mode_save = np.where(mode_save > 0, mode_save, 0)
-        amp_save = amp_save[:nmodes, :]
-    elif msign == -1:     # negative modes only
-        mode_save = np.where(mode_save < 0, mode_save, 0)
-        amp_save = amp_save[nmodes:, :]
-    elif msign == 0:      # absolute value
-        mode_save = np.abs(mode_save)
-    # msign == 2 (all): leave both arrays untouched
-    return mode_save, amp_save
+        return amp_save[:nmodes, :]
+    if msign == -1:       # negative modes only
+        return amp_save[nmodes:, :]
+    return amp_save       # abs / all keep both halves
 
 
 def _n_modes_list(msign, nmodes):
@@ -87,12 +94,21 @@ def compute_nmode(spec, *, mds_server=None):
     fft = calculate_fft(
         mirnov, spec.t_interval, spec.integrate, spec.detrend, eff_tmin, eff_tmax
     )
-    mode, freq, amp_evolution = calculate_mode_numbers(
+    # The mode map is independent of the amplitude reduction, so compute it once
+    # ('max' trace) and derive the 'sum' trace from the same mode map. Both are
+    # saved (matching the GUI's NPZ).
+    mode, freq, amp_evolution_max = calculate_mode_numbers(
         fft, spec.fmin, spec.fmax, spec.tol, spec.nmodes, spec.frac,
-        spec.msign, spec.integrate,
+        spec.msign, spec.integrate, 'max',
+    )
+    amp_evolution_sum = compute_amp_evolution(
+        fft.amp, freq, mode, spec.fmin, spec.fmax, spec.nmodes,
+        spec.integrate, 'sum',
     )
 
-    mode_save, amp_save = _apply_msign(mode, amp_evolution, spec.msign, spec.nmodes)
+    mode_save = _filter_mode(mode, spec.msign)
+    amp_max_save = _slice_amp(amp_evolution_max, spec.msign, spec.nmodes)
+    amp_sum_save = _slice_amp(amp_evolution_sum, spec.msign, spec.nmodes)
 
     meta = {
         "shot": spec.shot,
@@ -120,6 +136,113 @@ def compute_nmode(spec, *, mds_server=None):
         time=fft.time,
         frequency=freq,
         mode_spectrum=mode_save,
-        amplitude=amp_save,
+        amplitude=amp_max_save,
+        amplitude_max=amp_max_save,
+        amplitude_sum=amp_sum_save,
+        meta=meta,
+    )
+
+
+def compute_irvb(spec, *, mds_server=None):
+    """Run the full IRVB pipeline for one IRVBJobSpec and return an IRVBResult.
+
+    Mirrors NModeSpectrumTab / IRVBTab exactly (Qt-free): load the IRVB
+    reconstruction, load 2D EFIT, slice IRVB frames to the EFIT time range, then
+    for every frame compute the regional Prad and resample psi_N onto the IRVB
+    grid. `mds_server` (if given) overrides the EFIT MDS+ server.
+    """
+    from scipy.interpolate import RectBivariateSpline
+    from config.app_config import AppConfig
+    from data_loaders.irvb_loader import IRVBLoader
+    from data_loaders.efit_loader import EFITLoader
+
+    cfg = AppConfig()
+    if mds_server:
+        cfg.MDS_IP = mds_server
+
+    irvb = IRVBLoader(cfg).load_data(spec.shot)
+    efit2d = EFITLoader(cfg).load_efit_2d(spec.shot, spec.efit_tree)
+
+    # Slice IRVB to the valid EFIT time range (0 .. EFIT end), like the GUI's
+    # _slice_by_efit_time.
+    m = (irvb.time >= 0) & (irvb.time <= efit2d.time[-1])
+    if not np.any(m):
+        raise RuntimeError(f"shot {spec.shot}: no IRVB frames within the EFIT time range")
+    time = irvb.time[m]
+    recon = irvb.recon[m]
+    ptot = np.asarray(irvb.ptot)[:len(irvb.time)][m]
+    n_frames = len(time)
+
+    x_grid, y_grid = irvb.x_grid, irvb.y_grid
+    X, _ = np.meshgrid(x_grid, y_grid)
+    vol_factor = 2 * np.pi * X * (x_grid[1] - x_grid[0]) * (y_grid[1] - y_grid[0])
+
+    psi_boundaries = list(spec.psi_boundaries)
+    edges = [0] + psi_boundaries + [np.inf]
+    n_regions = len(edges) - 1
+    region_prad = np.zeros((n_regions, n_frames))
+
+    max_bdry = efit2d.bdry_r.shape[1]
+    efit_bdry_r = np.zeros((n_frames, max_bdry))
+    efit_bdry_z = np.zeros((n_frames, max_bdry))
+    efit_nbdry = np.zeros(n_frames, dtype=int)
+    efit_rmaxis = np.zeros(n_frames)
+    efit_zmaxis = np.zeros(n_frames)
+    efit_psi_n = np.zeros((n_frames, len(efit2d.z_grid), len(efit2d.r_grid)))
+    psi_n = np.zeros((n_frames, len(y_grid), len(x_grid)))
+    psi_irvb_cache = {}
+
+    for i, t in enumerate(time):
+        efit_idx = efit2d.find_time_index(t)
+        bdry_r, bdry_z = efit2d.get_boundary(efit_idx)
+        nbdry = len(bdry_r)
+        efit_bdry_r[i, :nbdry] = bdry_r
+        efit_bdry_z[i, :nbdry] = bdry_z
+        efit_nbdry[i] = nbdry
+        efit_rmaxis[i], efit_zmaxis[i] = efit2d.get_magnetic_axis(efit_idx)
+        psi_n_2d = efit2d.get_psi_normalized(efit_idx)
+        efit_psi_n[i] = psi_n_2d
+
+        if efit_idx not in psi_irvb_cache:
+            spline = RectBivariateSpline(efit2d.z_grid, efit2d.r_grid, psi_n_2d)
+            psi_irvb_cache[efit_idx] = spline(y_grid, x_grid)
+        psi_n[i] = psi_irvb_cache[efit_idx]
+
+        for r in range(n_regions):
+            mask = (psi_n[i] >= edges[r]) & (psi_n[i] < edges[r + 1])
+            region_prad[r, i] = np.sum(recon[i] * mask * vol_factor)
+
+    region_labels = [
+        f"psi_N > {edges[r]}" if edges[r + 1] == np.inf
+        else f"{edges[r]} < psi_N < {edges[r + 1]}"
+        for r in range(n_regions)
+    ]
+
+    # Limiter is optional in EFIT; store empty arrays (not None) so the saved NPZ
+    # and the example reader stay well-typed.
+    lim_r = efit2d.limiter_r if efit2d.limiter_r is not None else np.array([])
+    lim_z = efit2d.limiter_z if efit2d.limiter_z is not None else np.array([])
+
+    meta = {
+        "shot": spec.shot,
+        "subsystem": spec.SUBSYSTEM,
+        "psi_boundaries": psi_boundaries,
+        "efit_tree": spec.efit_tree,
+        "time_range": [float(time[0]), float(time[-1])],
+        "region_labels": region_labels,
+        "prism_version": VERSION,
+        "created_iso": datetime.now(timezone.utc).isoformat(),
+        "mds_server": cfg.MDS_IP,
+        "params_json": spec.canonical(),
+    }
+
+    return IRVBResult(
+        shot=spec.shot,
+        time=time, R=x_grid, Z=y_grid,
+        prad_2d=recon, psi_n=psi_n, region_prad=region_prad, ptot=ptot,
+        efit_r_grid=efit2d.r_grid, efit_z_grid=efit2d.z_grid, efit_psi_n=efit_psi_n,
+        efit_bdry_r=efit_bdry_r, efit_bdry_z=efit_bdry_z, efit_nbdry=efit_nbdry,
+        efit_rmaxis=efit_rmaxis, efit_zmaxis=efit_zmaxis,
+        efit_limiter_r=lim_r, efit_limiter_z=lim_z,
         meta=meta,
     )

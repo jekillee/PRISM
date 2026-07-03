@@ -14,8 +14,8 @@ import time as _time
 from dataclasses import dataclass
 
 from batch.archive import get_or_compute
-from batch.compute import compute_nmode
-from batch.results import NModeResult
+from batch.compute import compute_nmode, compute_irvb
+from batch.results import NModeResult, IRVBResult
 
 try:
     from config.app_config import PRISM_TMP_ROOT, PRISM_RESULTS_ROOT, ensure_shared_dir
@@ -29,6 +29,7 @@ except Exception:  # pragma: no cover - config should always import (Qt-free)
 # subsystem -> (compute_fn(spec, *, mds_server), result_cls)
 _DISPATCH = {
     "nmode": (compute_nmode, NModeResult),
+    "irvb": (compute_irvb, IRVBResult),
 }
 
 
@@ -50,6 +51,7 @@ def _resolve_archive_root(archive_root):
     if os.path.abspath(root) == os.path.abspath(PRISM_TMP_ROOT):
         ensure_shared_dir(PRISM_TMP_ROOT)
         ensure_shared_dir(os.path.join(root, "nmode"))
+        ensure_shared_dir(os.path.join(root, "irvb"))
     return root
 
 

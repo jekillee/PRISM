@@ -25,7 +25,7 @@ from PySide6.QtGui import QFont, QColor, QTextCharFormat, QSyntaxHighlighter
 
 from ui.ui_constants import (
     CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_icon,
-    apply_shot_arrow_icons,
+    apply_shot_arrow_icons, save_file_async,
 )
 from config.user_settings import get_tab_settings, set_tab_settings
 
@@ -38,8 +38,15 @@ Example script for loading and plotting PRISM IRVB NPZ file
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Load NPZ file
+# ===== User inputs (edit here) =============================================
 filepath = 'irvb_XXXXXX_0.0-10.0s.npz'
+# psi_boundaries: region boundaries in psi_N, like the PRISM IRVB tab (up to 5).
+#                 None -> reuse the boundaries that were saved from PRISM.
+psi_boundaries = None      # e.g. [0.3, 0.7, 1.0]
+# target_time:    time [s] for the 2D snapshot. None -> middle frame.
+target_time = None         # e.g. 5.0
+# ===========================================================================
+
 data = np.load(filepath, allow_pickle=True)
 
 # Extract data
@@ -47,13 +54,11 @@ time = data['time']               # Time array [s]
 R = data['R']                     # R coordinates [m]
 Z = data['Z']                     # Z coordinates [m]
 prad_2d = data['prad_2d']         # 2D Prad array (time, Z, R) [MW/m^3]
-region_prad = data['region_prad'] # Regional Prad (n_regions, time) [MW]
+psi_n = data['psi_n']             # Normalized psi on the IRVB (R,Z) grid, same shape as prad_2d
+region_prad = data['region_prad'] # Regional Prad for the SAVED boundaries (n_regions, time) [MW]
 ptot = data['ptot']               # Total radiated power [MW]
 
 # EFIT data
-efit_r_grid = data['efit_r_grid']       # EFIT R grid [m]
-efit_z_grid = data['efit_z_grid']       # EFIT Z grid [m]
-efit_psi_n = data['efit_psi_n']         # Normalized psi (time, Z, R)
 efit_bdry_r = data['efit_bdry_r']       # LCFS R coordinates (time, max_points) [m]
 efit_bdry_z = data['efit_bdry_z']       # LCFS Z coordinates (time, max_points) [m]
 efit_nbdry = data['efit_nbdry']         # Number of boundary points per frame
@@ -66,29 +71,39 @@ efit_limiter_z = data['efit_limiter_z'] # Limiter Z [m]
 metadata = data['metadata'].item()
 print(f"Shot: {metadata['shot']}")
 print(f"EFIT tree: {metadata['efit_tree']}")
-print(f"Psi boundaries: {metadata['psi_boundaries']}")
-print(f"Region labels: {metadata['region_labels']}")
+print(f"Saved psi boundaries: {metadata['psi_boundaries']}")
 print(f"Total frames: {len(time)}")
 
-# Plot 2D Prad at middle frame
-frame_idx = len(time) // 2  # Middle frame
+# Resolve inputs: fall back to the saved boundaries / middle frame when None.
+if psi_boundaries is None:
+    psi_boundaries = list(metadata['psi_boundaries'])
+frame_idx = len(time) // 2 if target_time is None else int(np.argmin(np.abs(time - target_time)))
+
+# Regions from the boundaries: [0, b1), [b1, b2), ..., [bn, inf). One color each.
+edges = [0] + list(psi_boundaries) + [np.inf]
+n_regions = len(edges) - 1
+colors = [plt.cm.tab10(i) for i in range(n_regions)]
+
+# --- (1) 2D Prad map at the chosen frame -----------------------------------
 fig, ax = plt.subplots(figsize=(6, 8))
-
-# Use same colormap settings as PRISM
-vmin, vmax = 0.0, 1.5
-levels = np.linspace(vmin, vmax, 101)
-
-im = ax.contourf(R, Z, prad_2d[frame_idx], levels=levels)
+levels = np.linspace(0.0, 1.5, 101)     # same colormap range as PRISM
+im = ax.contourf(R, Z, prad_2d[frame_idx], levels=levels, extend='max')
 plt.colorbar(im, ax=ax, label='Prad [MW/m$^3$]')
 
-# Plot LCFS
+# Background flux surfaces psi_N = 0.1..0.9 (psi_n is on the IRVB R,Z grid)
+ax.contour(R, Z, psi_n[frame_idx], levels=np.arange(0.1, 1.0, 0.1),
+           colors='gray', linewidths=0.5, alpha=0.6)
+
+# psi boundary lines (dashed, colored to match the time-trace regions)
+for i, b in enumerate(psi_boundaries):
+    if np.isfinite(b):
+        ax.contour(R, Z, psi_n[frame_idx], levels=[b],
+                   colors=[colors[i]], linewidths=2, linestyles='--')
+
+# LCFS (from stored boundary), limiter, magnetic axis
 nbdry = efit_nbdry[frame_idx]
 ax.plot(efit_bdry_r[frame_idx, :nbdry], efit_bdry_z[frame_idx, :nbdry], 'k-', lw=2)
-
-# Plot limiter
 ax.plot(efit_limiter_r, efit_limiter_z, 'k--', lw=1)
-
-# Plot magnetic axis
 ax.plot(efit_rmaxis[frame_idx], efit_zmaxis[frame_idx], 'k+', markersize=10, mew=2)
 
 ax.set_xlabel('R [m]')
@@ -98,12 +113,24 @@ ax.set_aspect('equal')
 plt.tight_layout()
 plt.show()
 
-# Plot regional Prad time traces with Ptot
-# Note: region_prad shape is (n_regions, time)
+# --- (2) Regional Prad time traces -----------------------------------------
+# Prad(t) per region = sum over pixels in [lo, hi) of prad_2d * (2*pi*R*dR*dZ).
+# psi_n shares the (R, Z) grid of prad_2d, so any psi_boundaries work here (the
+# same computation PRISM uses). With psi_boundaries=None this reproduces the
+# saved region_prad exactly.
+dR = R[1] - R[0]
+dZ = Z[1] - Z[0]
+RR, _ = np.meshgrid(R, Z)                 # R value at each (Z, R) pixel
+vol_factor = 2 * np.pi * RR * dR * dZ     # toroidal volume element [m^3]
+
 fig, ax = plt.subplots(figsize=(10, 5))
-region_labels = metadata['region_labels']
-for i, label in enumerate(region_labels):
-    ax.plot(time, region_prad[i, :], label=label)
+for i in range(n_regions):
+    lo, hi = edges[i], edges[i + 1]
+    mask = (psi_n >= lo) & (psi_n < hi)                        # (time, Z, R)
+    prad_region = np.sum(prad_2d * mask * vol_factor, axis=(1, 2))  # [MW] per frame
+    label = f'psi_N > {lo}' if hi == np.inf else f'{lo} <= psi_N < {hi}'
+    ax.plot(time, prad_region, color=colors[i], label=label)
+
 ax.plot(time, ptot, 'k--', lw=1.5, label='Ptot')
 ax.set_xlabel('Time [s]')
 ax.set_ylabel('Prad [MW]')
@@ -770,7 +797,13 @@ class IRVBTab:
                 cursor.setCharFormat(fmt)
 
     def _save_data(self):
-        """Save IRVB data to NPZ file including EFIT data"""
+        """Open the Save dialog for the IRVB NPZ.
+
+        Uses a NON-MODAL, non-native QFileDialog (like the EFIT/TRANSP tabs)
+        shown asynchronously, so the main PRISM window stays movable while the
+        dialog is open instead of being locked to it. The actual write runs in
+        _write_npz once the user picks a path.
+        """
         if self.irvb_data is None or self.region_prad is None:
             QMessageBox.warning(self.frame, "Warning", "No data to save. Plot data first.")
             return
@@ -784,16 +817,18 @@ class IRVBTab:
         t_max = self.irvb_data.time[-1]
         default_name = f"irvb_{self.shot_number}_{t_min:.1f}-{t_max:.1f}s.npz"
 
-        # File dialog
-        filepath, _ = QFileDialog.getSaveFileName(
-            self.frame,
-            'Save IRVB Data',
-            os.path.join(os.path.expanduser("~"), default_name),
-            'NumPy NPZ (*.npz)'
-        )
+        # Non-modal save dialog (keeps the main window movable); write in _write_npz
+        save_file_async(self.frame, 'Save IRVB Data',
+                        os.path.join(os.path.expanduser("~"), default_name),
+                        'NumPy NPZ (*.npz)', self._write_npz)
 
+    def _write_npz(self, filepath):
+        """Write the IRVB NPZ to `filepath` (invoked when the save dialog accepts)."""
         if not filepath:
             return
+
+        t_min = self.irvb_data.time[0]
+        t_max = self.irvb_data.time[-1]
 
         try:
             # Build region labels
@@ -828,6 +863,16 @@ class IRVBTab:
             efit_zmaxis = np.zeros(n_frames)
             efit_psi_n = np.zeros((n_frames, len(self.efit_2d.z_grid), len(self.efit_2d.r_grid)))
 
+            # psi_N resampled onto the IRVB (R, Z) grid -- the SAME grid as
+            # prad_2d -- so any psi region's Prad can be recomputed directly from
+            # the NPZ (mask prad_2d by psi_n, weight by 2*pi*R*dR*dZ), not just the
+            # psi_boundaries entered in the GUI. Mirrors the spline in
+            # _compute_regional_prad; cached per unique EFIT time.
+            x_grid = self.irvb_data.x_grid
+            y_grid = self.irvb_data.y_grid
+            psi_n = np.zeros((n_frames, len(y_grid), len(x_grid)))
+            psi_irvb_cache = {}
+
             for i, t in enumerate(self.irvb_data.time):
                 efit_idx = self.efit_2d.find_time_index(t)
                 bdry_r, bdry_z = self.efit_2d.get_boundary(efit_idx)
@@ -837,7 +882,14 @@ class IRVBTab:
                 efit_bdry_z[i, :nbdry] = bdry_z
                 efit_nbdry[i] = nbdry
                 efit_rmaxis[i], efit_zmaxis[i] = self.efit_2d.get_magnetic_axis(efit_idx)
-                efit_psi_n[i] = self.efit_2d.get_psi_normalized(efit_idx)
+                psi_n_2d = self.efit_2d.get_psi_normalized(efit_idx)
+                efit_psi_n[i] = psi_n_2d
+
+                if efit_idx not in psi_irvb_cache:
+                    spline = RectBivariateSpline(
+                        self.efit_2d.z_grid, self.efit_2d.r_grid, psi_n_2d)
+                    psi_irvb_cache[efit_idx] = spline(y_grid, x_grid)
+                psi_n[i] = psi_irvb_cache[efit_idx]
 
             # Save to NPZ
             np.savez(filepath,
@@ -846,6 +898,7 @@ class IRVBTab:
                      R=self.irvb_data.x_grid,
                      Z=self.irvb_data.y_grid,
                      prad_2d=self.irvb_data.recon,
+                     psi_n=psi_n,  # psi_N on the IRVB (R,Z) grid, same shape as prad_2d
                      region_prad=self.region_prad,
                      ptot=self.irvb_data.ptot[:len(self.irvb_data.time)],
                      # EFIT data

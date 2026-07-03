@@ -84,7 +84,7 @@ show_help() {
     echo "PRISM v${version} - Plasma Research Integrated System for Multi-diagnostics"
     echo ""
     echo "A multi-diagnostics viewer for the KSTAR tokamak. Launches a GUI viewer,"
-    echo "or runs a headless n-mode batch job. Usage: prism [option | nmode args]"
+    echo "or runs a headless batch job. Usage: prism [option | nmode args | irvb args]"
     echo ""
     echo "Quick start:"
     echo "  prism                                      # Full GUI (all viewers)"
@@ -116,28 +116,22 @@ show_help() {
     echo "  Keyboard:  Delete/Backspace = remove selected list items"
     echo "             Enter            = fetch data (in shot input field)"
     echo ""
-    echo "Headless batch (no GUI, no X11):  prism nmode [args]"
-    echo "  Compute a toroidal n-mode spectrum and save it as .npz (one file per shot"
-    echo "  under the archive root). If a shot's file exists you're asked to"
-    echo "  overwrite or skip ([a]ll / [s]kip-all / [q]uit for batches)."
-    echo "    --shot N | --shots N N    single | multiple shots"
-    echo "    --shot-range A B          inclusive range, e.g. 10000 10100"
-    echo "    --tmin / --tmax           time window [s]       (default: full shot)"
-    echo "    --fmin / --fmax           frequency range [kHz] (default 0 / 100)"
-    echo "    --t-interval S            FFT window length [s]  (default 0.01)"
-    echo "    --msign 0|1|-1|2          abs | pos | neg | all  (default 1=pos)"
-    echo "    --nmodes N                number of modes        (default 5)"
-    echo "    --tol T                   mode-fit residual tolerance (default 0.8)"
-    echo "    --frac F                  amplitude threshold fraction (default 0.01)"
-    echo "    --integrate               integrate dB/dt -> B"
-    echo "    --no-detrend              disable per-window detrend"
-    echo "  Output: \$PRISM_ARCHIVE_ROOT/nmode/nmode_<shot>.npz  (default ~/prism_results)"
-    echo "  Full per-flag help: prism nmode -h"
-    echo "  Examples:"
-    echo "    prism nmode --shot 40848                          # full shot, defaults"
-    echo "    prism nmode --shots 40848 40850 --tmin 2 --tmax 8 # multi-shot window"
-    echo "    prism nmode --shot-range 10000 10100              # 101 shots (full shot)"
-    echo "    prism nmode --shot 40848 --msign -1 --integrate   # neg-n, dB/dt -> B"
+    echo "Headless batch (no GUI / X11) - compute + cache one .npz per shot:"
+    echo "  prism nmode [args]   toroidal n-mode spectrum (Mirnov coils)"
+    echo "  prism irvb  [args]   IRVB 2D radiation + regional Prad"
+    echo "  Shots:    --shot N  |  --shots N N  |  --shot-range A B"
+    echo "  Flags:    prism nmode -h  /  prism irvb -h    (full per-command list)"
+    echo "  Output:   \$PRISM_ARCHIVE_ROOT/{nmode,irvb}/<sub>_<shot>.npz  (default ~/prism_results)"
+    echo "  Existing: prompt to overwrite / skip ([a]ll / [s]kip-all / [q]uit)"
+    echo "  Examples: prism nmode --shot 40848 --tmin 2 --tmax 8"
+    echo "            prism irvb  --shot 40085 --psi-boundaries 0.3 0.7 1.0"
+    echo ""
+    echo "Python SDK (same compute; run() also returns the result as a variable):"
+    echo "  from batch import NModeJobSpec, IRVBJobSpec, run, run_many"
+    echo "  result, status = run(IRVBJobSpec(shot=40085))    # print(result) lists all fields"
+    echo "  Run a script in PRISM's env (no path setup):  prism python my_analysis.py"
+    echo "  Runnable examples (lists ready-to-run commands):  prism examples"
+    echo "  API reference:     prism python -c 'import batch; help(batch)'"
     echo ""
     echo "Data sources:"
     echo "  MDS+   mdsr.kstar.kfe.re.kr:8005 (CES, Thomson, ECE, MSE, Neutron, ...)"
@@ -147,9 +141,10 @@ show_help() {
     echo "Settings:  ~/.config/prism/settings.json"
     echo "Archives:"
     echo "    n-mode results    ~/prism_results/nmode/      (per-user; \$PRISM_ARCHIVE_ROOT overrides)"
+    echo "    IRVB results      ~/prism_results/irvb/       (per-user; \$PRISM_ARCHIVE_ROOT overrides)"
     echo "    raw Mirnov        /PRISM/mirnov_archive/     (shared, auto-saved on first load)"
-    echo "    IRVB cache        /PRISM/irvb/               (shared)"
-    echo "Env:       PRISM_ARCHIVE_ROOT = n-mode result root (default ~/prism_results)"
+    echo "    IRVB cache        /PRISM/irvb/               (shared, GUI reconstruction cache)"
+    echo "Env:       PRISM_ARCHIVE_ROOT = batch result root (default ~/prism_results)"
     echo ""
     echo "Jekil Lee (jklee@kfe.re.kr)"
     echo ""
@@ -181,11 +176,36 @@ case "$1" in
         cd "$PRISM_HOME"
         $PYTHON_PATH main.py --efit 2>/dev/null
         ;;
-    nmode)
-        # Headless n-mode compute + cache (no GUI). Pass remaining args to the
-        # batch CLI; do NOT suppress stderr so progress/errors are visible.
+    nmode|irvb)
+        # Headless n-mode / IRVB compute + cache (no GUI). Pass all args (incl. the
+        # subcommand) to the batch CLI; do NOT suppress stderr so progress/errors
+        # are visible.
         cd "$PRISM_HOME"
         $PYTHON_PATH -m batch.cli "$@"
+        ;;
+    examples)
+        # List the bundled batch-API example scripts as ready-to-run commands
+        # (absolute paths, so they work from any directory).
+        echo "PRISM batch-API examples ($PRISM_HOME/examples):"
+        found=0
+        for f in "$PRISM_HOME"/examples/*.py; do
+            [ -e "$f" ] || continue
+            echo "  prism python $f"
+            found=1
+        done
+        [ "$found" -eq 0 ] && echo "  (none found)"
+        echo ""
+        echo "Run one, or copy it and edit: prism python /path/to/your/copy.py"
+        ;;
+    python|exec)
+        # Run a user script (or -c "...") in PRISM's environment: bundled Python
+        # + PYTHONPATH so `import batch` and all bundled deps resolve, without the
+        # user needing to know where PRISM is installed. Runs from the current
+        # directory, so relative paths in the script still work.
+        #   prism python my_analysis.py
+        #   prism python -c "import batch; help(batch)"
+        shift
+        exec "$PYTHON_PATH" "$@"
         ;;
     *)
         echo "Error: Unknown option '$1'"

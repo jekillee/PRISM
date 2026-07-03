@@ -33,18 +33,15 @@ BibTeX:
 
 ## Features
 
-- **Modular, sidebar-driven GUI** — categorized tree (Diagnostics / EFIT / BiProfile / TRANSP) with on-demand tabs, collapsible groups, and dark/light themes; all UI state persists across sessions.
-- **Profile & time-trace views for every diagnostic** — selectable R / ψ_N / ρ_pol / ρ_tor x-axis with EFIT mapping across multiple trees (efitrt1/2, efit01/02/04) and automatic IP-fault time masking.
-- **Electron & ion diagnostics** — ne/Te from Thomson + ECE, Ti/vT from CES + XICS, and line-averaged density via the **Interferometer** group (TCI, mm-wave, FIR).
-- **Profile fitting** — mtanh / ptanh / EPED / spline / RBF / GPR with PRISM-style pedestal output (height / top / foot / width / location in normalized + physical units, ± uncertainties) and an optional SOL-tail; interactive channel toggle, dt time-averaging with RMS error propagation, and 2D/3D browse with playback.
-- **Spectral analysis** — FFT spectrogram (ECE, Mirnov, BES, TCI, ECEI) and toroidal **n-mode spectrum** from Mirnov coils with selectable per-mode amplitude (peak/Max or band-sum/Sum).
-- **Headless n-mode batch + SDK** — compute spectra without the GUI via `prism nmode` (single / `--shots` / `--shot-range`) or `from batch import run, run_many, NModeJobSpec`; one `.npz` per shot under `~/prism_results/nmode/`.
-- **Raw-Mirnov NAS archive** — coil signals are auto-archived to `/PRISM/mirnov_archive/` on first load (HDF5, int16 + blosc-zstd); later n-mode runs read the local archive instead of MDS+.
-- **Imaging** — TV visible-camera viewer with startup comparison, and IRVB 2D radiation profile with EFIT overlay and regional P_rad analysis.
-- **EFIT viewer** — AEQDSK scalars, GEQDSK profiles, 2D equilibrium contours with rational-surface overlay (q = 1, 3/2, 2, 5/2, 3, 4, 5), and p-file; multi-tree accumulation with cgs↔SI auto-detection.
-- **BiProfile & derived quantities** — bundled Ti/vT/ne/Te profiles plus neoclassical/transport derived quantities (pressures, gradients, β, ν*, E_r, bootstrap current, …).
-- **TRANSP viewer** — UFILE input (1D traces, profile×time, NBI/ECP, MMX flux surfaces, LIM overlay) and CDF output (profiles, time traces, cross-run comparison).
-- **Data & figure export** — spreadsheet-style preview before export, text and PEQDSK p-file output, and PNG / SVG / EPS figure save.
+- **Modular GUI** — sidebar viewer (Diagnostics / EFIT / BiProfile / TRANSP) with on-demand tabs, dark/light themes, and persistent session state.
+- **Profiles & time traces** — every diagnostic on a selectable R / ψ_N / ρ_pol / ρ_tor x-axis with multi-tree EFIT mapping.
+- **Diagnostics** — ne/Te (Thomson + ECE), Ti/vT (CES + XICS), line-averaged density (TCI / mm-wave / FIR), and Neutron.
+- **Profile fitting** — mtanh / spline / GPR and more, with pedestal parameters and uncertainties.
+- **Spectral** — FFT spectrogram (ECE / Mirnov / BES / TCI / ECEI) and toroidal n-mode spectrum from Mirnov coils.
+- **Imaging & EFIT** — TV camera viewer, IRVB 2D radiation with EFIT overlay + regional P_rad, and EFIT viewer (scalars / profiles / 2D contours / p-file).
+- **BiProfile & TRANSP** — bundled/derived-quantity profiles and TRANSP UFILE input + CDF output.
+- **Headless batch + Python SDK** — compute n-mode and IRVB without the GUI (`prism nmode` / `prism irvb`, or `from batch import …`), cached as one `.npz` per shot.
+- **Export** — spreadsheet-style data preview, text / p-file output, and PNG / SVG / EPS figure save.
 
 ## Supported Diagnostics
 
@@ -78,7 +75,75 @@ BibTeX:
 | `prism -t`, `prism --transp` | TRANSP CDF viewer |
 | `prism -s`, `prism --select` | Select and launch individual viewers |
 | `prism nmode [args]` | Headless n-mode compute + cache, no GUI (see `prism nmode -h`) |
+| `prism irvb [args]` | Headless IRVB radiation + regional Prad compute + cache, no GUI (see `prism irvb -h`) |
+| `prism python <script>` | Run a script in PRISM's environment (bundled Python + `import batch`), no path setup |
+| `prism examples` | List the runnable batch-API example scripts as ready-to-run commands |
 | `prism -h`, `prism --help` | Show help |
+
+### Headless batch API (Python SDK)
+
+Compute without the GUI and cache one `.npz` per shot (same layout as the GUI's saved
+NPZ). Run on nkstar/ukstar, inside the KSTAR network.
+
+```python
+# n-mode (toroidal mode-number) spectrum
+from batch import NModeJobSpec, run
+spec = NModeJobSpec(shot=40848, tmin=2.0, tmax=8.0, fmin=0, fmax=100)
+result, status = run(spec)                 # status: "computed" | "cached"
+result.frequency, result.mode_spectrum, result.amplitude_max, result.amplitude_sum
+
+# IRVB 2D radiation + regional Prad
+from batch import IRVBJobSpec, run
+spec = IRVBJobSpec(shot=40085, efit_tree="efit01", psi_boundaries=(0.7, 1.0))
+result, status = run(spec)
+result.prad_2d      # (n_frames, nZ, nR) radiated power density [MW/m^3]
+result.psi_n        # (n_frames, nZ, nR) psi_N on the IRVB grid — mask any region
+result.region_prad  # (n_regions, n_frames) per-region Prad [MW]
+
+# Many shots (either spec type); one failure never stops the batch
+from batch import run_many
+specs = [IRVBJobSpec(shot=s) for s in (40085, 40090, 40095)]
+outcomes = run_many(specs, progress=lambda o: print(o.status, o.spec.shot))
+```
+
+Run your script with the **`prism python`** helper — it uses PRISM's bundled Python
+(scipy / MDSplus / h5py) and puts `batch` on the path, so you don't need to know where
+PRISM is installed or set any environment yourself:
+
+```bash
+prism python my_analysis.py
+prism python -c "import batch; help(batch)"
+```
+
+**Importing `batch` from your own Python session (on nkstar/ukstar) instead of using
+`prism python`?** `batch` is not on `sys.path`, so add the PRISM install directory
+yourself, and run under PRISM's bundled interpreter
+(`<PRISM>/vendor/cpython-3.8/bin/python3.8`), which has the dependencies (scipy,
+MDSplus, h5py) — a bare system Python usually lacks MDSplus:
+
+```python
+import sys
+sys.path.insert(0, "/home/users/jklee/PRISM")      # nkstar
+# sys.path.insert(0, "/UKSTAR_HOME/jklee/PRISM")    # ukstar
+from batch import IRVBJobSpec, run
+```
+
+**`run()` returns the result as a variable** (`result, status = run(spec)`) — the
+`.npz` under `~/prism_results/<subsystem>/` is just a cache (override with
+`$PRISM_ARCHIVE_ROOT` or the `archive_root=` argument; `overwrite=True` recomputes).
+To compute **in-memory only, with no file written**, call the compute function
+directly:
+
+```python
+from batch.compute import compute_irvb, compute_nmode
+result = compute_irvb(IRVBJobSpec(shot=40085))   # returns the result, writes nothing
+```
+
+**Not sure what a result contains?** Just `print(result)` — it lists every field with
+its shape and units. Runnable, self-documenting examples live in
+[`examples/`](examples/) (`batch_nmode.py`, `batch_irvb.py`) — run **`prism examples`**
+to list them as ready-to-run `prism python <path>` commands (no need to know the
+install path).
 
 ## Installation
 
@@ -157,13 +222,16 @@ PRISM/
 │   ├── ufile_parser.py          # TRANSP UFILE parser
 │   ├── fitting.py               # Profile fitting functions
 │   └── nmode.py                 # Qt-free n-mode compute core (shared by GUI/SDK/CLI)
-├── batch/                       # Headless n-mode batch SDK + CLI
-│   ├── jobspec.py               # NModeJobSpec (cache-key inputs)
-│   ├── compute.py               # compute_nmode (wraps core/nmode.py)
-│   ├── results.py               # NModeResult (+ .npz save/load)
+├── batch/                       # Headless batch SDK + CLI (n-mode, IRVB)
+│   ├── jobspec.py               # NModeJobSpec / IRVBJobSpec (cache-key inputs)
+│   ├── compute.py               # compute_nmode / compute_irvb (wrap core + loaders)
+│   ├── results.py               # NModeResult / IRVBResult (+ .npz save/load)
 │   ├── archive.py               # per-shot .npz cache
-│   ├── runner.py                # run / run_many
-│   └── cli.py                   # prism nmode
+│   ├── runner.py                # run / run_many (subsystem dispatch)
+│   └── cli.py                   # prism nmode / prism irvb
+├── examples/                    # runnable batch-API examples
+│   ├── batch_nmode.py           # n-mode: run + inspect result
+│   └── batch_irvb.py            # IRVB: run + inspect + custom psi region
 ├── data_loaders/
 │   ├── base_loader.py           # Base loader class
 │   ├── ces_loader.py            # CES loader

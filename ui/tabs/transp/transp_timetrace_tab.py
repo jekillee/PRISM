@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QShortcut, QKeySequence
 
+from ui.ui_constants import save_file_async
 from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_dark_figure_style, get_icon
 from ui.theme import ThemeManager
 
@@ -517,16 +518,17 @@ class TranspTimeTraceTab:
         save_btn = QPushButton("Save as .csv")
         def _save():
             import os
-            path, _ = QFileDialog.getSaveFileName(
-                dlg, "Save Data", os.path.expanduser("~"),
-                "CSV files (*.csv);;All files (*)")
-            if not path:
-                return
-            if not os.path.splitext(path)[1]:
-                path += '.csv'
-            with open(path, 'w') as f:
-                f.writelines(lines)
-            QMessageBox.information(dlg, "Saved", f"Data saved to {path}")
+            def _write(path):
+                if not path:
+                    return
+                if not os.path.splitext(path)[1]:
+                    path += '.csv'
+                with open(path, 'w') as f:
+                    f.writelines(lines)
+                QMessageBox.information(dlg, "Saved", f"Data saved to {path}")
+            # Non-modal save dialog keeps the main window movable while it's open
+            save_file_async(dlg, "Save Data", os.path.expanduser("~"),
+                            "CSV files (*.csv);;All files (*)", _write)
         save_btn.clicked.connect(_save)
         btn_row.addWidget(save_btn)
 
