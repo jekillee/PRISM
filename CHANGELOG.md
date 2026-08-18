@@ -5,6 +5,38 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.5] - 2026-08-18
+
+### Added — Per-timepoint R-shift (Ion/Electron Profile)
+- The Plot group has an **R-shift** button (beside Select Channels) opening a dialog with one R-shift [mm] field per plotted timepoint (blank = 0, no shift). Each selected time slice can be shifted independently. Applied on OK (re-plots).
+- Values are **session-only** — never written to settings JSON. There is no inline/uniform R-shift field; the dialog is the only R-shift input.
+- **R-shift applies across the R-axis plot, the flux-coordinate plot, fitting, and data export** (previously flux + fitting only). For a combined `TS+ECE` timepoint the one value shifts both diagnostics.
+- Implemented via `_get_rshift(diag_name, entry)` + `_entry_rshifts` (ephemeral) + `_show_rshift_dialog`.
+
+### Changed — Ion/MSE Time Trace: bottom-panel dropdown moved above Plot
+- The panel selector (Ion: vT / ωT; MSE: q / j) was on the same row, left of the Plot button. It now sits on its own row **above** the Plot/Option row, labelled `Y-axis (bottom)` — time-trace panels are stacked top/bottom (vs the Profile tabs' side-by-side, which use `Y-axis (right)`). Label:combo split 50/50 so the dropdown is half-width. Ion's items dropped their units (`vT`/`ωT`); the axis label still shows units.
+
+### Changed — Profile tabs (Ion/Electron/MSE): "4. Plot" group reorganized
+- **X-axis and Y-axis are QComboBoxes on one row**, split into equal quarters: `X-axis` + X combo (R / ψₙ / ρₚₒₗ / ρₜₒᵣ; flux items disabled until EFIT mapped) and `Y-axis (right)` + Y combo — **Ion** = vT / ωT, **MSE** = q / j; Electron has X-axis only. (The X-axis radio-button group was replaced by a combo; flux gating now enables/disables combo items.)
+- **Grid order** (top→bottom): X-axis / Y-axis row, **Plot | Option** (no separator above), separator, R-shift, Channels, Time avg.
+- **R-shift / Channels rows**: two full-width rows, each split 50/50 — a left-half label + a right-half button: `R-shift` → `Adjust` (Ion/Electron only; opens the per-timepoint dialog) and `Channels` → `Select / Deselect` (opens the channel dialog, titled "Select / Deselect Channels").
+- **Channel dialog**: Show Nodes is now an on/off toggle (matching the Time-avg toggle), not a checkbox; the button row is 3 equal parts **Select All | Deselect All | Apply** (no Cancel; Apply replots so channel changes take effect immediately).
+- **R-shift dialog**: buttons are **Clear all (left half) | Apply (right half)** (no Cancel).
+- Uniform row height: inner row layouts use zero contents margins, and every grid row is pinned to a **static row height = a push button's height** (`setRowMinimumHeight`), so radio/label rows match the taller button rows instead of each sizing to its own content.
+- **Plot | Option** action row sits directly under Y-axis (no separator above it); the separator is below it, before R-shift/Channels/Time avg.
+- **Time avg** moved from the "5. Fitting" group (disabled until EFIT mapping) to the always-enabled Plot group for Ion/Electron; MSE keeps it in Fitting (`_place_time_avg_rshift_in_plot()` hook).
+- Refactor: `_create_x_axis_radios` fills a shared grid; Ion/MSE share the base `_create_plot_controls` via the `_add_yaxis_param_row` hook (read via `_y_param_text()`); button row built by `_add_rshift_channels_row`; Time avg by `_build_time_avg_row`.
+
+### Changed — EFIT mapping log now shows the tree and exact equilibrium time used
+- `compute_efit` mapped each selected timepoint to the **nearest EFIT time slice** (within ±50 ms) but only logged `[EFIT]   {entry} processed`, hiding which tree and which equilibrium time were actually used. The line now reads `[EFIT]   {entry} processed ({tree} @ {t:.4f}s, Δ{±ms}ms)` — the EFIT tree, the exact slice time, and its offset from the requested profile time. The tree and slice time are also stored per entry in `efit_data[entry]` (`efit_tree`, `efit_time`) for downstream use (e.g. plot labels). Applies to every EFIT-mapping tab (shared base-tab logic).
+
+### Fixed — Ion Profile & Time Trace: opened CES result files (mod/nn) were ignored
+- Opening a `*_tces_mod_*` / `*_tces_nn_*` result file via **"Open CES Result File..."** parses its `# Name = 'tces_mod'` header down to source `mod` (or `nn`), which collides with the MDS+ analysis-type names. The tabs stored the file under `file_{shot}_{source}` but every downstream site looked it up under `{shot}_{source}`, so on a cache miss the file was silently ignored: the Time Trace / Profile plots **fetched CES from MDS+ instead of using the opened file** (and `plot_efit_profiles` raised a `KeyError`, caught as `[Ti/vT] Error plotting`). For shots without CES in MDS+ (e.g. #24928) that fetch returns empty (`times=0`, all-NaN) and also spams `[CES] RT position nodes not available ... falling back to config/radius_tces.csv`, so nothing plotted.
+  - Added a shared `_ces_cache_key(shot, source)` helper to both Ion tabs that **prefers the loaded file cache** (`file_{shot}_{source}`) and only falls back to the MDS+ key when no file is loaded. Applied to every cache-key site: Time Trace `plot_data` / `_write_data_to_file`; Profile `plot_data` / `plot_efit_profiles` / `_write_data_to_file` / `_get_efit_profile_data` (fitting) / `_expand_entries_for_dt` / `_get_data_sampling_dt`. `tgf`-named files were unaffected and still work.
+
+### Fixed — XICS auto-loaded when opening a CES result file
+- As of the XICS-dropdown change, Time Trace **Fetch** only loads XICS when the `XICS` analysis type is selected, but **"Open CES Result File..."** (both Ion Profile and Time Trace) still auto-fetched XICS for the file's shot — producing a spurious `[XICS] Data not available for shot ...` on shots without XICS. File loading is now CES-only. (The Profile **Fetch** path still loads the XICS overlay alongside CES, as before — only the file-open path changed.)
+
 ## [2.6.4] - 2026-07-03
 
 ### Added — Headless IRVB batch (`prism irvb`) + SDK

@@ -34,8 +34,7 @@ class IonProfileTab(ProfileBaseTab):
     # ---------- vT / ω display helpers ----------
 
     def _is_omega_mode(self):
-        return getattr(self, 'param2_combo', None) is not None \
-            and self.param2_combo.currentText().startswith('ωT')
+        return self._y_param_text().startswith('ω')
 
     def _y2_label(self):
         return self.Y2_OMEGA_LABEL if self._is_omega_mode() else self.Y2_VT_LABEL
@@ -54,18 +53,15 @@ class IonProfileTab(ProfileBaseTab):
         super()._restore_shot_from_settings()
         from config.user_settings import get_tab_settings
         s = get_tab_settings(self._settings_key)
-        if hasattr(self, 'param2_combo'):
-            saved = s.get('y2_mode', 'vT [km/s]')
-            idx = self.param2_combo.findText(saved)
-            if idx >= 0:
-                self.param2_combo.setCurrentIndex(idx)
+        if getattr(self, 'y_axis_combo', None) is not None:
+            self._set_y_param_text(s.get('y2_mode', 'vT'))
 
     def save_settings(self):
         super().save_settings()
         from config.user_settings import get_tab_settings, set_tab_settings
         s = get_tab_settings(self._settings_key)
-        if hasattr(self, 'param2_combo'):
-            s['y2_mode'] = self.param2_combo.currentText()
+        if getattr(self, 'y_axis_combo', None) is not None:
+            s['y2_mode'] = self._y_param_text()
         set_tab_settings(self._settings_key, s)
 
     def _create_shot_input(self, parent):
@@ -120,61 +116,9 @@ class IonProfileTab(ProfileBaseTab):
 
         parent.layout().addWidget(group)
 
-    def _create_plot_controls(self, parent):
-        """Plot controls: x-axis radios + Plot/Option buttons + vT/ω toggle + Show Nodes + Channels."""
-        from PySide6.QtWidgets import QFrame as _QFrame, QGroupBox as _QGB
-        from ui.widgets.toggle_switch import ToggleSwitch
-
-        group = _QGB("4. Plot")
-        group_layout = QVBoxLayout(group)
-
-        # X-axis radio buttons: R | ψₙ | ρₚₒₗ | ρₜₒᵣ
-        self._create_x_axis_radios(group_layout)
-
-        # Row 1: vT/ω combo + Plot + Option
-        row1 = QHBoxLayout()
-        self.param2_combo = QComboBox()
-        self.param2_combo.addItems(['vT [km/s]', 'ωT [krad/s]'])
-        self.param2_combo.setCurrentText('vT [km/s]')
-        self.param2_combo.setFixedWidth(110)
-        self.param2_combo.currentTextChanged.connect(lambda _t: self._on_plot_clicked())
-        row1.addWidget(self.param2_combo)
-        plot_button = QPushButton("Plot")
-        plot_button.clicked.connect(self._on_plot_clicked)
-        row1.addWidget(plot_button, 2)
-        style_btn = QPushButton("Option")
-        style_btn.clicked.connect(self._show_style_dialog)
-        row1.addWidget(style_btn, 1)
-        group_layout.addLayout(row1)
-
-        sep = _QFrame(); sep.setFrameShape(_QFrame.HLine); sep.setFrameShadow(_QFrame.Sunken)
-        group_layout.addWidget(sep)
-
-        # Hidden color combo (used by _get_plot_colors / settings)
-        self.color_mode_combo = QComboBox()
-        self.color_mode_combo.addItems([
-            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
-            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
-        ])
-        self.color_mode_combo.setCurrentText("Gradient(viridis)")
-        self.color_mode_combo.hide()
-        self.label_fontsize = 12
-        self.legend_fontsize = 8
-        self.tick_fontsize = 10
-
-        row2 = QHBoxLayout()
-        self.show_channel_checkbox = ToggleSwitch()
-        self.show_channel_checkbox.toggled.connect(self._on_show_nodes_toggled)
-        row2.addWidget(self.show_channel_checkbox)
-        row2.addWidget(QLabel("Show Nodes"))
-        row2.addStretch()
-        channels_btn = QPushButton("Select Channels")
-        channels_btn.setToolTip("Select which channels to enable or dim")
-        channels_btn.clicked.connect(self._show_channel_selector)
-        row2.addWidget(channels_btn)
-        group_layout.addLayout(row2)
-
-        parent.layout().addWidget(group)
+    def _yaxis_param_spec(self):
+        """Y-axis (right) selector: vT / ωT, auto-replot on change."""
+        return ("Y-axis (right)", ['vT', 'ωT'], 'vT', True)
 
     def _get_preview_info(self):
         if not hasattr(self, '_last_preview_data'):
@@ -203,6 +147,21 @@ class IonProfileTab(ProfileBaseTab):
             from config.diagnostic_config import DIAGNOSTICS
             self.xics_loader = XICSLoader(self.app_config, DIAGNOSTICS.get('XICS', {}))
         return self.xics_loader
+
+    def _ces_cache_key(self, shot_number, source):
+        """Cache key for CES data, preferring an opened result file.
+
+        Files opened via "Open CES Result File..." are stored under
+        'file_{shot}_{source}'. Their Name header 'tces_mod'/'tces_nn' parses to
+        source 'mod'/'nn', which also names the MDS+ analysis types. Checking the
+        file key first keeps an opened file from being silently replaced by an
+        (often empty) MDS+ fetch under the '{shot}_{source}' key. When no file is
+        loaded this returns the MDS+ key (only meaningful for mod/nn).
+        """
+        file_key = f'file_{shot_number}_{source}'
+        if file_key in self.data:
+            return file_key
+        return f'{shot_number}_{source}'
 
     def load_shot_data(self):
         """Load CES and XICS shot data from MDS+"""
@@ -298,14 +257,8 @@ class IonProfileTab(ProfileBaseTab):
             print(f"[CES] Result file loaded: {data.source}")
             self._set_status(f"File loaded: {data.source} for #{shot_number}", 'green')
 
-            # Try to load XICS data for this shot
-            loader = self._get_xics_loader()
-            xics_data = loader.load_data(shot_number)
-
-            if xics_data is not None:
-                xics_cache_key = f'{shot_number}_XICS'
-                self.xics_data_cache[xics_cache_key] = xics_data
-                print(f"[XICS] Data loaded: {len(xics_data.time)} timepoints")
+            # File loading is CES-only. XICS is loaded separately via the
+            # Fetch path, not auto-fetched when opening a file.
 
         except ValueError as e:
             QMessageBox.critical(self.frame, "Invalid File Format", str(e))
@@ -359,6 +312,10 @@ class IonProfileTab(ProfileBaseTab):
             'vT_err': vT_err[0, time_idx]
         }
 
+    def _place_time_avg_rshift_in_plot(self):
+        """Ion hosts Time avg + R-shift in the '4. Plot' group."""
+        return True
+
     def _get_rshift_diagnostics(self):
         """CES supports R-shift"""
         return ['CES']
@@ -372,10 +329,7 @@ class IonProfileTab(ProfileBaseTab):
         expanded = []
         for entry in selected_entries:
             shot_number, time_point, source = self._parse_entry(entry)
-            if source in ['mod', 'nn']:
-                cache_key = f'{shot_number}_{source}'
-            else:
-                cache_key = f'file_{shot_number}_{source}'
+            cache_key = self._ces_cache_key(shot_number, source)
             if cache_key not in self.data:
                 expanded.append(entry)
                 continue
@@ -389,10 +343,7 @@ class IonProfileTab(ProfileBaseTab):
 
     def _get_data_sampling_dt(self, entry):
         shot_number, time_point, source = self._parse_entry(entry)
-        if source in ['mod', 'nn']:
-            cache_key = f'{shot_number}_{source}'
-        else:
-            cache_key = f'file_{shot_number}_{source}'
+        cache_key = self._ces_cache_key(shot_number, source)
         if cache_key in self.data and len(self.data[cache_key].time) > 1:
             return float(np.median(np.diff(self.data[cache_key].time)))
         return None
@@ -404,17 +355,14 @@ class IonProfileTab(ProfileBaseTab):
         if source == 'XICS':
             return None
 
-        if source in ['mod', 'nn']:
-            cache_key = f'{shot_number}_{source}'
-        else:
-            cache_key = f'file_{shot_number}_{source}'
+        cache_key = self._ces_cache_key(shot_number, source)
 
         if cache_key not in self.data:
             return None
 
         data = self.data[cache_key]
 
-        ces_rshift = self._get_rshift('CES')
+        ces_rshift = self._get_rshift('CES', entry)
         x_data = interp_func(data.radius + ces_rshift)
 
         Ti_data, Ti_err = data.get_parameter('Ti')
@@ -542,10 +490,7 @@ class IonProfileTab(ProfileBaseTab):
                     continue
 
                 # CES data processing
-                if source in ['mod', 'nn']:
-                    cache_key = f'{shot_number}_{source}'
-                else:
-                    cache_key = f'file_{shot_number}_{source}'
+                cache_key = self._ces_cache_key(shot_number, source)
 
                 # Load data if not cached
                 if cache_key not in self.data:
@@ -558,7 +503,7 @@ class IonProfileTab(ProfileBaseTab):
                     data = self.data[cache_key]
 
                 time_idx = np.argmin(np.abs(data.time - time_point))
-                R_data = data.radius
+                R_data = data.radius + self._get_rshift('CES', entry)
 
                 Ti_data, Ti_err = data.get_parameter('Ti')
                 vT_data, vT_err = data.get_parameter('vT')
@@ -751,14 +696,11 @@ class IonProfileTab(ProfileBaseTab):
                     continue
 
                 # CES data processing
-                if source in ['mod', 'nn']:
-                    cache_key = f'{shot_number}_{source}'
-                else:
-                    cache_key = f'file_{shot_number}_{source}'
+                cache_key = self._ces_cache_key(shot_number, source)
 
                 data = self.data[cache_key]
 
-                ces_rshift = self._get_rshift('CES')
+                ces_rshift = self._get_rshift('CES', entry)
                 x_data = interp_func(data.radius + ces_rshift)
 
                 Ti_data, Ti_err = data.get_parameter('Ti')
@@ -949,10 +891,7 @@ class IonProfileTab(ProfileBaseTab):
                     continue
 
                 # Determine cache key for CES data
-                if source in ['mod', 'nn']:
-                    cache_key = f'{shot_number}_{source}'
-                else:
-                    cache_key = f'file_{shot_number}_{source}'
+                cache_key = self._ces_cache_key(shot_number, source)
 
                 # Load data if not cached
                 if cache_key not in self.data:
@@ -965,7 +904,7 @@ class IonProfileTab(ProfileBaseTab):
                     data = self.data[cache_key]
 
                 actual_time = time_point
-                R_data = data.radius + self._get_rshift('CES')
+                R_data = data.radius + self._get_rshift('CES', entry)
 
                 Ti_data, Ti_err = data.get_parameter('Ti')
                 vT_data, vT_err = data.get_parameter('vT')

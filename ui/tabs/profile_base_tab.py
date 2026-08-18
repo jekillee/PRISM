@@ -49,6 +49,9 @@ class ProfileBaseTab(BaseTab):
         self.fit_sol_enable: Dict[str, bool] = {}  # {param_type: SOL post-process on/off}
         self._click_points: List[Tuple] = []  # [(x, y, channel_key, ax), ...]
         self.r_shift_entries: Dict[str, Any] = {}  # {diag_name: QLineEdit}
+        # Per-timepoint R-shift overrides {entry_str: mm}. Session-only (never
+        # saved to settings); wins over the uniform per-diagnostic value.
+        self._entry_rshifts: Dict[str, float] = {}
 
     def create_widgets(self) -> None:
         """Create common profile tab layout"""
@@ -105,31 +108,20 @@ class ProfileBaseTab(BaseTab):
         control_layout.addStretch()
 
     def _create_plot_controls(self, parent: QWidget) -> None:
-        """Create plot control buttons with x-axis radio selection"""
+        """Create the '4. Plot' group.
+
+        Layout: a column-aligned grid (X-axis radios, optional Y-axis dropdown —
+        Ion: Rotation, MSE: q or j —, Time avg / R-shift, and a Channels row with
+        a Show-Nodes on/off toggle + Select button), then a separator, then the
+        Plot | Option action row at the bottom.
+        """
+        from PySide6.QtWidgets import QGridLayout
         group = QGroupBox("4. Plot")
         group_layout = QVBoxLayout(group)
 
-        # X-axis radio buttons: R | ψₙ | ρₚₒₗ | ρₜₒᵣ
-        self._create_x_axis_radios(group_layout)
-
-        # Plot + Option buttons in same row
-        plot_row = QHBoxLayout()
-
-        plot_button = QPushButton("Plot")
-        plot_button.clicked.connect(self._on_plot_clicked)
-        plot_row.addWidget(plot_button, 3)
-
-        style_btn = QPushButton("Option")
-        style_btn.clicked.connect(self._show_style_dialog)
-        plot_row.addWidget(style_btn, 1)
-
-        group_layout.addLayout(plot_row)
-
-        # Separator line
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        group_layout.addWidget(separator)
+        # 'Show Nodes' state holder (toggle lives inside the Select Channels
+        # dialog, not in this group).
+        self._ensure_show_nodes_state()
 
         # Hidden combo for color mode (used by _get_plot_colors, saved to settings)
         self.color_mode_combo = QComboBox()
@@ -145,26 +137,136 @@ class ProfileBaseTab(BaseTab):
         self.legend_fontsize = 8
         self.tick_fontsize = 10
 
-        # Show Nodes toggle + Select Channels button
-        from ui.widgets.toggle_switch import ToggleSwitch
+        # One column-aligned grid so every label (col 0) and field (col 1-3) lines
+        # up. Order: X-axis, Y-axis, Plot|Option (no separator above), separator,
+        # R-shift, Channels, Time avg.
+        pgrid = QGridLayout()
+        pgrid.setColumnStretch(0, 0)
+        pgrid.setColumnStretch(1, 1)
+        pgrid.setColumnStretch(2, 0)
+        pgrid.setColumnStretch(3, 1)
+        content_rows = []
+        prow = 0
+        prow = self._add_axes_row(pgrid, prow)
+        content_rows += list(range(prow))
 
-        row2 = QHBoxLayout()
+        # Plot | Option (directly under Y-axis, no separator above)
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        plot_button = QPushButton("Plot")
+        plot_button.clicked.connect(self._on_plot_clicked)
+        btn_row.addWidget(plot_button, 3)
+        style_btn = QPushButton("Option")
+        style_btn.clicked.connect(self._show_style_dialog)
+        btn_row.addWidget(style_btn, 1)
+        pgrid.addLayout(btn_row, prow, 0, 1, 4)
+        content_rows.append(prow)
+        prow += 1
 
-        self.show_channel_checkbox = ToggleSwitch()
-        self.show_channel_checkbox.toggled.connect(self._on_show_nodes_toggled)
-        row2.addWidget(self.show_channel_checkbox)
-        row2.addWidget(QLabel("Show Nodes"))
+        # Separator (thin row — not pinned to the uniform height)
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        pgrid.addWidget(separator, prow, 0, 1, 4)
+        prow += 1
 
-        row2.addStretch()
+        # R-shift, Channels, Time avg (below the separator)
+        start = prow
+        prow = self._add_rshift_channels_row(pgrid, prow)
+        if self._place_time_avg_rshift_in_plot():
+            prow = self._build_time_avg_row(pgrid, prow)
+        content_rows += list(range(start, prow))
 
-        channels_btn = QPushButton("Select Channels")
-        channels_btn.setToolTip("Select which channels to enable or dim")
-        channels_btn.clicked.connect(self._show_channel_selector)
-        row2.addWidget(channels_btn)
-
-        group_layout.addLayout(row2)
+        # Uniform, static row height = a push button's height, so radio/label
+        # rows match the (taller) button rows instead of each sizing to its own
+        # content. Computed once; applied to every content row (not the separator).
+        row_h = QPushButton().sizeHint().height()
+        for _i in content_rows:
+            pgrid.setRowMinimumHeight(_i, row_h)
+        group_layout.addLayout(pgrid)
 
         parent.layout().addWidget(group)
+
+    def _add_axes_row(self, grid, grid_row) -> int:
+        """One row split into equal quarters: 'X-axis' + X-axis combo, and (for
+        tabs with a right-axis selector) 'Y-axis (right)' + Y-axis combo. Returns
+        the next free grid row."""
+        from PySide6.QtWidgets import QComboBox
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(QLabel("X-axis"), 1)
+        row.addWidget(self._make_x_axis_combo(), 1)
+
+        spec = self._yaxis_param_spec()
+        if spec is not None:
+            label, options, default, auto_replot = spec
+            row.addWidget(QLabel(label), 1)
+            self.y_axis_combo = QComboBox()
+            self.y_axis_combo.addItems(options)
+            idx = self.y_axis_combo.findText(default)
+            if idx >= 0:
+                self.y_axis_combo.setCurrentIndex(idx)
+            if auto_replot:
+                self.y_axis_combo.currentTextChanged.connect(
+                    lambda _t: self._on_plot_clicked())
+            row.addWidget(self.y_axis_combo, 1)
+
+        grid.addLayout(row, grid_row, 0, 1, 4)
+        return grid_row + 1
+
+    def _yaxis_param_spec(self):
+        """Hook: (label, options, default, auto_replot) for the right-axis combo,
+        or None if the tab has no right-axis selector. Overridden by Ion/MSE."""
+        return None
+
+    def _y_param_text(self) -> str:
+        """Text of the selected Y-axis (right) combo item ('' if none)."""
+        combo = getattr(self, 'y_axis_combo', None)
+        return combo.currentText() if combo is not None else ''
+
+    def _set_y_param_text(self, text) -> None:
+        """Select the Y-axis (right) combo item whose text matches `text`."""
+        combo = getattr(self, 'y_axis_combo', None)
+        if combo is None:
+            return
+        idx = combo.findText(text)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+
+    def _ensure_show_nodes_state(self) -> None:
+        """Create the headless 'Show Nodes' toggle state holder. The toggle lives
+        inside the Select Channels dialog; kept as a ToggleSwitch so settings
+        save/restore and `_add_channel_labels` keep working unchanged."""
+        if getattr(self, 'show_channel_checkbox', None) is None:
+            from ui.widgets.toggle_switch import ToggleSwitch
+            self.show_channel_checkbox = ToggleSwitch()
+            self.show_channel_checkbox.toggled.connect(self._on_show_nodes_toggled)
+
+    def _add_rshift_channels_row(self, grid, grid_row) -> int:
+        """Two full-width rows, each with a left label + a right-aligned button:
+          'R-shift'  [Adjust]   (only for tabs that support R-shift)
+          'Channels' [Select]   (opens the channel enable/dim + Show-Nodes dialog)
+        Returns the next free grid row."""
+        def _label_button_row(text, button):
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.addWidget(QLabel(text), 1)   # left half
+            row.addWidget(button, 1)          # right half
+            return row
+
+        if self._get_rshift_diagnostics():
+            adjust_btn = QPushButton("Adjust")
+            adjust_btn.setToolTip("Adjust R-shift per timepoint [mm]")
+            adjust_btn.clicked.connect(self._show_rshift_dialog)
+            grid.addLayout(_label_button_row("R-shift", adjust_btn), grid_row, 0, 1, 4)
+            grid_row += 1
+
+        channels_btn = QPushButton("Select / Deselect")
+        channels_btn.setToolTip("Select channels to enable/dim, and toggle node labels")
+        channels_btn.clicked.connect(self._show_channel_selector)
+        grid.addLayout(_label_button_row("Channels", channels_btn), grid_row, 0, 1, 4)
+        grid_row += 1
+        return grid_row
 
     def _on_plot_clicked(self) -> None:
         """Unified plot handler: dispatches to R-space or flux-space plot"""
@@ -205,8 +307,9 @@ class ProfileBaseTab(BaseTab):
                 "No channel data available.\nLoad and plot data first.")
             return
 
+        from ui.widgets.toggle_switch import ToggleSwitch
         dialog = QDialog(self.frame)
-        dialog.setWindowTitle("Select Channels")
+        dialog.setWindowTitle("Select / Deselect Channels")
         dialog.setMinimumWidth(300)
         dlg_layout = QVBoxLayout(dialog)
 
@@ -215,6 +318,17 @@ class ProfileBaseTab(BaseTab):
                       "Unchecked channels are excluded from fitting.")
         hint.setWordWrap(True)
         dlg_layout.addWidget(hint)
+
+        # Show Nodes on/off toggle (draws channel node labels on the plot),
+        # synced to the headless show_channel_checkbox state holder.
+        self._ensure_show_nodes_state()
+        sn_row = QHBoxLayout()
+        show_nodes_toggle = ToggleSwitch()
+        show_nodes_toggle.setChecked(self.show_channel_checkbox.isChecked(), animate=False)
+        sn_row.addWidget(show_nodes_toggle)
+        sn_row.addWidget(QLabel("Show Nodes"))
+        sn_row.addStretch()
+        dlg_layout.addLayout(sn_row)
 
         # Scrollable area for checkboxes
         scroll = QScrollArea()
@@ -235,29 +349,32 @@ class ProfileBaseTab(BaseTab):
         scroll.setWidget(cb_widget)
         dlg_layout.addWidget(scroll)
 
-        # Select All / Deselect All buttons
-        sel_layout = QHBoxLayout()
+        # Button row (3 equal parts): Select All | Deselect All | Apply
+        btn_row = QHBoxLayout()
         select_all_btn = QPushButton("Select All")
         select_all_btn.clicked.connect(
             lambda: [cb.setChecked(True) for _, cb in checkboxes])
-        sel_layout.addWidget(select_all_btn)
+        btn_row.addWidget(select_all_btn, 1)
         deselect_all_btn = QPushButton("Deselect All")
         deselect_all_btn.clicked.connect(
             lambda: [cb.setChecked(False) for _, cb in checkboxes])
-        sel_layout.addWidget(deselect_all_btn)
-        dlg_layout.addLayout(sel_layout)
-
-        # OK / Cancel
-        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btn_box.accepted.connect(dialog.accept)
-        btn_box.rejected.connect(dialog.reject)
-        dlg_layout.addWidget(btn_box)
+        btn_row.addWidget(deselect_all_btn, 1)
+        apply_btn = QPushButton("Apply")
+        apply_btn.clicked.connect(dialog.accept)
+        btn_row.addWidget(apply_btn, 1)
+        dlg_layout.addLayout(btn_row)
 
         def _apply():
             self._disabled_channels.clear()
             for idx, cb in checkboxes:
                 if not cb.isChecked():
                     self._disabled_channels.add(idx)
+            # Update Show-Nodes state without its own redraw; one replot below.
+            self.show_channel_checkbox.blockSignals(True)
+            self.show_channel_checkbox.setChecked(show_nodes_toggle.isChecked())
+            self.show_channel_checkbox.blockSignals(False)
+            if self.ax1.lines or self.ax1.collections:
+                self._on_plot_clicked()
         dialog.accepted.connect(_apply)
         self._channel_selector_dialog = dialog
         dialog.show()
@@ -408,32 +525,10 @@ class ProfileBaseTab(BaseTab):
         grid.addWidget(self.fit_xmax_entry, row, 3)
         row += 1
 
-        # dt for time-averaging: [Time avg. [ms]] [toggle] [entry]
-        from ui.widgets.toggle_switch import ToggleSwitch
-        grid.addWidget(QLabel("Time avg. [ms]"), row, 0)
-        self.dt_toggle = ToggleSwitch()
-        self.dt_toggle.toggled.connect(self._on_dt_toggled)
-        grid.addWidget(self.dt_toggle, row, 1, 1, 2, Qt.AlignCenter)
-        self.fit_dt_entry = QLineEdit("0")
-        self.fit_dt_entry.setToolTip("Time averaging window: fit on mean of [t-dt, t+dt].")
-        self.fit_dt_entry.setEnabled(False)
-        grid.addWidget(self.fit_dt_entry, row, 3)
-        self._dt_enabled = False
-        row += 1
-
-        # R-shift entries per diagnostic (in mm), one per row
-        rshift_diags = self._get_rshift_diagnostics()
-        for i, diag_name in enumerate(rshift_diags):
-            label_text = "R-shift [mm]" if i == 0 else ""
-            grid.addWidget(QLabel(label_text), row, 0)
-            diag_label = QLabel(diag_name)
-            diag_label.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-            grid.addWidget(diag_label, row, 1, 1, 2)  # span col1-2
-            entry = QLineEdit("0")
-            entry.setToolTip(f"R-shift for {diag_name} [mm]")
-            self.r_shift_entries[diag_name] = entry
-            grid.addWidget(entry, row, 3)  # col3 only, aligns with X Range max
-            row += 1
+        # Time avg row — kept here unless the subclass (Ion/Electron) hosts it in
+        # the '4. Plot' group. (R-shift is a button in the Plot group, not here.)
+        if not self._place_time_avg_rshift_in_plot():
+            row = self._build_time_avg_row(grid, row)
 
         # Subclass hook for extra controls (e.g. TCI validation checkbox)
         row = self._add_extra_fitting_controls(grid, row)
@@ -445,6 +540,30 @@ class ProfileBaseTab(BaseTab):
 
         parent.layout().addWidget(group)
 
+    def _place_time_avg_rshift_in_plot(self) -> bool:
+        """Whether Time avg + R-shift live in the '4. Plot' group instead of the
+        '5. Fitting' group. Ion/Electron override to True so the controls are
+        always available (Plot is enabled without EFIT mapping); other profile
+        tabs (e.g. MSE) keep them in the Fitting group."""
+        return False
+
+    def _build_time_avg_row(self, grid, row: int) -> int:
+        """Create the 'Time avg. [ms]' label + toggle + entry into `grid` at
+        `row`. Returns the next free row."""
+        from PySide6.QtWidgets import QLineEdit
+        from ui.widgets.toggle_switch import ToggleSwitch
+
+        grid.addWidget(QLabel("Time avg. [ms]"), row, 0)
+        self.dt_toggle = ToggleSwitch()
+        self.dt_toggle.toggled.connect(self._on_dt_toggled)
+        grid.addWidget(self.dt_toggle, row, 1, 1, 2, Qt.AlignCenter)
+        self.fit_dt_entry = QLineEdit("0")
+        self.fit_dt_entry.setToolTip("Time averaging window: fit on mean of [t-dt, t+dt].")
+        self.fit_dt_entry.setEnabled(False)
+        grid.addWidget(self.fit_dt_entry, row, 3)
+        self._dt_enabled = False
+        return row + 1
+
     def _add_extra_fitting_controls(self, grid, row: int) -> int:
         """Hook for subclasses to add extra controls to the fitting section.
         Returns the next available row number."""
@@ -455,15 +574,90 @@ class ProfileBaseTab(BaseTab):
         Override in subclass. E.g., ['CES'] for Ion, ['Thomson', 'ECE'] for Electron."""
         return []
 
-    def _get_rshift(self, diag_name: str) -> float:
-        """Get R-shift value for a diagnostic in meters (UI is in mm)"""
-        entry = self.r_shift_entries.get(diag_name)
-        if entry is None:
+    def _get_rshift(self, diag_name: str, entry: str = None) -> float:
+        """R-shift in meters (dialog input is in mm) for a diagnostic.
+
+        R-shift is set per timepoint via the R-shift dialog and is session-only.
+        Returns the override for `entry` if one exists, else 0 (no shift).
+        `diag_name` is accepted for call-site clarity / future per-diagnostic use."""
+        if entry is not None:
+            override = self._entry_rshifts.get(entry)
+            if override is not None:
+                return override / 1000.0  # mm -> m
+        # Legacy per-diagnostic uniform field (no longer shown); 0 if absent.
+        widget = self.r_shift_entries.get(diag_name)
+        if widget is None:
             return 0.0
         try:
-            return float(entry.text()) / 1000.0  # mm -> m
+            return float(widget.text()) / 1000.0  # mm -> m
         except ValueError:
             return 0.0
+
+    def _show_rshift_dialog(self) -> None:
+        """R-shift editor: one field per selected timepoint (in mm). Blank = no
+        shift. Values are session-only and applied (re-plot) on OK."""
+        from PySide6.QtWidgets import QLineEdit, QGridLayout
+        entries = [self.selected_listbox.item(i).text()
+                   for i in range(self.selected_listbox.count())]
+        if not entries:
+            QMessageBox.information(self.frame, "R-shift",
+                "No timepoints selected.\nSelect data first.")
+            return
+
+        dialog = QDialog(self.frame)
+        dialog.setWindowTitle("R-shift [mm]")
+        dialog.setMinimumWidth(360)
+        dlg_layout = QVBoxLayout(dialog)
+        hint = QLabel("R-shift [mm] per timepoint (blank = 0).")
+        hint.setWordWrap(True)
+        dlg_layout.addWidget(hint)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setMaximumHeight(400)
+        form_widget = QWidget()
+        form = QGridLayout(form_widget)
+        form.setColumnStretch(0, 1)
+        form.setColumnStretch(1, 0)
+        fields = []
+        for r, entry in enumerate(entries):
+            form.addWidget(QLabel(entry), r, 0)
+            le = QLineEdit()
+            le.setFixedWidth(80)
+            le.setPlaceholderText("0")
+            override = self._entry_rshifts.get(entry)
+            if override is not None:
+                le.setText(str(override))
+            form.addWidget(le, r, 1)
+            fields.append((entry, le))
+        scroll.setWidget(form_widget)
+        dlg_layout.addWidget(scroll)
+
+        # Button row: Clear all (left half) | Apply (right half)
+        btn_row = QHBoxLayout()
+        clear_btn = QPushButton("Clear all")
+        clear_btn.clicked.connect(lambda: [le.clear() for _, le in fields])
+        btn_row.addWidget(clear_btn, 1)
+        apply_btn = QPushButton("Apply")
+        apply_btn.clicked.connect(dialog.accept)
+        btn_row.addWidget(apply_btn, 1)
+        dlg_layout.addLayout(btn_row)
+
+        def _apply():
+            for entry, le in fields:
+                txt = le.text().strip()
+                if txt == '':
+                    self._entry_rshifts.pop(entry, None)
+                    continue
+                try:
+                    self._entry_rshifts[entry] = float(txt)
+                except ValueError:
+                    self._entry_rshifts.pop(entry, None)
+            self._on_plot_clicked()
+        dialog.accepted.connect(_apply)
+        self._rshift_dialog = dialog
+        dialog.show()
 
     def _update_fit_func_tooltip_for(self, ptype: str) -> None:
         """Update tooltip on function combo for a specific param type"""

@@ -151,75 +151,12 @@ class MSEProfileTab(ProfileBaseTab):
             pass
 
     def _get_selected_param(self):
-        """Get selected parameter key from dropdown ('q' or 'j'), stripping unit suffix."""
-        return self.param_combo.currentText().split()[0]
+        """Get selected parameter key ('q' or 'j'), stripping any unit suffix."""
+        return (self._y_param_text() or 'q').split()[0]
 
-    def _create_plot_controls(self, parent):
-        """Create plot control buttons with x-axis radios and q/j selection"""
-        group = QGroupBox("4. Plot")
-        group_layout = QVBoxLayout(group)
-
-        # X-axis radio buttons: R | ψₙ | ρₚₒₗ | ρₜₒᵣ
-        self._create_x_axis_radios(group_layout)
-
-        # Row 1: q/j dropdown + Plot button
-        row1 = QHBoxLayout()
-
-        self.param_combo = QComboBox()
-        self.param_combo.addItems(['q', 'j [MA/m²]'])
-        self.param_combo.setFixedWidth(110)
-        row1.addWidget(self.param_combo)
-
-        plot_button = QPushButton("Plot")
-        plot_button.clicked.connect(self._on_plot_clicked)
-        row1.addWidget(plot_button, 2)
-
-        style_btn = QPushButton("Option")
-        style_btn.clicked.connect(self._show_style_dialog)
-        row1.addWidget(style_btn, 1)
-
-        group_layout.addLayout(row1)
-
-        # Separator line
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        group_layout.addWidget(separator)
-
-        # Hidden combo for color mode (used by _get_plot_colors, saved to settings)
-        self.color_mode_combo = QComboBox()
-        self.color_mode_combo.addItems([
-            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
-            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
-        ])
-        self.color_mode_combo.setCurrentText("Gradient(viridis)")
-        self.color_mode_combo.hide()
-
-        # Default font sizes
-        self.label_fontsize = 12
-        self.legend_fontsize = 8
-        self.tick_fontsize = 10
-
-        # Show Nodes toggle + Select Channels button
-        from ui.widgets.toggle_switch import ToggleSwitch
-
-        row2 = QHBoxLayout()
-
-        self.show_channel_checkbox = ToggleSwitch()
-        self.show_channel_checkbox.toggled.connect(self._on_show_nodes_toggled)
-        row2.addWidget(self.show_channel_checkbox)
-        row2.addWidget(QLabel("Show Nodes"))
-
-        row2.addStretch()
-
-        channels_btn = QPushButton("Select Channels")
-        channels_btn.setToolTip("Select which channels to enable or dim")
-        channels_btn.clicked.connect(self._show_channel_selector)
-        row2.addWidget(channels_btn)
-
-        group_layout.addLayout(row2)
-
-        parent.layout().addWidget(group)
+    def _yaxis_param_spec(self):
+        """Y-axis (right) selector: q / j."""
+        return ("Y-axis (right)", ['q', 'j'], 'q', False)
 
     def _get_preview_info(self):
         if not hasattr(self, '_last_preview_data'):

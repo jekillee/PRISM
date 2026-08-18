@@ -226,6 +226,10 @@ class ElectronProfileTab(ProfileBaseTab):
                 return key
         return None
 
+    def _place_time_avg_rshift_in_plot(self):
+        """Electron hosts Time avg + R-shift in the '4. Plot' group."""
+        return True
+
     def _get_rshift_diagnostics(self):
         """Thomson and ECE support R-shift"""
         return ['Thomson', 'ECE']
@@ -283,7 +287,7 @@ class ElectronProfileTab(ProfileBaseTab):
                 return None
 
             ece_data = self.ece_data_cache[cache_key]
-            ece_rshift = self._get_rshift('ECE')
+            ece_rshift = self._get_rshift('ECE', entry)
             x_data = interp_func(ece_data.radius + ece_rshift)
             Te_all = ece_data.measurements['Te']['data']
             valid_mask = ece_data.measurements['Te']['valid_mask']
@@ -313,7 +317,7 @@ class ElectronProfileTab(ProfileBaseTab):
             return None
 
         data = self.data[cache_key]
-        ts_rshift = self._get_rshift('Thomson')
+        ts_rshift = self._get_rshift('Thomson', entry)
         x_data = interp_func(data.radius + ts_rshift)
 
         Te_all, Te_eu_all, Te_el_all = data.get_parameter_asymmetric('Te')
@@ -354,7 +358,7 @@ class ElectronProfileTab(ProfileBaseTab):
             ece_cache_key = self._get_ece_cache_key(shot_number)
             if ece_cache_key is not None:
                 ece_data = self.ece_data_cache[ece_cache_key]
-                ece_rshift = self._get_rshift('ECE')
+                ece_rshift = self._get_rshift('ECE', entry)
                 ece_x_data = interp_func(ece_data.radius + ece_rshift)
                 ece_Te_all = ece_data.measurements['Te']['data']
                 valid_mask = ece_data.measurements['Te']['valid_mask']
@@ -466,7 +470,7 @@ class ElectronProfileTab(ProfileBaseTab):
                         self.data[cache_key] = data
 
                     time_idx = np.argmin(np.abs(data.time - time_point))
-                    R_data = data.radius
+                    R_data = data.radius + self._get_rshift('Thomson', entry)
 
                     Te_data, Te_err_upper, Te_err_lower = data.get_parameter_asymmetric('Te')
                     ne_data, ne_err_upper, ne_err_lower = data.get_parameter_asymmetric('ne')
@@ -537,7 +541,7 @@ class ElectronProfileTab(ProfileBaseTab):
                             ece_data = self.ece_data_cache[ece_cache_key]
 
                             ece_time_idx = np.argmin(np.abs(ece_data.time - time_point))
-                            ece_R_data = ece_data.radius
+                            ece_R_data = ece_data.radius + self._get_rshift('ECE', entry)
 
                             ece_Te_data = ece_data.measurements['Te']['data']
                             ece_Te_profile = ece_Te_data[:, ece_time_idx]
@@ -595,7 +599,7 @@ class ElectronProfileTab(ProfileBaseTab):
                         ece_data = self.ece_data_cache[cache_key]
 
                     time_idx = np.argmin(np.abs(ece_data.time - time_point))
-                    R_data = ece_data.radius
+                    R_data = ece_data.radius + self._get_rshift('ECE', entry)
 
                     Te_data = ece_data.measurements['Te']['data']
                     Te_profile = Te_data[:, time_idx]
@@ -719,7 +723,7 @@ class ElectronProfileTab(ProfileBaseTab):
                     cache_key = f'{shot_number}_TS'
                     data = self.data[cache_key]
 
-                    ts_rshift = self._get_rshift('Thomson')
+                    ts_rshift = self._get_rshift('Thomson', entry)
                     x_data = interp_func(data.radius + ts_rshift)
 
                     Te_data, Te_err_upper, Te_err_lower = data.get_parameter_asymmetric('Te')
@@ -820,7 +824,7 @@ class ElectronProfileTab(ProfileBaseTab):
                         ece_cache_key = self._get_ece_cache_key(shot_number)
                         if ece_cache_key is not None:
                             ece_data = self.ece_data_cache[ece_cache_key]
-                            ece_rshift = self._get_rshift('ECE')
+                            ece_rshift = self._get_rshift('ECE', entry)
                             ece_x_data = interp_func(ece_data.radius + ece_rshift)
 
                             ece_Te_data = ece_data.measurements['Te']['data']
@@ -882,7 +886,7 @@ class ElectronProfileTab(ProfileBaseTab):
 
                     if cache_key:
                         ece_data = self.ece_data_cache[cache_key]
-                        ece_rshift = self._get_rshift('ECE')
+                        ece_rshift = self._get_rshift('ECE', entry)
                         x_data = interp_func(ece_data.radius + ece_rshift)
 
                         Te_data = ece_data.measurements['Te']['data']
@@ -1016,7 +1020,7 @@ class ElectronProfileTab(ProfileBaseTab):
                         data = self.data_loader.load_data(shot_number)
                         self.data[cache_key] = data
 
-                    R_data = data.radius + self._get_rshift('Thomson')
+                    R_data = data.radius + self._get_rshift('Thomson', entry)
 
                     Te_data, Te_err_upper, Te_err_lower = data.get_parameter_asymmetric('Te')
                     ne_data, ne_err_upper, ne_err_lower = data.get_parameter_asymmetric('ne')
@@ -1066,7 +1070,7 @@ class ElectronProfileTab(ProfileBaseTab):
                     ece_cache_key = self._get_ece_cache_key(shot_number)
                     if ece_cache_key is not None:
                         ece_data = self.ece_data_cache[ece_cache_key]
-                        ece_R_data = ece_data.radius
+                        ece_R_data = ece_data.radius + self._get_rshift('ECE', entry)
                         ece_Te_data = ece_data.measurements['Te']['data']
 
                         if dt_s > 0:
@@ -1105,7 +1109,7 @@ class ElectronProfileTab(ProfileBaseTab):
 
                     time_idx = np.argmin(np.abs(ece_data.time - time_point))
                     actual_time = ece_data.time[time_idx]
-                    R_data = ece_data.radius
+                    R_data = ece_data.radius + self._get_rshift('ECE', entry)
 
                     Te_data = ece_data.measurements['Te']['data']
                     Te_profile = Te_data[:, time_idx]

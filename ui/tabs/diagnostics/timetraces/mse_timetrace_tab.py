@@ -89,15 +89,19 @@ class MSETimeTraceTab(TimeTraceBaseTab):
         group = QGroupBox("3. Plot")
         group_layout = QVBoxLayout(group)
 
-        row1 = QHBoxLayout()
-
+        # Bottom-panel selector on its own row, above Plot (time trace stacks the
+        # two panels top/bottom, so this picks the bottom one). Label:combo = 50/50.
+        row_y = QHBoxLayout()
+        row_y.addWidget(QLabel("Y-axis (bottom)"), 1)
         self.param_combo = QComboBox()
         self.param_combo.addItems(['q', 'j'])
-        row1.addWidget(self.param_combo)
+        row_y.addWidget(self.param_combo, 1)
+        group_layout.addLayout(row_y)
 
+        row1 = QHBoxLayout()
         plot_button = QPushButton('Plot')
         plot_button.clicked.connect(self.plot_data)
-        row1.addWidget(plot_button, 2)
+        row1.addWidget(plot_button, 3)
 
         style_btn = QPushButton("Option")
         style_btn.clicked.connect(self._show_style_dialog)

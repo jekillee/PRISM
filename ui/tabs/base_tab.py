@@ -312,54 +312,37 @@ class BaseTab(ABC):
 
         return frame
 
-    def _create_x_axis_radios(self, parent_layout):
-        """Create R/ψₙ/ρₚₒₗ/ρₜₒᵣ radio buttons for x-axis selection.
-        Flux radios are disabled until EFIT mapping is computed."""
-        self.x_axis_button_group = QButtonGroup()
-
-        radio_R = QRadioButton("R")
-        radio_psi_n = QRadioButton("\u03C8\u2099")       # ψₙ
-        radio_rho_pol = QRadioButton("\u03C1\u209A\u2092\u2097")  # ρₚₒₗ
-        radio_rho_tor = QRadioButton("\u03C1\u209C\u2092\u1D63")  # ρₜₒᵣ
-
-        radio_R.setProperty("axis_value", "R")
-        radio_psi_n.setProperty("axis_value", "psi_N")
-        radio_rho_pol.setProperty("axis_value", "rho_pol")
-        radio_rho_tor.setProperty("axis_value", "rho_tor")
-
-        self.x_axis_button_group.addButton(radio_R)
-        self.x_axis_button_group.addButton(radio_psi_n)
-        self.x_axis_button_group.addButton(radio_rho_pol)
-        self.x_axis_button_group.addButton(radio_rho_tor)
-
-        radio_R.setChecked(True)
-
-        # Disable flux radios until EFIT mapped
-        self._flux_radios = [radio_psi_n, radio_rho_pol, radio_rho_tor]
-        for r in self._flux_radios:
-            r.setEnabled(False)
-
-        row = QHBoxLayout()
-        row.addWidget(QLabel("X-axis"))
-        row.addStretch(2)
-        for r in [radio_R, radio_psi_n, radio_rho_pol, radio_rho_tor]:
-            row.addWidget(r, 1)
-        parent_layout.addLayout(row)
+    def _make_x_axis_combo(self):
+        """Create the X-axis QComboBox (R / ψₙ / ρₚₒₗ / ρₜₒᵣ), each carrying its
+        axis value as itemData. The flux items are disabled until EFIT mapping is
+        computed. Returns the combo."""
+        from PySide6.QtWidgets import QComboBox
+        combo = QComboBox()
+        combo.addItem("R", "R")
+        combo.addItem("ψₙ", "psi_N")
+        combo.addItem("ρₚₒₗ", "rho_pol")
+        combo.addItem("ρₜₒᵣ", "rho_tor")
+        self.x_axis_combo = combo
+        self._flux_item_indices = [1, 2, 3]
+        self._enable_flux_radios(False)   # disabled until EFIT mapped
+        return combo
 
     def _enable_flux_radios(self, enabled: bool = True):
-        """Enable or disable flux coordinate radio buttons"""
-        if hasattr(self, '_flux_radios'):
-            for r in self._flux_radios:
-                r.setEnabled(enabled)
+        """Enable/disable the flux items (ψₙ/ρₚₒₗ/ρₜₒᵣ) in the X-axis combo.
+        Falls back to R if a disabled item was selected."""
+        if not hasattr(self, 'x_axis_combo'):
+            return
+        model = self.x_axis_combo.model()
+        for i in self._flux_item_indices:
+            model.item(i).setEnabled(enabled)
+        if not enabled and self.x_axis_combo.currentIndex() in self._flux_item_indices:
+            self.x_axis_combo.setCurrentIndex(0)
 
     def _get_selected_x_axis(self):
-        """Get the currently selected x-axis value from the radio buttons"""
-        if not hasattr(self, 'x_axis_button_group'):
+        """Get the currently selected x-axis value from the X-axis combo."""
+        if not hasattr(self, 'x_axis_combo'):
             return "R"
-        checked = self.x_axis_button_group.checkedButton()
-        if checked is not None:
-            return checked.property("axis_value")
-        return "R"
+        return self.x_axis_combo.currentData() or "R"
 
     def _create_save_controls(self, parent, section_num=None):
         """Create save controls (common for all tabs)"""
@@ -507,12 +490,9 @@ class BaseTab(ABC):
         self.computed_efit_tree = None
         self._enable_flux_radios(False)
         self._enable_fitting_group(False)
-        # Reset x-axis radio to R
-        if hasattr(self, 'x_axis_button_group'):
-            for btn in self.x_axis_button_group.buttons():
-                if btn.property("axis_value") == "R":
-                    btn.setChecked(True)
-                    break
+        # Reset x-axis to R
+        if hasattr(self, 'x_axis_combo'):
+            self.x_axis_combo.setCurrentIndex(0)
         # Clear fit results if present
         if hasattr(self, 'fit_results'):
             self.fit_results.clear()
@@ -572,10 +552,14 @@ class BaseTab(ABC):
                         'R': efit_data.radius,
                         'psi_N': efit_data.psi_n[time_idx],
                         'rho_pol': efit_data.rho_pol[time_idx],
-                        'rho_tor': efit_data.rho_tor[time_idx]
+                        'rho_tor': efit_data.rho_tor[time_idx],
+                        'efit_tree': efit_tree,
+                        'efit_time': closest_time,
                     }
 
-                    print(f"[EFIT]   {entry} processed")
+                    dt_ms = (closest_time - time_point) * 1e3
+                    print(f"[EFIT]   {entry} processed "
+                          f"({efit_tree} @ {closest_time:.4f}s, Δ{dt_ms:+.1f}ms)")
 
             except Exception as e:
                 print(f"[EFIT] Error: {str(e)}")

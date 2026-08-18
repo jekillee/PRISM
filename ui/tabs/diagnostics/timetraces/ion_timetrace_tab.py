@@ -54,16 +54,21 @@ class IonTimeTraceTab(TimeTraceBaseTab):
         group = _QGB("3. Plot")
         group_layout = QVBoxLayout(group)
 
-        row1 = QHBoxLayout()
+        # Bottom-panel selector on its own row, above Plot (time trace stacks the
+        # two panels top/bottom, so this picks the bottom one). Label:combo = 50/50.
+        row_y = QHBoxLayout()
+        row_y.addWidget(QLabel("Y-axis (bottom)"), 1)
         self.param2_combo = QComboBox()
-        self.param2_combo.addItems(['vT [km/s]', 'ωT [krad/s]'])
-        self.param2_combo.setCurrentText('vT [km/s]')
-        self.param2_combo.setFixedWidth(110)
+        self.param2_combo.addItems(['vT', 'ωT'])
+        self.param2_combo.setCurrentText('vT')
         self.param2_combo.currentTextChanged.connect(lambda _t: self.plot_data())
-        row1.addWidget(self.param2_combo)
+        row_y.addWidget(self.param2_combo, 1)
+        group_layout.addLayout(row_y)
+
+        row1 = QHBoxLayout()
         plot_button = QPushButton("Plot")
         plot_button.clicked.connect(self.plot_data)
-        row1.addWidget(plot_button, 2)
+        row1.addWidget(plot_button, 3)
         style_btn = QPushButton("Option")
         style_btn.clicked.connect(self._show_style_dialog)
         row1.addWidget(style_btn, 1)
@@ -87,7 +92,7 @@ class IonTimeTraceTab(TimeTraceBaseTab):
         from config.user_settings import get_tab_settings
         s = get_tab_settings(self._settings_key)
         if hasattr(self, 'param2_combo'):
-            saved = s.get('y2_mode', 'vT [km/s]')
+            saved = s.get('y2_mode', 'vT')
             idx = self.param2_combo.findText(saved)
             if idx >= 0:
                 self.param2_combo.setCurrentIndex(idx)
@@ -169,6 +174,21 @@ class IonTimeTraceTab(TimeTraceBaseTab):
             from config.diagnostic_config import DIAGNOSTICS
             self.xics_loader = XICSLoader(self.app_config, DIAGNOSTICS.get('XICS', {}))
         return self.xics_loader
+
+    def _ces_cache_key(self, shot_number, source):
+        """Cache key for CES data, preferring an opened result file.
+
+        Files opened via "Open CES Result File..." are stored under
+        'file_{shot}_{source}'. Their Name header 'tces_mod'/'tces_nn' parses to
+        source 'mod'/'nn', which also names the MDS+ analysis types. Checking the
+        file key first keeps an opened file from being silently replaced by an
+        (often empty) MDS+ fetch under the '{shot}_{source}' key. When no file is
+        loaded this returns the MDS+ key (only meaningful for mod/nn).
+        """
+        file_key = f'file_{shot_number}_{source}'
+        if file_key in self.data:
+            return file_key
+        return f'{shot_number}_{source}'
 
     def load_shot_data(self):
         """Load CES and XICS shot data from MDS+, sorted by R"""
@@ -269,14 +289,8 @@ class IonTimeTraceTab(TimeTraceBaseTab):
             print(f"[CES] Result file loaded: {data.source}")
             self._set_status(f"File loaded: {data.source} for #{shot_number}", 'green')
 
-            # Try to load XICS data for this shot
-            loader = self._get_xics_loader()
-            xics_data = loader.load_data(shot_number)
-
-            if xics_data is not None:
-                xics_cache_key = f'{shot_number}_XICS'
-                self.xics_data_cache[xics_cache_key] = xics_data
-                print(f"[XICS] Data loaded: {len(xics_data.time)} timepoints")
+            # File loading is CES-only. XICS is loaded separately via the
+            # 'XICS' Fetch selection, not auto-fetched when opening a file.
 
             # Build list of all channels with R positions
             all_channels = []
@@ -287,13 +301,6 @@ class IonTimeTraceTab(TimeTraceBaseTab):
                 all_channels.append({
                     'R': radius,
                     'label': f'{shot_number:06d}_{radius*1e3:.0f} ({ch_label})'
-                })
-
-            # Add XICS channel
-            if xics_data is not None:
-                all_channels.append({
-                    'R': 1.8,
-                    'label': f'{shot_number:06d}_1800 (XICS)'
                 })
 
             # Sort by R position
@@ -452,21 +459,17 @@ class IonTimeTraceTab(TimeTraceBaseTab):
                                  linestyle='none')
 
                 else:
-                    # Plot CES time trace
-                    if source in ['mod', 'nn']:
-                        cache_key = f'{shot_number}_{source}'
-                    else:
-                        cache_key = f'file_{shot_number}_{source}'
-
-                    # Load data if not cached
+                    # Plot CES time trace. A result file (Name 'tces_mod' /
+                    # 'tces_nn') parses to source 'mod'/'nn', colliding with the
+                    # MDS+ analysis types. Prefer the file cache so an opened
+                    # file is what gets plotted; only fetch MDS+ as a fallback.
+                    cache_key = self._ces_cache_key(shot_number, source)
                     if cache_key not in self.data:
                         if source in ['mod', 'nn']:
-                            data = self.data_loader.load_data(shot_number, source)
+                            self.data[cache_key] = self.data_loader.load_data(shot_number, source)
                         else:
-                            continue
-                        self.data[cache_key] = data
-                    else:
-                        data = self.data[cache_key]
+                            continue  # File-only source with nothing loaded
+                    data = self.data[cache_key]
 
                     radius_idx = np.argmin(np.abs(data.radius - radius))
                     actual_R = data.radius[radius_idx]
@@ -557,20 +560,14 @@ class IonTimeTraceTab(TimeTraceBaseTab):
                         ))
 
                 else:
-                    # Write CES data
-                    if source in ['mod', 'nn']:
-                        cache_key = f'{shot_number}_{source}'
-                    else:
-                        cache_key = f'file_{shot_number}_{source}'
-
+                    # Write CES data (prefer opened file over MDS+ fetch)
+                    cache_key = self._ces_cache_key(shot_number, source)
                     if cache_key not in self.data:
                         if source in ['mod', 'nn']:
-                            data = self.data_loader.load_data(shot_number, source)
-                            self.data[cache_key] = data
+                            self.data[cache_key] = self.data_loader.load_data(shot_number, source)
                         else:
                             continue
-                    else:
-                        data = self.data[cache_key]
+                    data = self.data[cache_key]
 
                     radius_idx = np.argmin(np.abs(data.radius - radius))
                     actual_R = data.radius[radius_idx]
