@@ -278,7 +278,7 @@ class EfitPfileTab:
         plot_btn = QPushButton("Plot")
         plot_btn.clicked.connect(self._plot)
         btn_row.addWidget(plot_btn, 3)
-        opt_btn = QPushButton("Option")
+        opt_btn = QPushButton("Style")
         opt_btn.clicked.connect(self._show_style_dialog)
         btn_row.addWidget(opt_btn, 1)
         layout.addLayout(btn_row)

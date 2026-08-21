@@ -630,7 +630,7 @@ class NModeSpectrumTab:
         self.run_button.clicked.connect(self._run_calculation)
         grid.addWidget(self.run_button, row, 0, 1, 3)
 
-        plot_options_btn = QPushButton('Option')
+        plot_options_btn = QPushButton('Style')
         plot_options_btn.clicked.connect(self._show_plot_options_dialog)
         grid.addWidget(plot_options_btn, row, 3)
         row += 1

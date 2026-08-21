@@ -1,6 +1,8 @@
 """
-IRVB (Infra-Red Video Bolometer) data loader
-Loads reconstructed radiation data from HTTP server
+IRVB (Infra-Red Video Bolometer) data loaders
+
+- IRVBLoader:     reconstructed 2D radiation (.mat) from the IRVB HTTP server
+- IRVBPradLoader: total radiated power node \\IRVB1_PRAD from MDS+ (time trace)
 """
 
 import os
@@ -10,6 +12,8 @@ import urllib.request
 import urllib.error
 
 from config.app_config import PRISM_NAS_ROOT, ensure_shared_dir
+from data_loaders.base_loader import BaseDiagnosticLoader
+from core.data_structures import DiagnosticData
 
 
 class IRVBData:
@@ -110,6 +114,57 @@ class IRVBLoader:
             print(f"[IRVB] Loaded {len(time)} timepoints, grid {self.NX}x{self.NY}")
             
             return IRVBData(time, recon, ptot, x_grid, y_grid)
-            
+
         except Exception as e:
             raise RuntimeError(f"Failed to load IRVB data: {str(e)}")
+
+
+class IRVBPradLoader(BaseDiagnosticLoader):
+    """Loader for the IRVB total radiated power node ``\\IRVB1_PRAD`` (MDS+).
+
+    Used by the IRVB Time Trace tab to plot / compare ``\\IRVB1_PRAD`` (the value
+    the IRVB analysis publishes to MDS) across shots.
+    """
+
+    NODE = '\\IRVB1_PRAD'
+
+    def load_data(self, shot_number, analysis_type=None, apply_mask=True):
+        """Load ``\\IRVB1_PRAD`` (MW) vs time from MDS+.
+
+        apply_mask=True trims to the IP-fault window (like the other time traces);
+        pass False to get the full-range node as-is (used by the IRVB imaging tab).
+        """
+        mds = self._connect_mds(shot_number)
+        try:
+            data = np.asarray(mds.get(self.NODE).data()).flatten()
+            time = np.asarray(mds.get(f'dim_of({self.NODE})').data()).flatten()
+
+            n = min(len(data), len(time))
+            data = data[:n]
+            time = time[:n]
+
+            # IP fault masking (consistent with other time traces)
+            if apply_mask:
+                ip_fault_time = self.get_ip_fault_time(shot_number)
+                if ip_fault_time is not None:
+                    mask = self.get_valid_time_mask(time, ip_fault_time)
+                    time = time[mask]
+                    data = data[mask]
+
+            if len(time) == 0:
+                raise ValueError(f"No {self.NODE} data for shot #{shot_number}")
+
+            print(f"[IRVB1_PRAD] {len(data)} points, "
+                  f"t = {time[0]:.3f} ~ {time[-1]:.3f} s")
+
+            measurements = {
+                'prad': {'time': time, 'data': data, 'name': 'IRVB1 Prad'},
+            }
+            return DiagnosticData(
+                time=time,
+                radius=np.array([1.0]),
+                measurements=measurements,
+                source='mdsplus',
+            )
+        finally:
+            self._close_mds(mds, shot_number)

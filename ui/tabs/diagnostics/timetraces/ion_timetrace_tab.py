@@ -34,8 +34,7 @@ class IonTimeTraceTab(TimeTraceBaseTab):
     # ---------- vT / ω display helpers ----------
 
     def _is_omega_mode(self):
-        return getattr(self, 'param2_combo', None) is not None \
-            and self.param2_combo.currentText().startswith('ωT')
+        return self._y_param_text().startswith('ω')
 
     def _y2_label(self):
         return self.Y2_OMEGA_LABEL if self._is_omega_mode() else self.Y2_VT_LABEL
@@ -48,61 +47,27 @@ class IonTimeTraceTab(TimeTraceBaseTab):
             return np.full_like(vT_trace, np.nan), np.full_like(vT_err_trace, np.nan)
         return vT_trace / R_scalar, vT_err_trace / R_scalar
 
-    def _create_plot_controls(self, parent):
-        """Plot controls: Plot/Option + vT/ω toggle (mirrors MSE q/j pattern)."""
-        from PySide6.QtWidgets import QFrame as _QFrame, QGroupBox as _QGB
-        group = _QGB("3. Plot")
-        group_layout = QVBoxLayout(group)
+    def _yaxis_param_spec(self):
+        """Bottom-panel selector: vT / ωT, auto-replot on change."""
+        return ("Y-axis (bottom)", ['vT', 'ωT'], 'vT', True)
 
-        # Bottom-panel selector on its own row, above Plot (time trace stacks the
-        # two panels top/bottom, so this picks the bottom one). Label:combo = 50/50.
-        row_y = QHBoxLayout()
-        row_y.addWidget(QLabel("Y-axis (bottom)"), 1)
-        self.param2_combo = QComboBox()
-        self.param2_combo.addItems(['vT', 'ωT'])
-        self.param2_combo.setCurrentText('vT')
-        self.param2_combo.currentTextChanged.connect(lambda _t: self.plot_data())
-        row_y.addWidget(self.param2_combo, 1)
-        group_layout.addLayout(row_y)
-
-        row1 = QHBoxLayout()
-        plot_button = QPushButton("Plot")
-        plot_button.clicked.connect(self.plot_data)
-        row1.addWidget(plot_button, 3)
-        style_btn = QPushButton("Option")
-        style_btn.clicked.connect(self._show_style_dialog)
-        row1.addWidget(style_btn, 1)
-        group_layout.addLayout(row1)
-
-        self.color_mode_combo = QComboBox()
-        self.color_mode_combo.addItems([
-            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
-            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
-        ])
-        self.color_mode_combo.setCurrentText("Gradient(viridis)")
-        self.color_mode_combo.hide()
-        self.label_fontsize = 12
-        self.legend_fontsize = 8
-        self.tick_fontsize = 10
-
-        parent.layout().addWidget(group)
+    def _yaxis_option_html(self, option):
+        """Display vT/ωT with a subscript capital T (rendered as an icon)."""
+        return {'vT': 'v<sub>T</sub>', 'ωT': 'ω<sub>T</sub>'}.get(option)
 
     def _restore_shot_from_settings(self):
         super()._restore_shot_from_settings()
         from config.user_settings import get_tab_settings
         s = get_tab_settings(self._settings_key)
-        if hasattr(self, 'param2_combo'):
-            saved = s.get('y2_mode', 'vT')
-            idx = self.param2_combo.findText(saved)
-            if idx >= 0:
-                self.param2_combo.setCurrentIndex(idx)
+        if getattr(self, 'y_axis_combo', None) is not None:
+            self._set_y_param_text(s.get('y2_mode', 'vT'))
 
     def save_settings(self):
         super().save_settings()
         from config.user_settings import get_tab_settings, set_tab_settings
         s = get_tab_settings(self._settings_key)
-        if hasattr(self, 'param2_combo'):
-            s['y2_mode'] = self.param2_combo.currentText()
+        if getattr(self, 'y_axis_combo', None) is not None:
+            s['y2_mode'] = self._y_param_text()
         set_tab_settings(self._settings_key, s)
 
     def _create_shot_input(self, parent):

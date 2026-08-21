@@ -344,7 +344,7 @@ class SpectrogramTab:
         plot_btn.clicked.connect(self._plot_spectrogram)
         grid.addWidget(plot_btn, 3, 0, 1, 3)
 
-        plot_options_btn = QPushButton('Option')
+        plot_options_btn = QPushButton('Style')
         plot_options_btn.clicked.connect(self._show_plot_options_dialog)
         grid.addWidget(plot_options_btn, 3, 3)
 

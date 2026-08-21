@@ -5,7 +5,9 @@ IRVB (Infra-Red Video Bolometer) tab
 
 import os
 import re
+import json
 import time as tclock
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
@@ -30,9 +32,21 @@ from ui.ui_constants import (
 from config.user_settings import get_tab_settings, set_tab_settings
 
 
+# Divertor-era limiter cache: shots <= 32768 use the carbon divertor; >= 32769 use
+# the tungsten (W) divertor (their limiter geometry differs). The polygons come from
+# reference shots' efitrt1 \lim and are cached here (built on first use where MDS is
+# reachable, i.e. nkstar/ukstar), so the IRVB 2D plot can draw the limiter even
+# without EFIT mapping.
+_LIMITER_JSON = Path(__file__).resolve().parents[4] / 'config' / 'irvb_limiter.json'
+
+
 # Example script for loading IRVB NPZ file
 IRVB_EXAMPLE_SCRIPT = '''"""
-Example script for loading and plotting PRISM IRVB NPZ file
+Example script for loading and plotting a PRISM IRVB NPZ file.
+
+Handles both save modes:
+  - with EFIT mapping : 2D map + flux/LCFS/limiter overlay + regional Prad
+  - without EFIT      : 2D map only + the MDS IRVB1_PRAD total trace
 """
 
 import numpy as np
@@ -40,49 +54,29 @@ import matplotlib.pyplot as plt
 
 # ===== User inputs (edit here) =============================================
 filepath = 'irvb_XXXXXX_0.0-10.0s.npz'
-# psi_boundaries: region boundaries in psi_N, like the PRISM IRVB tab (up to 5).
-#                 None -> reuse the boundaries that were saved from PRISM.
+# psi_boundaries: region boundaries in psi_N (EFIT saves only). None -> saved ones.
 psi_boundaries = None      # e.g. [0.3, 0.7, 1.0]
 # target_time:    time [s] for the 2D snapshot. None -> middle frame.
 target_time = None         # e.g. 5.0
 # ===========================================================================
 
 data = np.load(filepath, allow_pickle=True)
+keys = set(data.files)
+has_efit = 'efit_psi_n' in keys        # False for EFIT-off saves
 
-# Extract data
+# Base arrays (always present)
 time = data['time']               # Time array [s]
 R = data['R']                     # R coordinates [m]
 Z = data['Z']                     # Z coordinates [m]
 prad_2d = data['prad_2d']         # 2D Prad array (time, Z, R) [MW/m^3]
-psi_n = data['psi_n']             # Normalized psi on the IRVB (R,Z) grid, same shape as prad_2d
-region_prad = data['region_prad'] # Regional Prad for the SAVED boundaries (n_regions, time) [MW]
-ptot = data['ptot']               # Total radiated power [MW]
+ptot = data['ptot']               # .mat total radiated power [MW]
 
-# EFIT data
-efit_bdry_r = data['efit_bdry_r']       # LCFS R coordinates (time, max_points) [m]
-efit_bdry_z = data['efit_bdry_z']       # LCFS Z coordinates (time, max_points) [m]
-efit_nbdry = data['efit_nbdry']         # Number of boundary points per frame
-efit_rmaxis = data['efit_rmaxis']       # Magnetic axis R (time) [m]
-efit_zmaxis = data['efit_zmaxis']       # Magnetic axis Z (time) [m]
-efit_limiter_r = data['efit_limiter_r'] # Limiter R [m]
-efit_limiter_z = data['efit_limiter_z'] # Limiter Z [m]
-
-# Get metadata
 metadata = data['metadata'].item()
 print(f"Shot: {metadata['shot']}")
-print(f"EFIT tree: {metadata['efit_tree']}")
-print(f"Saved psi boundaries: {metadata['psi_boundaries']}")
+print(f"EFIT tree: {metadata['efit_tree']}")   # 'none' for EFIT-off saves
 print(f"Total frames: {len(time)}")
 
-# Resolve inputs: fall back to the saved boundaries / middle frame when None.
-if psi_boundaries is None:
-    psi_boundaries = list(metadata['psi_boundaries'])
 frame_idx = len(time) // 2 if target_time is None else int(np.argmin(np.abs(time - target_time)))
-
-# Regions from the boundaries: [0, b1), [b1, b2), ..., [bn, inf). One color each.
-edges = [0] + list(psi_boundaries) + [np.inf]
-n_regions = len(edges) - 1
-colors = [plt.cm.tab10(i) for i in range(n_regions)]
 
 # --- (1) 2D Prad map at the chosen frame -----------------------------------
 fig, ax = plt.subplots(figsize=(6, 8))
@@ -90,21 +84,28 @@ levels = np.linspace(0.0, 1.5, 101)     # same colormap range as PRISM
 im = ax.contourf(R, Z, prad_2d[frame_idx], levels=levels, extend='max')
 plt.colorbar(im, ax=ax, label='Prad [MW/m$^3$]')
 
-# Background flux surfaces psi_N = 0.1..0.9 (psi_n is on the IRVB R,Z grid)
-ax.contour(R, Z, psi_n[frame_idx], levels=np.arange(0.1, 1.0, 0.1),
-           colors='gray', linewidths=0.5, alpha=0.6)
+if has_efit:
+    psi_n = data['psi_n']         # psi_N on the IRVB (R,Z) grid, same shape as prad_2d
+    if psi_boundaries is None:
+        psi_boundaries = list(metadata['psi_boundaries'])
+    edges = [0] + list(psi_boundaries) + [np.inf]
+    n_regions = len(edges) - 1
+    colors = [plt.cm.tab10(i) for i in range(n_regions)]
 
-# psi boundary lines (dashed, colored to match the time-trace regions)
-for i, b in enumerate(psi_boundaries):
-    if np.isfinite(b):
-        ax.contour(R, Z, psi_n[frame_idx], levels=[b],
-                   colors=[colors[i]], linewidths=2, linestyles='--')
-
-# LCFS (from stored boundary), limiter, magnetic axis
-nbdry = efit_nbdry[frame_idx]
-ax.plot(efit_bdry_r[frame_idx, :nbdry], efit_bdry_z[frame_idx, :nbdry], 'k-', lw=2)
-ax.plot(efit_limiter_r, efit_limiter_z, 'k--', lw=1)
-ax.plot(efit_rmaxis[frame_idx], efit_zmaxis[frame_idx], 'k+', markersize=10, mew=2)
+    # Background flux surfaces + psi boundary lines
+    ax.contour(R, Z, psi_n[frame_idx], levels=np.arange(0.1, 1.0, 0.1),
+               colors='gray', linewidths=0.5, alpha=0.6)
+    for i, b in enumerate(psi_boundaries):
+        if np.isfinite(b):
+            ax.contour(R, Z, psi_n[frame_idx], levels=[b],
+                       colors=[colors[i]], linewidths=2, linestyles='--')
+    # LCFS (stored boundary), limiter, magnetic axis
+    nbdry = data['efit_nbdry'][frame_idx]
+    ax.plot(data['efit_bdry_r'][frame_idx, :nbdry],
+            data['efit_bdry_z'][frame_idx, :nbdry], 'k-', lw=2)
+    ax.plot(data['efit_limiter_r'], data['efit_limiter_z'], 'k--', lw=1)
+    ax.plot(data['efit_rmaxis'][frame_idx], data['efit_zmaxis'][frame_idx],
+            'k+', markersize=10, mew=2)
 
 ax.set_xlabel('R [m]')
 ax.set_ylabel('Z [m]')
@@ -113,28 +114,30 @@ ax.set_aspect('equal')
 plt.tight_layout()
 plt.show()
 
-# --- (2) Regional Prad time traces -----------------------------------------
-# Prad(t) per region = sum over pixels in [lo, hi) of prad_2d * (2*pi*R*dR*dZ).
-# psi_n shares the (R, Z) grid of prad_2d, so any psi_boundaries work here (the
-# same computation PRISM uses). With psi_boundaries=None this reproduces the
-# saved region_prad exactly.
-dR = R[1] - R[0]
-dZ = Z[1] - Z[0]
-RR, _ = np.meshgrid(R, Z)                 # R value at each (Z, R) pixel
-vol_factor = 2 * np.pi * RR * dR * dZ     # toroidal volume element [m^3]
-
+# --- (2) Prad time traces --------------------------------------------------
 fig, ax = plt.subplots(figsize=(10, 5))
-for i in range(n_regions):
-    lo, hi = edges[i], edges[i + 1]
-    mask = (psi_n >= lo) & (psi_n < hi)                        # (time, Z, R)
-    prad_region = np.sum(prad_2d * mask * vol_factor, axis=(1, 2))  # [MW] per frame
-    label = f'psi_N > {lo}' if hi == np.inf else f'{lo} <= psi_N < {hi}'
-    ax.plot(time, prad_region, color=colors[i], label=label)
-
-ax.plot(time, ptot, 'k--', lw=1.5, label='Ptot')
+if has_efit:
+    # Regional Prad = sum over pixels in [lo, hi) of prad_2d * (2*pi*R*dR*dZ).
+    dR = R[1] - R[0]
+    dZ = Z[1] - Z[0]
+    RR, _ = np.meshgrid(R, Z)                 # R value at each (Z, R) pixel
+    vol_factor = 2 * np.pi * RR * dR * dZ     # toroidal volume element [m^3]
+    for i in range(n_regions):
+        lo, hi = edges[i], edges[i + 1]
+        mask = (psi_n >= lo) & (psi_n < hi)                        # (time, Z, R)
+        prad_region = np.sum(prad_2d * mask * vol_factor, axis=(1, 2))
+        label = f'psi_N > {lo}' if hi == np.inf else f'{lo} <= psi_N < {hi}'
+        ax.plot(time, prad_region, color=colors[i], label=label)
+    ax.plot(time, ptot, 'k--', lw=1.5, label='Ptot')
+else:
+    # EFIT-off save: the displayed total is the MDS IRVB1_PRAD node (own time base)
+    if 'irvb1_prad' in keys:
+        ax.plot(data['irvb1_prad_time'], data['irvb1_prad'],
+                'b-', lw=1.5, label='IRVB1_PRAD (MDS)')
+    ax.plot(time, ptot, 'k--', lw=1.0, alpha=0.6, label='Ptot (.mat)')
 ax.set_xlabel('Time [s]')
 ax.set_ylabel('Prad [MW]')
-ax.set_title(f"Shot #{metadata['shot']} Regional Prad")
+ax.set_title(f"Shot #{metadata['shot']} Prad")
 ax.legend()
 ax.grid(True, alpha=0.3)
 plt.tight_layout()
@@ -148,6 +151,11 @@ class IRVBTab:
     # Default psi boundaries for region separation
     DEFAULT_PSI_BOUNDARIES = "0.7, 1.0"
     MAX_BOUNDARIES = 5
+
+    # Divertor era → reference shot whose efitrt1 \lim gives the limiter polygon.
+    # Shots <= DIVERTOR_SWITCH_SHOT are carbon divertor; above it, tungsten (W).
+    DIVERTOR_SWITCH_SHOT = 32768
+    LIMITER_REF_SHOTS = {'carbon': 32767, 'tungsten': 33121}
 
     # Label column width for consistent alignment
     LABEL_COLUMN_WIDTH = 90
@@ -177,6 +185,11 @@ class IRVBTab:
         self.efit_2d = None
         self.region_prad = None
         self.psi_boundaries = []
+        self.use_efit = True
+        self._active_limiter = None      # (R, Z) limiter to draw when EFIT is off
+        self._limiter_cache = None       # in-memory copy of irvb_limiter.json
+        self._prad_trace = None          # (time, \IRVB1_PRAD) shown when EFIT is off
+        self._irvb_prad_loader = None
         self.shot_number = None
         self.ip_fault_time = None
 
@@ -332,26 +345,120 @@ class IRVBTab:
         group = QGroupBox("2. EFIT Settings")
         grid = QGridLayout(group)
 
+        # Use-EFIT toggle: when off, the plot is a bare 2D radiation map with a
+        # single total-Prad time trace (no EFIT overlay / regional decomposition).
+        from ui.widgets.toggle_switch import ToggleSwitch
+        toggle_row = QWidget()
+        toggle_layout = QHBoxLayout(toggle_row)
+        toggle_layout.setContentsMargins(0, 0, 0, 0)
+        self.use_efit_toggle = ToggleSwitch()
+        self.use_efit_toggle.setChecked(True, animate=False)
+        self.use_efit_toggle.toggled.connect(self._on_use_efit_toggled)
+        toggle_layout.addWidget(self.use_efit_toggle)
+        toggle_layout.addWidget(QLabel("Use EFIT mapping"))
+        toggle_layout.addStretch()
+        grid.addWidget(toggle_row, 0, 0, 1, 2)
+
         # EFIT Tree selection
-        grid.addWidget(QLabel("EFIT Tree"), 0, 0)
+        grid.addWidget(QLabel("EFIT Tree"), 1, 0)
 
         efit_options = list(self.app_config.EFIT_TREES.keys())
         self.efit_tree_combo = QComboBox()
         self.efit_tree_combo.addItems(efit_options)
         self.efit_tree_combo.setCurrentIndex(0)
-        grid.addWidget(self.efit_tree_combo, 0, 1)
+        grid.addWidget(self.efit_tree_combo, 1, 1)
 
         # Psi boundaries
-        grid.addWidget(QLabel('psi bounds'), 1, 0)
+        grid.addWidget(QLabel('psi bounds'), 2, 0)
         self.psi_entry = QLineEdit(self.DEFAULT_PSI_BOUNDARIES)
-        grid.addWidget(self.psi_entry, 1, 1)
+        grid.addWidget(self.psi_entry, 2, 1)
 
         # Hint label
         hint = QLabel("(comma-separated, max 5 values)")
         hint.setStyleSheet("color: gray; font-size: 8pt;")
-        grid.addWidget(hint, 2, 0, 1, 2)
+        grid.addWidget(hint, 3, 0, 1, 2)
 
         parent_layout.addWidget(group)
+
+    def _on_use_efit_toggled(self, checked):
+        """Enable/disable the EFIT tree & psi-boundary inputs with the toggle."""
+        self.use_efit = checked
+        self.efit_tree_combo.setEnabled(checked)
+        self.psi_entry.setEnabled(checked)
+
+    # ------------------------------------------------------------------
+    # Divertor-era limiter (used to draw the limiter when EFIT is off)
+    # ------------------------------------------------------------------
+
+    def _load_limiter_cache(self):
+        """Load config/irvb_limiter.json into memory (cached). Returns a dict."""
+        if self._limiter_cache is None:
+            try:
+                with open(_LIMITER_JSON) as f:
+                    self._limiter_cache = json.load(f)
+            except Exception:
+                self._limiter_cache = {}
+        return self._limiter_cache
+
+    def _save_limiter_cache(self):
+        """Persist the in-memory limiter cache to config/irvb_limiter.json."""
+        try:
+            _LIMITER_JSON.parent.mkdir(parents=True, exist_ok=True)
+            with open(_LIMITER_JSON, 'w') as f:
+                json.dump(self._limiter_cache, f, indent=2)
+            print(f"[IRVB] Limiter cache written to {_LIMITER_JSON}")
+        except Exception as e:
+            print(f"[IRVB] Could not write limiter cache: {e}")
+
+    def _get_irvb1_prad(self, shot):
+        """Fetch the MDS ``\\IRVB1_PRAD`` trace ``(time, data)`` for the shot
+        (full range, unmasked), or None if unavailable."""
+        if shot is None:
+            return None
+        try:
+            if self._irvb_prad_loader is None:
+                from data_loaders.irvb_loader import IRVBPradLoader
+                self._irvb_prad_loader = IRVBPradLoader(self.app_config, {
+                    'name': 'IRVB_PRAD', 'mds_tree': 'kstar',
+                })
+            data = self._irvb_prad_loader.load_data(shot, apply_mask=False)
+            meas = data.measurements['prad']
+            return (np.asarray(meas['time']), np.asarray(meas['data']))
+        except Exception as e:
+            print(f"[IRVB] \\IRVB1_PRAD fetch failed: {e}")
+            return None
+
+    def _get_limiter_for_shot(self, shot):
+        """Return ``(R, Z)`` limiter arrays for the shot's divertor era, or None.
+
+        Carbon divertor (shot <= 32768) uses reference shot 32767; tungsten
+        (>= 32769) uses 33121. Read from config/irvb_limiter.json; on a cache miss
+        the reference shot's efitrt1 ``\\lim`` is fetched (needs MDS access) and
+        written back so it becomes a committable static file.
+        """
+        if shot is None:
+            return None
+        kind = 'carbon' if shot <= self.DIVERTOR_SWITCH_SHOT else 'tungsten'
+        cache = self._load_limiter_cache()
+        entry = cache.get(kind)
+        if entry and entry.get('R') and entry.get('Z'):
+            return (entry['R'], entry['Z'])
+
+        ref_shot = self.LIMITER_REF_SHOTS[kind]
+        print(f"[IRVB] Fetching {kind} divertor limiter from ref shot {ref_shot} (efitrt1)...")
+        lim = None
+        try:
+            lim = self.efit_loader.get_limiter(ref_shot, 'efitrt1')
+        except Exception as e:
+            print(f"[IRVB] Limiter fetch failed: {e}")
+        if lim is None:
+            print(f"[IRVB] No {kind} limiter available "
+                  f"(needs MDS access to build {os.path.basename(str(_LIMITER_JSON))})")
+            return None
+
+        cache[kind] = {'ref_shot': ref_shot, 'R': lim[0], 'Z': lim[1]}
+        self._save_limiter_cache()
+        return (lim[0], lim[1])
 
     def _create_plot_controls(self, parent_layout):
         """Create plot button section"""
@@ -365,7 +472,7 @@ class IRVBTab:
         plot_btn.clicked.connect(self._plot_data)
         plot_row.addWidget(plot_btn, 3)
 
-        style_btn = QPushButton("Option")
+        style_btn = QPushButton("Style")
         style_btn.clicked.connect(self._show_plot_options_dialog)
         plot_row.addWidget(style_btn, 1)
 
@@ -808,10 +915,6 @@ class IRVBTab:
             QMessageBox.warning(self.frame, "Warning", "No data to save. Plot data first.")
             return
 
-        if self.efit_2d is None:
-            QMessageBox.warning(self.frame, "Warning", "No EFIT data available.")
-            return
-
         # Default filename
         t_min = self.irvb_data.time[0]
         t_max = self.irvb_data.time[-1]
@@ -831,11 +934,16 @@ class IRVBTab:
         t_max = self.irvb_data.time[-1]
 
         try:
+            no_efit = self.efit_2d is None
+
             # Build region labels
             n_regions = len(self.psi_boundaries) + 1
             boundaries = [0] + self.psi_boundaries + [np.inf]
             region_labels = []
             for i in range(n_regions):
+                if no_efit:
+                    region_labels.append('total')
+                    continue
                 psi_min = boundaries[i]
                 psi_max = boundaries[i + 1]
                 if psi_max == np.inf:
@@ -847,10 +955,31 @@ class IRVBTab:
             metadata = {
                 'shot': self.shot_number,
                 'psi_boundaries': self.psi_boundaries,
-                'efit_tree': self.efit_tree_combo.currentText(),
+                'efit_tree': 'none' if no_efit else self.efit_tree_combo.currentText(),
                 'time_range': [t_min, t_max],
                 'region_labels': region_labels,
             }
+
+            # Base arrays (always saved); EFIT arrays are added below only when on
+            save_kwargs = dict(
+                metadata=np.array(metadata),
+                time=self.irvb_data.time,
+                R=self.irvb_data.x_grid,
+                Z=self.irvb_data.y_grid,
+                prad_2d=self.irvb_data.recon,
+                region_prad=self.region_prad,
+                ptot=self.irvb_data.ptot[:len(self.irvb_data.time)],
+            )
+
+            if no_efit:
+                # Save the MDS \IRVB1_PRAD trace (own time base) that is displayed
+                if self._prad_trace is not None:
+                    save_kwargs['irvb1_prad_time'] = np.asarray(self._prad_trace[0])
+                    save_kwargs['irvb1_prad'] = np.asarray(self._prad_trace[1])
+                np.savez(filepath, **save_kwargs)
+                print(f"[IRVB] Data saved (no EFIT) to: {filepath}")
+                QMessageBox.information(self.frame, "Saved", f"Data saved to:\n{filepath}")
+                return
 
             # Prepare EFIT data for each IRVB time point
             n_frames = len(self.irvb_data.time)
@@ -891,28 +1020,21 @@ class IRVBTab:
                     psi_irvb_cache[efit_idx] = spline(y_grid, x_grid)
                 psi_n[i] = psi_irvb_cache[efit_idx]
 
-            # Save to NPZ
-            np.savez(filepath,
-                     metadata=np.array(metadata),
-                     time=self.irvb_data.time,
-                     R=self.irvb_data.x_grid,
-                     Z=self.irvb_data.y_grid,
-                     prad_2d=self.irvb_data.recon,
-                     psi_n=psi_n,  # psi_N on the IRVB (R,Z) grid, same shape as prad_2d
-                     region_prad=self.region_prad,
-                     ptot=self.irvb_data.ptot[:len(self.irvb_data.time)],
-                     # EFIT data
-                     efit_r_grid=self.efit_2d.r_grid,
-                     efit_z_grid=self.efit_2d.z_grid,
-                     efit_psi_n=efit_psi_n,
-                     efit_bdry_r=efit_bdry_r,
-                     efit_bdry_z=efit_bdry_z,
-                     efit_nbdry=efit_nbdry,
-                     efit_rmaxis=efit_rmaxis,
-                     efit_zmaxis=efit_zmaxis,
-                     efit_limiter_r=self.efit_2d.limiter_r,
-                     efit_limiter_z=self.efit_2d.limiter_z
+            # Save to NPZ (base arrays + EFIT arrays)
+            save_kwargs.update(
+                psi_n=psi_n,  # psi_N on the IRVB (R,Z) grid, same shape as prad_2d
+                efit_r_grid=self.efit_2d.r_grid,
+                efit_z_grid=self.efit_2d.z_grid,
+                efit_psi_n=efit_psi_n,
+                efit_bdry_r=efit_bdry_r,
+                efit_bdry_z=efit_bdry_z,
+                efit_nbdry=efit_nbdry,
+                efit_rmaxis=efit_rmaxis,
+                efit_zmaxis=efit_zmaxis,
+                efit_limiter_r=self.efit_2d.limiter_r,
+                efit_limiter_z=self.efit_2d.limiter_z,
             )
+            np.savez(filepath, **save_kwargs)
 
             print(f"[IRVB] Data saved to: {filepath}")
             QMessageBox.information(self.frame, "Saved", f"Data saved to:\n{filepath}")
@@ -1073,8 +1195,8 @@ class IRVBTab:
         return lower_r[min_idx], lower_z[min_idx]
 
     def _compute_regional_prad(self):
-        """Compute Prad for each region defined by psi boundaries"""
-        if self.irvb_data is None or self.efit_2d is None:
+        """Compute Prad per psi region, or a single total Prad when EFIT is off"""
+        if self.irvb_data is None:
             return
 
         n_times = len(self.irvb_data.time)
@@ -1090,6 +1212,12 @@ class IRVBTab:
         dx = x_grid[1] - x_grid[0]
         dy = y_grid[1] - y_grid[0]
         vol_factor = 2 * np.pi * X * dx * dy
+
+        # No EFIT: the trace shown is the MDS \IRVB1_PRAD node (set in _plot_data).
+        # Keep the .mat Ptot in region_prad as a fallback for when MDS is unavailable.
+        if self.efit_2d is None:
+            self.region_prad[0] = self.irvb_data.ptot[:n_times]
+            return
 
         print("[IRVB] Computing regional Prad...")
 
@@ -1134,25 +1262,37 @@ class IRVBTab:
             QMessageBox.warning(self.frame, "Warning", "Please load IRVB data first")
             return
 
-        # Parse boundaries
-        self._update_status("Parsing psi boundaries...", color='blue')
-        self.psi_boundaries = self._parse_psi_boundaries()
-        if self.psi_boundaries is None:
-            self._update_status("Invalid psi boundaries", color='red')
-            return
+        if self.use_efit:
+            # Parse boundaries
+            self._update_status("Parsing psi boundaries...", color='blue')
+            self.psi_boundaries = self._parse_psi_boundaries()
+            if self.psi_boundaries is None:
+                self._update_status("Invalid psi boundaries", color='red')
+                return
 
-        # Load EFIT
-        self._update_status("Loading EFIT data...", color='blue')
-        if not self._load_efit_data():
-            self._update_status("Failed to load EFIT", color='red')
-            return
+            # Load EFIT
+            self._update_status("Loading EFIT data...", color='blue')
+            if not self._load_efit_data():
+                self._update_status("Failed to load EFIT", color='red')
+                return
 
-        # Slice data to EFIT time range and update frame controls
-        self._slice_by_efit_time()
+            # Slice data to EFIT time range and update frame controls
+            self._slice_by_efit_time()
+            self._active_limiter = None
+            self._prad_trace = None
+        else:
+            # No EFIT: time trace is the MDS \IRVB1_PRAD node (falls back to the
+            # .mat Ptot if MDS is unavailable — see _compute_regional_prad)
+            self.efit_2d = None
+            self.psi_boundaries = []
+            self._prad_trace = self._get_irvb1_prad(self.shot_number)
+            # Still draw the divertor limiter matching the shot's era
+            self._active_limiter = self._get_limiter_for_shot(self.shot_number)
+
         self._update_frame_controls()
 
-        # Compute regional Prad
-        self._update_status("Computing regional Prad...", color='blue')
+        # Compute total / regional Prad
+        self._update_status("Computing Prad...", color='blue')
         self._compute_regional_prad()
 
         # Setup figure layout
@@ -1209,11 +1349,14 @@ class IRVBTab:
         # Set ax references for each time trace (for toolbar Axes access)
         n_regions = len(self.psi_boundaries) + 1
         boundaries = [0] + self.psi_boundaries + [np.inf]
+        no_efit = self.efit_2d is None
         for i, ax in enumerate(self.ax_traces):
             setattr(self, f'ax_trace_{i}', ax)
             psi_min = boundaries[i]
             psi_max = boundaries[i + 1]
-            if psi_max == np.inf:
+            if no_efit:
+                ax.set_label('P_rad (total)')
+            elif psi_max == np.inf:
                 ax.set_label(f'P_rad (psi>{psi_min:.2f})')
             else:
                 ax.set_label(f'P_rad (psi={psi_min:.2f}-{psi_max:.2f})')
@@ -1224,7 +1367,9 @@ class IRVBTab:
             for i in range(n_regions):
                 psi_min = boundaries[i]
                 psi_max = boundaries[i + 1]
-                if psi_max == np.inf:
+                if no_efit:
+                    label = 'total'
+                elif psi_max == np.inf:
                     label = f'psi>{psi_min:.2f}'
                 else:
                     label = f'psi={psi_min:.2f}-{psi_max:.2f}'
@@ -1254,45 +1399,56 @@ class IRVBTab:
         self._trace_colors = self._get_trace_colors(n_regions)
 
         self.time_vlines = []
+        no_efit = self.efit_2d is None
 
         for i, ax in enumerate(self.ax_traces):
             ax.clear()
 
-            # Title on first axis with shot number and EFIT tree
+            # Title on first axis: shot number, plus EFIT tree only when EFIT is on
             if i == 0:
-                efit_display = self.efit_tree_combo.currentText()
-                ax.set_title(f'#{self.shot_number} ({efit_display})',
-                            fontsize=self.trace_label_fontsize)
+                if no_efit:
+                    title = f'#{self.shot_number}  Total Radiated Power'
+                else:
+                    title = f'#{self.shot_number} ({self.efit_tree_combo.currentText()})'
+                ax.set_title(title, fontsize=self.trace_label_fontsize)
 
             # Region label
             psi_min = boundaries[i]
             psi_max = boundaries[i + 1]
 
-            if psi_max == np.inf:
+            if no_efit:
+                label = r'IRVB1\_PRAD' if self._prad_trace is not None else 'total'
+            elif psi_max == np.inf:
                 label = f'$\\psi_N$ > {psi_min}'
             else:
                 label = f'{psi_min} < $\\psi_N$ < {psi_max}'
 
             color = self._trace_colors[i]
 
-            ax.plot(time, self.region_prad[i], color=color, linewidth=2)
+            # EFIT off → MDS \IRVB1_PRAD (own time base); else regional Prad vs frame time
+            if no_efit and self._prad_trace is not None:
+                xt, yv = self._prad_trace
+            else:
+                xt, yv = time, self.region_prad[i]
+            ax.plot(xt, yv, color=color, linewidth=2)
 
-            # Text annotation instead of legend (no line, text only)
-            import matplotlib as _mpl
-            _text_color = _mpl.rcParams.get('text.color', 'black')
-            _bg_color = _mpl.rcParams.get('axes.facecolor', 'white')
-            ax.text(0.02, 0.95, label, transform=ax.transAxes,
-                   fontsize=self.trace_legend_fontsize, verticalalignment='top',
-                   color=_text_color,
-                   bbox=dict(boxstyle='round', facecolor=_bg_color, alpha=0.7,
-                             edgecolor='gray', linewidth=0.5))
+            # Region label annotation (EFIT on only; EFIT-off is a single total trace)
+            if not no_efit:
+                import matplotlib as _mpl
+                _text_color = _mpl.rcParams.get('text.color', 'black')
+                _bg_color = _mpl.rcParams.get('axes.facecolor', 'white')
+                ax.text(0.02, 0.95, label, transform=ax.transAxes,
+                       fontsize=self.trace_legend_fontsize, verticalalignment='top',
+                       color=_text_color,
+                       bbox=dict(boxstyle='round', facecolor=_bg_color, alpha=0.7,
+                                 edgecolor='gray', linewidth=0.5))
 
             # ylabel without psi range, fixed position
             ax.set_ylabel(r'$P_{rad}$ [MW]', fontsize=self.trace_label_fontsize)
             ax.yaxis.set_label_coords(-0.08, 0.5)
 
             # Set ylim with bottom=0
-            y_max = np.nanmax(self.region_prad[i]) * 1.1
+            y_max = np.nanmax(yv) * 1.1 if len(yv) else 1.0
             if y_max <= 0 or np.isnan(y_max):
                 y_max = 1.0
             ax.set_ylim(0, y_max)
@@ -1303,7 +1459,7 @@ class IRVBTab:
             else:
                 plt.setp(ax.get_xticklabels(), visible=False)
 
-            ax.set_xlim(0, self.efit_2d.time[-1])
+            ax.set_xlim(time[0], time[-1] if no_efit else self.efit_2d.time[-1])
             import matplotlib as mpl
             ax.grid(ls='--', lw=0.3, c=mpl.rcParams.get('grid.color', '#444444'))
             ax.tick_params(labelsize=self.trace_tick_fontsize)
@@ -1323,11 +1479,12 @@ class IRVBTab:
         x_grid = self.irvb_data.x_grid
         y_grid = self.irvb_data.y_grid
 
-        # Get EFIT data at this time
-        efit_idx = self.efit_2d.find_time_index(time)
-        psi_n = self.efit_2d.get_psi_normalized(efit_idx)
-        bdry_r, bdry_z = self.efit_2d.get_boundary(efit_idx)
-        maxis_r, maxis_z = self.efit_2d.get_magnetic_axis(efit_idx)
+        # Get EFIT data at this time (skipped when EFIT mapping is off)
+        if self.efit_2d is not None:
+            efit_idx = self.efit_2d.find_time_index(time)
+            psi_n = self.efit_2d.get_psi_normalized(efit_idx)
+            bdry_r, bdry_z = self.efit_2d.get_boundary(efit_idx)
+            maxis_r, maxis_z = self.efit_2d.get_magnetic_axis(efit_idx)
 
         # Update 2D plot
         if self.im_2d is None:
@@ -1369,59 +1526,72 @@ class IRVBTab:
                                              cmap=self.plot2d_colormap,
                                              extend='max')
 
-        # Remove old contours
-        if self.contour_psi_bg is not None:
-            for coll in self.contour_psi_bg.collections:
-                coll.remove()
-        for contour in self.contour_psi_bounds:
-            for coll in contour.collections:
-                coll.remove()
-        self.contour_psi_bounds = []
+        # EFIT overlays (psi contours, boundary, limiter, magnetic axis) —
+        # only when EFIT mapping is on
+        if self.efit_2d is not None:
+            # Remove old contours
+            if self.contour_psi_bg is not None:
+                for coll in self.contour_psi_bg.collections:
+                    coll.remove()
+            for contour in self.contour_psi_bounds:
+                for coll in contour.collections:
+                    coll.remove()
+            self.contour_psi_bounds = []
 
-        # Background psi contours (9 levels)
-        self.contour_psi_bg = self.ax_2d.contour(
-            self.efit_2d.r_grid, self.efit_2d.z_grid, psi_n,
-            levels=self.PSI_BG_LEVELS, colors=self.plot2d_flux_color,
-            linewidths=0.5, linestyles='-', alpha=0.5, zorder=2
-        )
-
-        # Update plasma boundary (draw before psi bounds so bounds appear on top)
-        if self.contour_bdry is not None:
-            self.contour_bdry[0].remove()
-        self.contour_bdry = self.ax_2d.plot(bdry_r, bdry_z, '-',
-                                            color=self.plot2d_lcfs_color,
-                                            linewidth=2, zorder=3)
-
-        # Psi boundary contours with matching colors (drawn on top of bdry)
-        trace_colors = getattr(self, '_trace_colors', None)
-        for idx, psi_level in enumerate(self.psi_boundaries):
-            if trace_colors and idx < len(trace_colors):
-                color = trace_colors[idx]
-            else:
-                color = self.REGION_COLORS[idx % len(self.REGION_COLORS)]
-            contour = self.ax_2d.contour(
+            # Background psi contours (9 levels)
+            self.contour_psi_bg = self.ax_2d.contour(
                 self.efit_2d.r_grid, self.efit_2d.z_grid, psi_n,
-                levels=[psi_level], colors=[color],
-                linewidths=2, linestyles='--', zorder=4
-            )
-            self.contour_psi_bounds.append(contour)
-
-        # Update limiter
-        if self.limiter_line is not None:
-            self.limiter_line[0].remove()
-        if self.efit_2d.limiter_r is not None:
-            self.limiter_line = self.ax_2d.plot(
-                self.efit_2d.limiter_r, self.efit_2d.limiter_z,
-                '-', color=self.plot2d_limiter_color, linewidth=1.5
+                levels=self.PSI_BG_LEVELS, colors=self.plot2d_flux_color,
+                linewidths=0.5, linestyles='-', alpha=0.5, zorder=2
             )
 
-        # Update magnetic axis marker
-        if self.maxis_marker is not None:
-            self.maxis_marker[0].remove()
-        if maxis_r is not None:
-            self.maxis_marker = self.ax_2d.plot(maxis_r, maxis_z, 'x',
-                                                 color=self.plot2d_maxis_color,
-                                                 markersize=10, markeredgewidth=2)
+            # Update plasma boundary (draw before psi bounds so bounds appear on top)
+            if self.contour_bdry is not None:
+                self.contour_bdry[0].remove()
+            self.contour_bdry = self.ax_2d.plot(bdry_r, bdry_z, '-',
+                                                color=self.plot2d_lcfs_color,
+                                                linewidth=2, zorder=3)
+
+            # Psi boundary contours with matching colors (drawn on top of bdry)
+            trace_colors = getattr(self, '_trace_colors', None)
+            for idx, psi_level in enumerate(self.psi_boundaries):
+                if trace_colors and idx < len(trace_colors):
+                    color = trace_colors[idx]
+                else:
+                    color = self.REGION_COLORS[idx % len(self.REGION_COLORS)]
+                contour = self.ax_2d.contour(
+                    self.efit_2d.r_grid, self.efit_2d.z_grid, psi_n,
+                    levels=[psi_level], colors=[color],
+                    linewidths=2, linestyles='--', zorder=4
+                )
+                self.contour_psi_bounds.append(contour)
+
+            # Update limiter
+            if self.limiter_line is not None:
+                self.limiter_line[0].remove()
+            if self.efit_2d.limiter_r is not None:
+                self.limiter_line = self.ax_2d.plot(
+                    self.efit_2d.limiter_r, self.efit_2d.limiter_z,
+                    '-', color=self.plot2d_limiter_color, linewidth=1.5
+                )
+
+            # Update magnetic axis marker
+            if self.maxis_marker is not None:
+                self.maxis_marker[0].remove()
+            if maxis_r is not None:
+                self.maxis_marker = self.ax_2d.plot(maxis_r, maxis_z, 'x',
+                                                     color=self.plot2d_maxis_color,
+                                                     markersize=10, markeredgewidth=2)
+        else:
+            # EFIT off: no flux overlay, but still draw the divertor limiter
+            if self.limiter_line is not None:
+                self.limiter_line[0].remove()
+                self.limiter_line = None
+            if self._active_limiter is not None:
+                self.limiter_line = self.ax_2d.plot(
+                    self._active_limiter[0], self._active_limiter[1],
+                    '-', color=self.plot2d_limiter_color, linewidth=1.5, zorder=3
+                )
 
         # Update title
         self.ax_2d.set_title(f'#{self.shot_number} t = {time:.3f} s',
@@ -1636,6 +1806,7 @@ class IRVBTab:
         """Save current tab settings"""
         settings = {
             "shot": self.shot_entry.text(),
+            "use_efit": self.use_efit_toggle.isChecked(),
             "efit_tree": self.efit_tree_combo.currentText(),
             "psi_bounds": self.psi_entry.text(),
             # Plot Options - Time Trace
@@ -1666,6 +1837,10 @@ class IRVBTab:
 
         if settings.get("psi_bounds"):
             self.psi_entry.setText(settings["psi_bounds"])
+
+        # Restore the Use-EFIT toggle (default on); also syncs enabled state
+        self.use_efit_toggle.setChecked(settings.get("use_efit", True), animate=False)
+        self._on_use_efit_toggled(self.use_efit_toggle.isChecked())
 
         # Plot Options - Time Trace
         self.trace_color_mode = settings.get("trace_color_mode", "Fixed(tab10)")

@@ -208,7 +208,7 @@ class TranspProfileTab:
         plot_btn = QPushButton("Plot")
         plot_btn.clicked.connect(self._plot)
         btn_row.addWidget(plot_btn, 3)
-        opt_btn = QPushButton("Option")
+        opt_btn = QPushButton("Style")
         opt_btn.clicked.connect(self._show_style_dialog)
         btn_row.addWidget(opt_btn, 1)
         layout.addLayout(btn_row)
@@ -274,7 +274,7 @@ class TranspProfileTab:
             self.available_listbox.clear()
             QApplication.setOverrideCursor(Qt.WaitCursor)
             try:
-                from data_loaders.transp_cdf_loader import load_transp_cdf
+                from data_loaders.transp_loader import load_transp_cdf
                 cdf = load_transp_cdf(path)
                 self._cdf_cache[cdf['label']] = cdf
                 self._current_label = cdf['label']

@@ -104,7 +104,7 @@ show_help() {
     echo "  Available tabs:"
     echo "    Diagnostics"
     echo "      Profiles      Ti/vT (CES), ne/Te (Thomson+ECE), MSE (gamma/q/j)"
-    echo "      Time Traces   Ti/vT, ne/Te, MSE, Neutron (Fission/He3/Diamond)"
+    echo "      Time Traces   Ti/vT, ne/Te, MSE, Neutron (Fission/He3/Diamond), IRVB (Prad)"
     echo "      Spectral      Spectrogram (ECE/ECEI/BES/Mirnov), n-Mode Spectrum"
     echo "      Imaging       TV Viewer, TV Startup, IRVB"
     echo "    EFIT            Time Traces, Profiles, 2D, p-File"

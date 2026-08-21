@@ -127,6 +127,9 @@ class ElectronProfileTab(ProfileBaseTab):
             shot_number = int(self.shot_entry.text())
             selection = self.diag_combo.currentText()
 
+            # Refresh EFIT tree dropdown labels with per-tree time-slice counts for this shot
+            self._refresh_efit_tree_labels()
+
             self._set_status(f"Loading #{shot_number} ({selection})...", 'blue')
             self.available_listbox.clear()
 
@@ -304,7 +307,7 @@ class ElectronProfileTab(ProfileBaseTab):
                 Te_profile = Te_all[:, np.argmin(np.abs(ece_data.time - time_point))]
 
             ece_keys = self._ece_channel_keys(ece_data)
-            ece_ch_mask = self._get_channel_mask(ece_keys)
+            ece_ch_mask = self._get_channel_mask(ece_keys, entry)
             combined_mask = valid_mask & ece_ch_mask
 
             return {
@@ -346,7 +349,7 @@ class ElectronProfileTab(ProfileBaseTab):
             ne_err = (ne_eu_all[:, time_idx] + ne_el_all[:, time_idx]) / 2.0
 
         ts_keys = [f"TS_{j}" for j in range(len(data.radius))]
-        ts_mask = self._get_channel_mask(ts_keys)
+        ts_mask = self._get_channel_mask(ts_keys, entry)
 
         result = {
             'Te': {'x': x_data[ts_mask], 'y': Te_profile[ts_mask], 'err': Te_err[ts_mask]},
@@ -374,7 +377,7 @@ class ElectronProfileTab(ProfileBaseTab):
                     ece_Te = ece_Te_all[:, np.argmin(np.abs(ece_data.time - time_point))]
 
                 ece_keys = self._ece_channel_keys(ece_data)
-                ece_ch_mask = self._get_channel_mask(ece_keys)
+                ece_ch_mask = self._get_channel_mask(ece_keys, entry)
                 combined_mask = valid_mask & ece_ch_mask
 
                 combined_x = np.concatenate([x_data[ts_mask], ece_x_data[combined_mask]])
@@ -484,7 +487,7 @@ class ElectronProfileTab(ProfileBaseTab):
 
                     # Split enabled/disabled Thomson channels
                     ts_keys = [f"TS_{j}" for j in range(len(R_data))]
-                    ts_mask = self._get_channel_mask(ts_keys)
+                    ts_mask = self._get_channel_mask(ts_keys, entry)
 
                     valid_idx = np.argmin(np.abs(R_data - self.app_config.R_EDGE))
                     vm = ts_mask[:valid_idx]
@@ -550,7 +553,7 @@ class ElectronProfileTab(ProfileBaseTab):
 
                             # Split enabled/disabled ECE channels
                             ece_keys = self._ece_channel_keys(ece_data)
-                            ece_ch_mask = self._get_channel_mask(ece_keys)
+                            ece_ch_mask = self._get_channel_mask(ece_keys, entry)
 
                             valid_in_range = valid_mask & ece_ch_mask & (ece_R_data <= self.app_config.R_EDGE)
                             if np.any(valid_in_range):
@@ -608,7 +611,7 @@ class ElectronProfileTab(ProfileBaseTab):
 
                     # Split enabled/disabled ECE channels
                     ece_keys = self._ece_channel_keys(ece_data)
-                    ece_ch_mask = self._get_channel_mask(ece_keys)
+                    ece_ch_mask = self._get_channel_mask(ece_keys, entry)
 
                     valid_in_range = valid_mask & ece_ch_mask & (R_data <= self.app_config.R_EDGE)
                     if np.any(valid_in_range):
@@ -760,7 +763,7 @@ class ElectronProfileTab(ProfileBaseTab):
 
                     # Split enabled/disabled Thomson channels
                     ts_keys = [f"TS_{j}" for j in range(len(x_data))]
-                    ts_mask = self._get_channel_mask(ts_keys)
+                    ts_mask = self._get_channel_mask(ts_keys, entry)
 
                     lcfs_idx = np.argmin(np.abs(x_data - 1))
                     vm = ts_mask[:lcfs_idx]
@@ -844,7 +847,7 @@ class ElectronProfileTab(ProfileBaseTab):
 
                             # Split enabled/disabled ECE channels
                             ece_keys = self._ece_channel_keys(ece_data)
-                            ece_ch_mask = self._get_channel_mask(ece_keys)
+                            ece_ch_mask = self._get_channel_mask(ece_keys, entry)
 
                             in_range = (ece_x_data <= 1.0)
                             if np.any(valid_mask & ece_ch_mask & in_range):
@@ -911,7 +914,7 @@ class ElectronProfileTab(ProfileBaseTab):
 
                         # Split enabled/disabled ECE channels
                         ece_keys = self._ece_channel_keys(ece_data)
-                        ece_ch_mask = self._get_channel_mask(ece_keys)
+                        ece_ch_mask = self._get_channel_mask(ece_keys, entry)
 
                         in_range = (x_data <= 1.0)
                         if np.any(valid_mask & ece_ch_mask & in_range):

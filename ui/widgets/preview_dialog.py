@@ -449,7 +449,7 @@ class ProfilePreviewDialog(_PreviewBase):
         self.param1_label = param1_label
         self.param2_label = param2_label
         self._is_ece_only = (source == 'ECE')
-        self.time_arr = getattr(data, 'time_prof', data.time)
+        self.time_arr = np.asarray(getattr(data, 'time_prof', data.time), dtype=float)
         # D-alpha context (signal selectable from the Browse dialog)
         self._dalpha_signal = '\\TOR_HA11'
         self._dalpha_raw = False
@@ -548,17 +548,25 @@ class ProfilePreviewDialog(_PreviewBase):
 
     def _goto_frame(self):
         try:
-            self.slider.setValue(
-                max(0, min(len(self.time_arr) - 1, int(self.frame_entry.text()) - 1)))
+            idx = max(0, min(len(self.time_arr) - 1, int(self.frame_entry.text()) - 1))
         except ValueError:
-            pass
+            return
+        # Refresh even when the target equals the current frame (setValue would
+        # not emit valueChanged, so the plot/entries would not update otherwise)
+        if self.slider.value() == idx:
+            self._update_plot(idx)
+        else:
+            self.slider.setValue(idx)
 
     def _goto_time(self):
         try:
-            self.slider.setValue(
-                int(np.argmin(np.abs(self.time_arr - float(self.time_entry.text())))))
-        except ValueError:
-            pass
+            idx = int(np.argmin(np.abs(self.time_arr - float(self.time_entry.text()))))
+        except (ValueError, TypeError):
+            return
+        if self.slider.value() == idx:
+            self._update_plot(idx)
+        else:
+            self.slider.setValue(idx)
 
     # ---- Plot ----
 
@@ -867,6 +875,8 @@ class TimeTracePreviewDialog(_PreviewBase):
         'param1' - 1D data array for param1
         'param2' - 1D data array for param2 (or None)
     """
+
+    _HAS_DALPHA = False  # traces are already vs time; no Dα subplot here
 
     def __init__(self, parent, shot_number, source,
                  param1_label, param2_label,

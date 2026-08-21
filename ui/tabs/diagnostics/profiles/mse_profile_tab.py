@@ -170,6 +170,9 @@ class MSEProfileTab(ProfileBaseTab):
         try:
             shot_number = int(self.shot_entry.text())
 
+            # Refresh EFIT tree dropdown labels with per-tree time-slice counts for this shot
+            self._refresh_efit_tree_labels()
+
             self._set_status(f"Loading #{shot_number}...", 'blue')
             data = self.data_loader.load_data(shot_number)
 
@@ -308,7 +311,7 @@ class MSEProfileTab(ProfileBaseTab):
                 # Channel mask for user-disabled channels
                 good_indices = [j for j in range(len(good_mask)) if good_mask[j]]
                 ch_keys = [f"TGAMMA_{j}" for j in good_indices]
-                ch_mask = self._get_channel_mask(ch_keys)
+                ch_mask = self._get_channel_mask(ch_keys, entry)
 
                 if ch_mask.any():
                     self.ax1.errorbar(R_raw[ch_mask], tgamma[ch_mask],
@@ -481,7 +484,7 @@ class MSEProfileTab(ProfileBaseTab):
                 # Channel mask for user-disabled channels
                 good_indices = [j for j in range(len(good_mask)) if good_mask[j]]
                 ch_keys = [f"TGAMMA_{j}" for j in good_indices]
-                ch_mask = self._get_channel_mask(ch_keys)
+                ch_mask = self._get_channel_mask(ch_keys, entry)
 
                 if ch_mask.any():
                     self.ax1.errorbar(x_raw[ch_mask], tgamma[ch_mask], yerr=sgamma[ch_mask]*0.5,

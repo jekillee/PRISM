@@ -80,22 +80,32 @@ class TimeTraceBaseTab(BaseTab):
         control_layout.addStretch()
 
     def _create_plot_controls(self, parent: QWidget) -> None:
-        """Create plot control buttons (default implementation)
+        """Create the '3. Plot' group.
 
-        Can be overridden by subclasses that need additional controls
-        (e.g., MSE with q/j parameter selection).
+        An optional Y-axis (bottom) parameter combo (Ion: vT/ωT, MSE: q/j — via
+        the shared `_yaxis_param_spec` hook) sits above the Plot | Style row. Tabs
+        without a bottom-panel selector (Electron, Neutron) show only the buttons.
         """
         group = QGroupBox("3. Plot")
         group_layout = QVBoxLayout(group)
 
-        # Plot + Option buttons in same row
+        # Optional Y-axis (bottom) selector row — shared mechanism with profiles
+        label, combo = self._build_yaxis_combo()
+        if combo is not None:
+            row_y = QHBoxLayout()
+            row_y.setContentsMargins(0, 0, 0, 0)
+            row_y.addWidget(QLabel(label), 1)
+            row_y.addWidget(combo, 1)
+            group_layout.addLayout(row_y)
+
+        # Plot + Style buttons in same row
         plot_row = QHBoxLayout()
 
         plot_button = QPushButton("Plot")
         plot_button.clicked.connect(self.plot_data)
         plot_row.addWidget(plot_button, 3)
 
-        style_btn = QPushButton("Option")
+        style_btn = QPushButton("Style")
         style_btn.clicked.connect(self._show_style_dialog)
         plot_row.addWidget(style_btn, 1)
 

@@ -11,6 +11,45 @@ class EFITLoader:
         self.config = config
         self.mds_ip = config.MDS_IP
 
+    def get_time_info(self, shot_number, efit_tree):
+        """Return ``(n, t_min, t_max)`` for (shot, tree): the number of EFIT time
+        slices and the first/last slice time in **seconds**. Returns ``None`` if
+        unavailable.
+
+        Lightweight query: opens the tree, reads only ``\\gtime``, closes.
+        """
+        from MDSplus import Connection
+        try:
+            mds = Connection(self.mds_ip)
+            mds.openTree(efit_tree, shot_number)
+            time_arr = mds.get('\\gtime').data()
+            mds.closeTree(efit_tree, shot_number)
+            # efitrt1, efitrt2 store seconds; the others store milliseconds
+            if efit_tree not in ['efitrt1', 'efitrt2']:
+                time_arr = time_arr / 1e3
+            n = len(time_arr)
+            if n == 0:
+                return None
+            return (int(n), float(time_arr[0]), float(time_arr[-1]))
+        except Exception:
+            return None
+
+    def get_limiter(self, shot_number, efit_tree):
+        """Return ``(R_list, Z_list)`` of the EFIT limiter polygon for (shot, tree),
+        or ``None`` if unavailable. Lightweight: reads only ``\\lim``."""
+        import numpy as np
+        from MDSplus import Connection
+        try:
+            mds = Connection(self.mds_ip)
+            mds.openTree(efit_tree, shot_number)
+            lim = np.asarray(mds.get('\\lim').data())
+            mds.closeTree(efit_tree, shot_number)
+            if lim.ndim != 2 or lim.shape[0] == 0:
+                return None
+            return (lim[:, 0].tolist(), lim[:, 1].tolist())
+        except Exception:
+            return None
+
     def load_efit_data(self, shot_number, efit_tree=None):
         """Load EFIT equilibrium data for 1D profile mapping (R -> psi_n, rho)"""
         import numpy as np

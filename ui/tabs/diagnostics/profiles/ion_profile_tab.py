@@ -120,6 +120,10 @@ class IonProfileTab(ProfileBaseTab):
         """Y-axis (right) selector: vT / ωT, auto-replot on change."""
         return ("Y-axis (right)", ['vT', 'ωT'], 'vT', True)
 
+    def _yaxis_option_html(self, option):
+        """Display vT/ωT with a subscript capital T (rendered as an icon)."""
+        return {'vT': 'v<sub>T</sub>', 'ωT': 'ω<sub>T</sub>'}.get(option)
+
     def _get_preview_info(self):
         if not hasattr(self, '_last_preview_data'):
             return None
@@ -170,6 +174,9 @@ class IonProfileTab(ProfileBaseTab):
         except ValueError:
             QMessageBox.critical(self.frame, "Error", "Please enter a valid shot number")
             return
+
+        # Refresh EFIT tree dropdown labels with per-tree time-slice counts for this shot
+        self._refresh_efit_tree_labels()
 
         analysis_type = self.analysis_type_combo.currentText()
         self._set_status(f"Loading #{shot_number} ({analysis_type})...", 'blue')
@@ -392,7 +399,7 @@ class IonProfileTab(ProfileBaseTab):
             vT_err_profile = vT_err[:, time_idx]
 
         ch_keys = [f"CES_{j}" for j in range(len(data.radius))]
-        mask = self._get_channel_mask(ch_keys)
+        mask = self._get_channel_mask(ch_keys, entry)
 
         return {
             'Ti': {'x': x_data[mask], 'y': Ti_profile[mask], 'err': Ti_err_profile[mask]},
@@ -518,7 +525,7 @@ class IonProfileTab(ProfileBaseTab):
 
                 # Split enabled/disabled channels
                 ch_keys = [f"CES_{j}" for j in range(len(R_data))]
-                mask = self._get_channel_mask(ch_keys)
+                mask = self._get_channel_mask(ch_keys, entry)
 
                 valid_idx = np.argmin(np.abs(R_data - self.app_config.R_EDGE))
                 valid_mask = mask[:valid_idx]
@@ -737,7 +744,7 @@ class IonProfileTab(ProfileBaseTab):
 
                 # Split enabled/disabled channels
                 ch_keys = [f"CES_{j}" for j in range(len(x_data))]
-                mask = self._get_channel_mask(ch_keys)
+                mask = self._get_channel_mask(ch_keys, entry)
 
                 lcfs_idx = np.argmin(np.abs(x_data - 1))
                 valid_mask = mask[:lcfs_idx]

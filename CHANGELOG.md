@@ -5,6 +5,83 @@ All notable changes to PRISM will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.6] - 2026-08-21
+
+### Fixed — Neutron Time Trace tab crashed on open
+- `NeutronTimeTraceTab.create_widgets` called `_create_plot_controls`, but that method (and the `color_mode_combo` it builds) had gone missing from the file, so opening the tab raised `AttributeError` and hung. Restored the method (Plot + Style row, hidden color-mode combo).
+
+### Changed — IRVB example script handles EFIT-off saves
+- The IRVB "Example Script" now branches on `has_efit` (`'efit_psi_n' in data`): with EFIT it draws the flux/LCFS/limiter overlay and regional Prad as before; without EFIT it plots just the 2D map and the saved MDS `IRVB1_PRAD` trace (`irvb1_prad` / `irvb1_prad_time`). Previously it unconditionally read the EFIT arrays and would `KeyError` on a no-EFIT NPZ.
+
+### Fixed — Time Trace "Browse" did nothing (all diagnostic time-trace tabs)
+- `TimeTracePreviewDialog` crashed on construction (`AttributeError: _dalpha_signal`) because the shared Dα panel was built for it, but time-trace browse has no Dα subplot. It now opts out of the Dα panel (`_HAS_DALPHA = False`, like the TRANSP dialogs), so Browse opens the channel viewer.
+
+### Fixed — Profile "Browse" time navigation refresh
+- Typing a Time in the Browse Navigation now always jumps to (and re-renders) the nearest frame. Previously, if the nearest frame equalled the current one, `setValue` emitted no signal and the view/entry didn't refresh; `time_arr` is now also coerced to a numpy array so file-loaded (list) time bases work.
+
+### Changed — Removed figure titles on IRVB / Neutron Time Trace tabs
+- Dropped the `suptitle` on the IRVB and Neutron time-trace figures (redundant with the tab name / axis labels).
+
+### Changed — IRVB imaging EFIT-off trace presentation
+- Removed the region-label annotation on the single total trace; the trace subplot title now reads `#{shot}  Total Radiated Power`.
+
+### Added — IRVB Time Trace tab (\IRVB1_PRAD)
+- New **IRVB** tab under the **Time Traces** category plots the analysis total radiated power `\IRVB1_PRAD` (MDS+, kstar tree) vs time with shot overplot — lets you compare `\IRVB1_PRAD` across shots and against the IRVB imaging tab's reconstruction. Shot list / Style / Preview & Save, same conventions as the other time-trace tabs. New `IRVBPradLoader`; registered in `TabFactory` and the sidebar (`irvb_timetrace` → Time Traces).
+
+### Changed — Loader file consolidation
+- **IRVB**: `IRVBPradLoader` moved into `data_loaders/irvb_loader.py` alongside `IRVBLoader`/`IRVBData` (removed the separate `irvb_prad_loader.py`).
+- **TRANSP**: `transp_cdf_loader.py` + `transp_ufile_loader.py` merged into a single `data_loaders/transp_loader.py` (CDF output + U-File input). All import sites updated; no API change.
+
+### Added — IRVB draws the divertor limiter even without EFIT
+- With EFIT off, the 2D map now still draws the **limiter** matching the shot's divertor era: carbon divertor for shots ≤ 32768, tungsten (W) for ≥ 32769. The limiter polygons come from reference shots' efitrt1 `\lim` (carbon: 32767, W: 33121) and are cached in `config/irvb_limiter.json`, fetched on first use where MDS is reachable. New `EFITLoader.get_limiter`.
+
+### Added — Optional EFIT mapping (IRVB)
+- The IRVB tab's "2. EFIT Settings" group now has a **`Use EFIT mapping`** checkbox (default on). Unchecking it disables the EFIT Tree / psi-bounds inputs and plots **without EFIT**: a bare 2D radiation map (no LCFS / magnetic-axis / psi-contour / limiter overlay) alongside a **single total-Prad time trace** over the **full IRVB time range** (no EFIT-time slicing). The toggle is a ToggleSwitch (like the profile "Show node names" control).
+- The no-EFIT time trace is the **MDS `\IRVB1_PRAD`** node itself (fetched full-range via `IRVBPradLoader`), so it matches the value on MDS — the `.mat` `Ptot_MW` differs from `\IRVB1_PRAD` and is only kept as a fallback when MDS is unavailable. (Regional decomposition with EFIT on still integrates the 2D map per psi region.)
+- Save works with EFIT off — the NPZ omits the EFIT arrays and stores `region_prad` as the single total trace (`efit_tree='none'`, `region_labels=['total']`).
+- The toggle state is persisted in the tab settings.
+
+### Changed — EFIT tree dropdown shows time-slice count instead of description (Profiles)
+- The **EFIT Mapping** tree dropdown (Ion/Electron/MSE Profile) now labels each tree as **`tree (N slices)`** where `N` is the number of EFIT time slices for the current shot (e.g. `efit01 (245 slices)`) — replacing the static descriptions (`(RT for PCS)`, `(MSE)`, …). Shows **`tree (—)`** until a shot is fetched or when the tree has no data for that shot.
+- Counts are for the **shot entered in "1. Load"** and are refreshed **on Fetch/shot load**, via a lightweight `\gtime` query (`EFITLoader.get_time_info`), cached per `(shot, tree)` so re-fetching the same shot is instant.
+- On every Fetch the console prints each tree's slice count and time range, e.g. `[EFIT]   efit01: 245 slices, 0.0000s - 12.2000s` (or `no data`).
+- The dropdown now carries the tree name as `itemData`; `compute_efit` reads `currentData()` (not the label), so the displayed count never affects tree selection. IRVB's own EFIT dropdown is unchanged.
+
+### Added — Spacebar add/remove in "2. Select Data" (all tabs)
+- With a listbox focused, **Space** adds the highlighted rows (available list) or removes them (selected list) — mirrors the add/remove arrow buttons. Widget-scoped shortcut; no global conflict (Space wasn't bound anywhere).
+
+### Fixed — Select-or-Deselect table was white in dark mode
+- `QTableWidget` isn't covered by the theme QSS (only `QListWidget`/`QDialog` are), so the channel table rendered white in dark mode unlike the Data Preview table. It now gets an explicit dark/light stylesheet (background, gridlines, header sections). The 'All' column tint is a solid theme-aware colour, and its header is bold — emphasizing the global column.
+
+### Added — Per-timepoint channel select/deselect (Ion/Electron/MSE Profile)
+- The **Select or Deselect Channels** dialog is now a **table**: rows = channels, columns = **[Channel | All | one per selected timepoint]**. The **All** column (emphasized — bold header + tinted cells) applies to every timepoint at once (global) and acts as a row master (toggling it sets that channel across all timepoint columns); each timepoint column overrides just that timepoint. On Apply, a timepoint column that matches All stores no override (follows global); a differing column stores a per-timepoint override. The Channel column stretches to fill; **Select All / Deselect All sit above the table**; the dialog is wider (720) and ~1.5x taller, and the table stretches/scrolls to fill it.
+- **Ion Y-axis dropdown** (Profile & Time Trace) now shows **v / ω with a subscript capital T**. Since a combo can't render rich text, each option is drawn to a small icon (HTML `v<sub>T</sub>`) in the palette text colour; the logical value stays `vT`/`ωT` (itemData), read via `_y_param_text()`. Combos now key on itemData (`_yaxis_option_html` hook + `_render_text_icon`).
+- `_get_channel_mask(channel_keys, entry)` consults the per-timepoint override (`_disabled_channels_by_entry`) when present, else the global set; all plot/fit/export call sites pass the entry.
+- **Double-clicking a data point on the plot still toggles the global ('All') state** (unchanged). Per-timepoint overrides are session-only and are **reset whenever the selected set changes**.
+
+### Changed — Unified profile/time-trace plot-controls structure (refactor, no behavior change)
+- The **Y-axis (right/bottom) parameter combo** mechanism is now shared in `BaseTab` (`_yaxis_param_spec` hook, `_build_yaxis_combo`, `_y_param_text`/`_set_y_param_text`, `_replot`), used by both profile and time-trace tabs. Profiles override `_replot` to dispatch R-space vs flux-space.
+- **Time-trace tabs no longer duplicate `_create_plot_controls`**: the Ion/MSE/Neutron overrides were removed; `TimeTraceBaseTab._create_plot_controls` now builds the optional bottom-axis combo from the shared hook (Ion → vT/ωT, MSE → q/j; Electron/Neutron none) above the Plot | Style row — mirroring how the profile tabs already worked.
+- Ion/MSE time-trace now read the selector via `_y_param_text()` (dropped per-tab `param2_combo`/`param_combo`). No UI or behavior change; purely removes duplication so the two tab families share one structure.
+
+### Changed — "Option" button renamed to "Style" (all tabs)
+- The plot-controls button next to **Plot** (opens the plot-style/options dialog) is now labelled **"Style"** across every tab: profile (Ion/Electron/MSE — via the shared base), time trace, EFIT, TRANSP, biprofile, IRVB, **Spectrogram, and n-Mode**. The Fitting group's per-function "Option" button is unchanged.
+
+### Changed — Time avg [ms] is no longer persisted
+- The **Time avg toggle and value are no longer saved to / restored from settings**; each launch starts with the toggle **off** and value **0** (removed the `fit_dt` / `dt_enabled` save/restore in the base tab).
+
+### Changed — R-shift (Ion/Electron Profile): reset on selection change, default 0.0, Set-all
+- Per-timepoint R-shift overrides are now **cleared whenever the selected set changes** (add/remove) — previously they persisted (and a removed-then-re-added timepoint kept its old value). Done in `_invalidate_efit_and_fit`.
+- The R-shift dialog fields now **default to `0.0`** (were blank).
+- The per-timepoint fields are now a **spreadsheet** (table: Timepoint | R-shift [mm], double-click a cell to edit), dark/light themed. A single **"Set all to [value] [Fill] [Clear]"** row fills/zeroes every row at once (removes the earlier triple-"all" wording — Set all / Fill all / Clear all → Set all to / Fill / Clear). Bottom row: **Close | Apply**. The dialog is ~1.5x taller (table fills/scrolls).
+
+### Changed — Select-or-Deselect (channel) dialog polish
+- The Plot-group button is now **"Select or Deselect"** (was "Select / Deselect"); dialog title matches.
+- The **Show-node-names toggle moved to just above the buttons**, relabelled **"Show node names on plot"**.
+
+### Fixed — Mouse wheel now scrolls the "2. Select Data" listboxes
+- The control panel is a `QScrollArea`, with the Select Data listboxes nested inside it. Wheeling over a listbox bubbled up and scrolled the whole panel instead of the list. An event filter (`_ListWheelFilter`) is now installed on each listbox viewport (available + selected), routing the wheel to the list's own vertical scrollbar and consuming the event. Applies to every tab (shared base-tab code).
+
 ## [2.6.5] - 2026-08-18
 
 ### Added — Per-timepoint R-shift (Ion/Electron Profile)

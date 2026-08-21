@@ -46,6 +46,7 @@ _TAB_TYPE_TO_CATEGORY = {
     'tv': "Imaging",
     'tv_startup': "Imaging",
     'irvb': "Imaging",
+    'irvb_timetrace': "Time Traces",
     'neutron': "Time Traces",
     'bi_profile': "BiProfile Profiles",
     'bi_timetrace': "BiProfile Time Traces",
@@ -751,7 +752,7 @@ class PRISMApp(QMainWindow):
         # TV image dirs (/Diag_TV) are nkstar-only; IRVB HTTP server
         # (172.17.112.125) is reachable from ukstar too.
         _nkstar_only = {'tv', 'tv_startup'}
-        for special_type in ['spectrogram', 'nmode', 'tv', 'tv_startup', 'irvb', 'neutron']:
+        for special_type in ['spectrogram', 'nmode', 'tv', 'tv_startup', 'irvb', 'irvb_timetrace', 'neutron']:
             if special_type in _nkstar_only and not _host.startswith('nkstar'):
                 continue
             self.tab_configs.append({
@@ -783,7 +784,7 @@ class PRISMApp(QMainWindow):
         # (172.17.112.125) is reachable from ukstar too.
         _nkstar_only = {'tv', 'tv_startup'}
 
-        for special_type in ['spectrogram', 'nmode', 'tv', 'tv_startup', 'irvb', 'neutron']:
+        for special_type in ['spectrogram', 'nmode', 'tv', 'tv_startup', 'irvb', 'irvb_timetrace', 'neutron']:
             if special_type in _nkstar_only and not _host.startswith('nkstar'):
                 continue
             self.tab_configs.append({

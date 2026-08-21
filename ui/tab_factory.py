@@ -103,6 +103,9 @@ class TabFactory:
         if tab_type == 'irvb':
             return 'IRVB'
 
+        if tab_type == 'irvb_timetrace':
+            return 'IRVB'
+
         if tab_type == 'tv_startup':
             return 'TV Startup'
 
@@ -120,7 +123,8 @@ class TabFactory:
     @staticmethod
     def should_create_tab(diagnostic_name, tab_type):
         """Check if tab should be created"""
-        if tab_type in ('spectrogram', 'nmode', 'tv', 'irvb', 'tv_startup', 'neutron'):
+        if tab_type in ('spectrogram', 'nmode', 'tv', 'irvb', 'irvb_timetrace',
+                        'tv_startup', 'neutron'):
             return True
 
         if tab_type == 'profile':
@@ -190,6 +194,17 @@ class TabFactory:
         if tab_type == 'tv_startup':
             from ui.tabs.diagnostics.imaging.tv_startup_tab import TVStartupTab
             tab = TVStartupTab(
+                parent=notebook,
+                app_config=app_config,
+                diagnostic_config=DIAGNOSTICS
+            )
+            tab.create_widgets()
+            return tab
+
+        # Special case: IRVB Prad time-trace tab
+        if tab_type == 'irvb_timetrace':
+            from ui.tabs.diagnostics.timetraces.irvb_timetrace_tab import IRVBTimeTraceTab
+            tab = IRVBTimeTraceTab(
                 parent=notebook,
                 app_config=app_config,
                 diagnostic_config=DIAGNOSTICS

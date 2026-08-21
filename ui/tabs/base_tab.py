@@ -19,10 +19,37 @@ from PySide6.QtWidgets import (
     QButtonGroup, QMessageBox, QFileDialog, QApplication,
     QDialog, QTableWidget, QTableWidgetItem, QHeaderView
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject, QEvent
 from PySide6.QtGui import QFont
 
 from ui.ui_constants import CONTROL_PANEL_WIDTH, apply_listbox_arrow_icons, save_file_async
+
+
+class _ListWheelFilter(QObject):
+    """Event filter that routes mouse-wheel events over a scrollable widget's
+    viewport to that widget's own vertical scrollbar and consumes them.
+
+    The Select Data listboxes are nested inside the control panel's QScrollArea;
+    without this, wheeling over a listbox bubbles up and scrolls the whole panel
+    instead of the list. Installed on each listbox's viewport."""
+
+    def __init__(self, target):
+        super().__init__(target)   # parent to target so it isn't garbage-collected
+        self._target = target
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel:
+            bar = self._target.verticalScrollBar()
+            pixel_dy = event.pixelDelta().y()
+            if pixel_dy:
+                bar.setValue(bar.value() - pixel_dy)
+            else:
+                angle_dy = event.angleDelta().y()
+                step = bar.singleStep() or 15
+                bar.setValue(bar.value() - int((angle_dy / 120.0) * 3 * step))
+            event.accept()
+            return True   # consume so it doesn't bubble to the panel's QScrollArea
+        return False
 
 
 class BaseTab(ABC):
@@ -133,13 +160,7 @@ class BaseTab(ABC):
         if hasattr(self, 'fit_xmin_entry'):
             self.fit_xmin_entry.setText(tab_settings.get("fit_xmin", "0.0"))
             self.fit_xmax_entry.setText(tab_settings.get("fit_xmax", "1.05"))
-        if hasattr(self, 'fit_dt_entry'):
-            self.fit_dt_entry.setText(tab_settings.get("fit_dt", "0"))
-        if hasattr(self, 'dt_toggle'):
-            saved_dt_on = tab_settings.get("dt_enabled", False)
-            self.dt_toggle.setChecked(saved_dt_on, animate=False)
-            self._dt_enabled = saved_dt_on
-            self.fit_dt_entry.setEnabled(saved_dt_on)
+        # Time avg (dt) is intentionally NOT restored — always starts off / 0.
         # Restore R-shift entries
         if hasattr(self, 'r_shift_entries'):
             saved_rshifts = tab_settings.get("r_shifts", {})
@@ -178,10 +199,7 @@ class BaseTab(ABC):
         if hasattr(self, 'fit_xmin_entry'):
             tab_settings["fit_xmin"] = self.fit_xmin_entry.text()
             tab_settings["fit_xmax"] = self.fit_xmax_entry.text()
-        if hasattr(self, 'fit_dt_entry'):
-            tab_settings["fit_dt"] = self.fit_dt_entry.text()
-        if hasattr(self, '_dt_enabled'):
-            tab_settings["dt_enabled"] = self._dt_enabled
+        # Time avg (dt) is intentionally NOT saved — always starts off / 0.
         # Save R-shift entries
         if hasattr(self, 'r_shift_entries') and self.r_shift_entries:
             tab_settings["r_shifts"] = {
@@ -239,6 +257,8 @@ class BaseTab(ABC):
         self.available_listbox = QListWidget()
         self.available_listbox.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.available_listbox.setFixedHeight(self.LISTBOX_HEIGHT)
+        self.available_listbox.viewport().installEventFilter(
+            _ListWheelFilter(self.available_listbox))
         available_column.addWidget(self.available_listbox)
         content_layout.addLayout(available_column, stretch=1)
 
@@ -265,6 +285,8 @@ class BaseTab(ABC):
         self.selected_listbox = QListWidget()
         self.selected_listbox.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.selected_listbox.setFixedHeight(self.LISTBOX_HEIGHT)
+        self.selected_listbox.viewport().installEventFilter(
+            _ListWheelFilter(self.selected_listbox))
         selected_column.addWidget(self.selected_listbox)
         content_layout.addLayout(selected_column, stretch=1)
 
@@ -274,6 +296,16 @@ class BaseTab(ABC):
         delete_shortcut.activated.connect(self.remove_selected_items)
         backspace_shortcut = QShortcut(QKeySequence(Qt.Key_Backspace), self.selected_listbox)
         backspace_shortcut.activated.connect(self.remove_selected_items)
+
+        # Spacebar: add (available list) / remove (selected list) the highlighted
+        # rows — mirrors the add/remove arrow buttons. Widget-scoped so it only
+        # fires when that listbox has focus (no global conflict).
+        sp_add = QShortcut(QKeySequence(Qt.Key_Space), self.available_listbox)
+        sp_add.setContext(Qt.WidgetShortcut)
+        sp_add.activated.connect(self.add_selected_items)
+        sp_remove = QShortcut(QKeySequence(Qt.Key_Space), self.selected_listbox)
+        sp_remove.setContext(Qt.WidgetShortcut)
+        sp_remove.activated.connect(self.remove_selected_items)
 
         # Add the outer frame to the parent's layout
         parent_layout = parent.layout()
@@ -290,10 +322,12 @@ class BaseTab(ABC):
         # EFIT Tree label and dropdown
         grid.addWidget(QLabel("EFIT Tree"), 0, 0)
 
-        efit_display_values = list(self.app_config.EFIT_TREES.keys())
-
+        # Item label = tree name (the time-slice count is appended after a shot
+        # is fetched, see _refresh_efit_tree_labels); itemData = the tree name so
+        # compute_efit reads the tree regardless of the displayed label.
         self.efit_dropdown = QComboBox()
-        self.efit_dropdown.addItems(efit_display_values)
+        for tree in self.app_config.EFIT_TREES.values():
+            self.efit_dropdown.addItem(tree, tree)
         self.efit_dropdown.setCurrentIndex(0)
         grid.addWidget(self.efit_dropdown, 0, 1, 1, 2)
 
@@ -311,6 +345,44 @@ class BaseTab(ABC):
             parent_layout.addWidget(frame)
 
         return frame
+
+    def _efit_tslice_info(self, shot_number, efit_tree):
+        """``(n, t_min, t_max)`` for (shot, tree) in seconds, cached per (shot, tree).
+        None if unavailable."""
+        cache = self.__dict__.setdefault('_efit_tslice_cache', {})
+        key = (shot_number, efit_tree)
+        if key not in cache:
+            try:
+                cache[key] = self.efit_loader.get_time_info(shot_number, efit_tree)
+            except Exception:
+                cache[key] = None
+        return cache[key]
+
+    def _refresh_efit_tree_labels(self):
+        """Relabel the EFIT dropdown items as 'tree (N slices)' for the current
+        Load-section shot, and print each tree's slice count / time range to the
+        console. Shows '(—)' when unavailable. No-op if there is no EFIT dropdown."""
+        combo = getattr(self, 'efit_dropdown', None)
+        if combo is None:
+            return
+        try:
+            shot = int(self.shot_entry.text())
+        except (ValueError, AttributeError):
+            shot = None
+
+        print(f"[EFIT] Tree time slices for #{shot}:")
+        for i in range(combo.count()):
+            tree = combo.itemData(i)
+            if not tree:
+                continue
+            info = self._efit_tslice_info(shot, tree) if shot is not None else None
+            if info is not None:
+                n, t0, t1 = info
+                combo.setItemText(i, f"{tree} ({n} slices)")
+                print(f"[EFIT]   {tree}: {n} slices, {t0:.4f}s - {t1:.4f}s")
+            else:
+                combo.setItemText(i, f"{tree} (—)")
+                print(f"[EFIT]   {tree}: no data")
 
     def _make_x_axis_combo(self):
         """Create the X-axis QComboBox (R / ψₙ / ρₚₒₗ / ρₜₒᵣ), each carrying its
@@ -343,6 +415,95 @@ class BaseTab(ABC):
         if not hasattr(self, 'x_axis_combo'):
             return "R"
         return self.x_axis_combo.currentData() or "R"
+
+    # ===== Y-axis (right/bottom) parameter combo — shared by profile & timetrace
+
+    def _yaxis_param_spec(self):
+        """Hook: (label, options, default, auto_replot) for the right/bottom-axis
+        parameter combo, or None if the tab has no such selector. Overridden by
+        Ion/MSE (both profile and time trace)."""
+        return None
+
+    def _yaxis_option_html(self, option):
+        """Hook: rich-text (HTML) to DISPLAY for a Y-axis option, or None to show
+        the plain option text. Used for e.g. subscripts (Ion: v<sub>T</sub>).
+        The option string itself stays the logical value (itemData)."""
+        return None
+
+    def _render_text_icon(self, html):
+        """Render an HTML snippet to a transparent QIcon in the palette text
+        colour (so combos can show rich text like a subscript capital T)."""
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QTextDocument, QPixmap, QPainter, QIcon, QPalette
+        color = QApplication.palette().color(QPalette.Text).name()
+        doc = QTextDocument()
+        doc.setDefaultFont(QApplication.font())
+        doc.setHtml(f'<span style="color:{color};">{html}</span>')
+        doc.setTextWidth(-1)
+        size = doc.size().toSize()
+        w, h = max(size.width(), 1), max(size.height(), 1)
+        pm = QPixmap(w, h)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        doc.drawContents(p)
+        p.end()
+        return QIcon(pm), w, h
+
+    def _build_yaxis_combo(self):
+        """Create self.y_axis_combo from _yaxis_param_spec(). Returns
+        (label_text, combo), or (None, None) when the tab has no such selector.
+        Options whose `_yaxis_option_html` is set are shown as rich-text icons
+        (the option string is kept as itemData). Auto-replot calls self._replot()."""
+        spec = self._yaxis_param_spec()
+        if spec is None:
+            self.y_axis_combo = None
+            return None, None
+        label, options, default, auto_replot = spec
+        from PySide6.QtWidgets import QComboBox
+        from PySide6.QtCore import QSize
+        combo = QComboBox()
+        max_w = max_h = 0
+        for opt in options:
+            html = self._yaxis_option_html(opt)
+            if html:
+                icon, w, h = self._render_text_icon(html)
+                combo.addItem(icon, "")
+                max_w, max_h = max(max_w, w), max(max_h, h)
+            else:
+                combo.addItem(opt)
+            combo.setItemData(combo.count() - 1, opt)   # logical value
+        if max_h:
+            combo.setIconSize(QSize(max_w, max_h))
+        idx = combo.findData(default)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        if auto_replot:
+            combo.currentIndexChanged.connect(lambda _i: self._replot())
+        self.y_axis_combo = combo
+        return label, combo
+
+    def _replot(self):
+        """Re-plot after an auto-replot control changes. Default = plot_data();
+        profiles override to dispatch R-space vs flux-space."""
+        self.plot_data()
+
+    def _y_param_text(self) -> str:
+        """Logical value of the selected Y-axis parameter ('' if none)."""
+        combo = getattr(self, 'y_axis_combo', None)
+        if combo is None:
+            return ''
+        return combo.currentData() or combo.currentText()
+
+    def _set_y_param_text(self, text) -> None:
+        """Select the Y-axis parameter whose logical value matches `text`."""
+        combo = getattr(self, 'y_axis_combo', None)
+        if combo is None:
+            return
+        idx = combo.findData(text)
+        if idx < 0:
+            idx = combo.findText(text)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
 
     def _create_save_controls(self, parent, section_num=None):
         """Create save controls (common for all tabs)"""
@@ -485,7 +646,8 @@ class BaseTab(ABC):
         self._invalidate_efit_and_fit()
 
     def _invalidate_efit_and_fit(self):
-        """Reset EFIT mapping, fit results, and x-axis when selected data changes"""
+        """Reset EFIT mapping, fit results, x-axis, and R-shift when selected
+        data changes"""
         self.efit_data.clear()
         self.computed_efit_tree = None
         self._enable_flux_radios(False)
@@ -496,6 +658,11 @@ class BaseTab(ABC):
         # Clear fit results if present
         if hasattr(self, 'fit_results'):
             self.fit_results.clear()
+        # Reset per-timepoint R-shift + channel overrides (selection changed)
+        if hasattr(self, '_entry_rshifts'):
+            self._entry_rshifts.clear()
+        if hasattr(self, '_disabled_channels_by_entry'):
+            self._disabled_channels_by_entry.clear()
 
     def _enable_fitting_group(self, enabled: bool = True):
         """Enable or disable the fitting controls group"""
@@ -510,8 +677,7 @@ class BaseTab(ABC):
             QMessageBox.warning(self.frame, "Warning", "No timepoints selected")
             return
 
-        display_name = self.efit_dropdown.currentText()
-        efit_tree = self.app_config.EFIT_TREES[display_name]
+        efit_tree = self.efit_dropdown.currentData()
 
         self.efit_data.clear()
 

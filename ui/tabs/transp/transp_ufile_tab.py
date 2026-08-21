@@ -67,7 +67,7 @@ def _resolve_n_sources(ext, uf):
             return n
     F = uf.get('F', {}).get('data')
     n_total = F.shape[1] if (F is not None and F.ndim == 2) else 0
-    from data_loaders.transp_ufile_loader import get_catalog
+    from data_loaders.transp_loader import get_catalog
     n_quants = int(get_catalog().get(ext.upper(), {}).get('n_quants', 1) or 1)
     if n_quants > 0 and n_total % n_quants == 0:
         return n_total // n_quants
@@ -188,7 +188,7 @@ class TranspUFileTab:
         plot_btn = QPushButton("Plot")
         plot_btn.clicked.connect(self._plot)
         btn_row.addWidget(plot_btn, 3)
-        opt_btn = QPushButton("Option")
+        opt_btn = QPushButton("Style")
         opt_btn.clicked.connect(self._show_style_dialog)
         btn_row.addWidget(opt_btn, 1)
         layout.addLayout(btn_row)
@@ -290,7 +290,7 @@ class TranspUFileTab:
         dlg.show()
 
     def _on_run_selected(self, path):
-        from data_loaders.transp_ufile_loader import scan_run_directory
+        from data_loaders.transp_loader import scan_run_directory
         self._last_dir = path
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
@@ -331,7 +331,7 @@ class TranspUFileTab:
     }
 
     def _update_var_combo(self):
-        from data_loaders.transp_ufile_loader import pretty_label, get_catalog
+        from data_loaders.transp_loader import pretty_label, get_catalog
         catalog = get_catalog()
         current = self.var_combo.currentData()
         items = []

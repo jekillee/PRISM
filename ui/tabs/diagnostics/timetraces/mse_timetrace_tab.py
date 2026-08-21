@@ -81,49 +81,12 @@ class MSETimeTraceTab(TimeTraceBaseTab):
             pass
 
     def _get_selected_param(self):
-        """Get selected parameter from dropdown"""
-        return self.param_combo.currentText()
+        """Get selected parameter (q / j) from the bottom-axis combo"""
+        return self._y_param_text() or 'q'
 
-    def _create_plot_controls(self, parent):
-        """Create plot control buttons"""
-        group = QGroupBox("3. Plot")
-        group_layout = QVBoxLayout(group)
-
-        # Bottom-panel selector on its own row, above Plot (time trace stacks the
-        # two panels top/bottom, so this picks the bottom one). Label:combo = 50/50.
-        row_y = QHBoxLayout()
-        row_y.addWidget(QLabel("Y-axis (bottom)"), 1)
-        self.param_combo = QComboBox()
-        self.param_combo.addItems(['q', 'j'])
-        row_y.addWidget(self.param_combo, 1)
-        group_layout.addLayout(row_y)
-
-        row1 = QHBoxLayout()
-        plot_button = QPushButton('Plot')
-        plot_button.clicked.connect(self.plot_data)
-        row1.addWidget(plot_button, 3)
-
-        style_btn = QPushButton("Option")
-        style_btn.clicked.connect(self._show_style_dialog)
-        row1.addWidget(style_btn, 1)
-
-        group_layout.addLayout(row1)
-
-        # Hidden combo for color mode (used by _get_plot_colors, saved to settings)
-        self.color_mode_combo = QComboBox()
-        self.color_mode_combo.addItems([
-            "Gradient(viridis)", "Gradient(hot)", "Gradient(jet)", "Gradient(coolwarm)",
-            "Fixed(tab10)", "Fixed(tab20)", "Fixed(Set1)", "Fixed(Set2)", "Fixed(Set3)",
-        ])
-        self.color_mode_combo.setCurrentText("Gradient(viridis)")
-        self.color_mode_combo.hide()
-
-        # Default font sizes
-        self.label_fontsize = 12
-        self.legend_fontsize = 8
-        self.tick_fontsize = 10
-
-        parent.layout().addWidget(group)
+    def _yaxis_param_spec(self):
+        """Bottom-panel selector: q / j."""
+        return ("Y-axis (bottom)", ['q', 'j'], 'q', False)
 
     def _get_r_edge_at_time(self, data, time_point):
         """Get R_edge at specific time by interpolation"""

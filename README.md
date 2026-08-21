@@ -62,7 +62,7 @@ BibTeX:
 | IRVB | Infra-Red Video Bolometer | 2D Prad |
 | EFIT | Equilibrium Fitting | Scalars, profiles, 2D ψ, p-file |
 | BiProfile Derived | Derived plasma quantities from BiProfile + EFIT | p_e/p_i/p_tot, dT/dR, R/L_T, R/L_n, β, ν*, ω_pe, ω_ci, c_s, ρ_i, E_r (v_θ=0 / neoclassical), neoclassical v_θ for D and C⁶⁺, ω_imp−ω_main, σ_neo, η_neo, j_BS |
-| TRANSP | Transport Analysis (BiProfile + UFILE input + CDF output) | Ti, vT, Te, ne, UFILE profiles/traces/2D, CDF profiles/traces |
+| TRANSP | Transport Analysis | Ti, vT, Te, ne, UFILE profiles/traces/2D, CDF profiles/traces |
 
 ## Usage
 
@@ -214,6 +214,7 @@ PRISM/
 │   ├── user_settings.py         # User settings persistence
 │   ├── thomson_positions.json   # Thomson channel R positions by shot range
 │   ├── mirnov_config.json       # Mirnov coil configurations by year
+│   ├── irvb_limiter.json        # IRVB divertor limiter polygons (carbon / tungsten)
 │   └── radius_tces.csv          # CES channel radii by shot range (RT-node fallback)
 ├── core/
 │   ├── data_structures.py       # Data classes
@@ -242,11 +243,11 @@ PRISM/
 │   ├── mse_loader.py            # MSE loader
 │   ├── bes_loader.py            # BES loader
 │   ├── tci_loader.py            # TCI loader
-│   ├── irvb_loader.py           # IRVB loader
+│   ├── irvb_loader.py           # IRVB loaders (2D recon + \IRVB1_PRAD time trace)
 │   ├── neutron_loader.py        # Neutron loader
 │   ├── efit_loader.py           # EFIT loader (profile-mapping ψ_N)
 │   ├── biprofile_loader.py      # BiProfile loader (BIPROFILE + DIAG_PARAMS + raw)
-│   ├── transp_cdf_loader.py     # TRANSP CDF (netCDF) loader
+│   ├── transp_loader.py         # TRANSP loaders (CDF output + U-File input)
 │   └── efit_viewer_loader.py    # EFIT viewer loader (MDS+, g-file, a-file)
 ├── ui/
 │   ├── theme.py                       # Theme manager (dark/light QSS, palette, mpl)
@@ -271,7 +272,8 @@ PRISM/
 │       │   │   ├── ion_timetrace_tab.py        # Ion Ti/vT time trace  (CES + XICS)
 │       │   │   ├── electron_timetrace_tab.py   # Electron ne/Te time trace  (Thomson/ECE/Interferometer)
 │       │   │   ├── mse_timetrace_tab.py        # MSE q/j time trace
-│       │   │   └── neutron_timetrace_tab.py    # Neutron rate time trace
+│       │   │   ├── neutron_timetrace_tab.py    # Neutron rate time trace
+│       │   │   └── irvb_timetrace_tab.py       # IRVB \IRVB1_PRAD time trace
 │       │   ├── spectral/
 │       │   │   ├── spectrogram_tab.py          # FFT spectrogram (ECE/Mirnov/BES/TCI/ECEI)
 │       │   │   └── nmode_spectrum_tab.py       # Toroidal n-mode spectrum (Mirnov)

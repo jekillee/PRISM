@@ -38,7 +38,11 @@ class ProfileBaseTab(BaseTab):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.secondary_data_cache: Dict[str, Any] = {}
-        self._disabled_channels: set = set()  # Channel indices to plot in gray
+        self._disabled_channels: set = set()  # global disabled channel keys (gray)
+        # Per-timepoint channel overrides {entry: set of disabled keys}. When an
+        # entry has an override it wins over the global set. Session-only; reset
+        # when the selected set changes.
+        self._disabled_channels_by_entry: dict = {}
         self.fit_results: Dict[str, Dict[str, Any]] = {}  # {entry: {param_name: FitResult}}
         self.fit_x_axis: Optional[str] = None  # x-axis used during last fit
         self.fit_dt_s: float = 0.0  # dt (seconds) used during last fit
@@ -156,7 +160,7 @@ class ProfileBaseTab(BaseTab):
         plot_button = QPushButton("Plot")
         plot_button.clicked.connect(self._on_plot_clicked)
         btn_row.addWidget(plot_button, 3)
-        style_btn = QPushButton("Option")
+        style_btn = QPushButton("Style")
         style_btn.clicked.connect(self._show_style_dialog)
         btn_row.addWidget(style_btn, 1)
         pgrid.addLayout(btn_row, prow, 0, 1, 4)
@@ -189,49 +193,25 @@ class ProfileBaseTab(BaseTab):
 
     def _add_axes_row(self, grid, grid_row) -> int:
         """One row split into equal quarters: 'X-axis' + X-axis combo, and (for
-        tabs with a right-axis selector) 'Y-axis (right)' + Y-axis combo. Returns
-        the next free grid row."""
-        from PySide6.QtWidgets import QComboBox
+        tabs with a right-axis selector) its label + Y-axis combo. The Y-axis
+        combo mechanism is shared with time-trace tabs via BaseTab. Returns the
+        next free grid row."""
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.addWidget(QLabel("X-axis"), 1)
         row.addWidget(self._make_x_axis_combo(), 1)
 
-        spec = self._yaxis_param_spec()
-        if spec is not None:
-            label, options, default, auto_replot = spec
+        label, combo = self._build_yaxis_combo()
+        if combo is not None:
             row.addWidget(QLabel(label), 1)
-            self.y_axis_combo = QComboBox()
-            self.y_axis_combo.addItems(options)
-            idx = self.y_axis_combo.findText(default)
-            if idx >= 0:
-                self.y_axis_combo.setCurrentIndex(idx)
-            if auto_replot:
-                self.y_axis_combo.currentTextChanged.connect(
-                    lambda _t: self._on_plot_clicked())
-            row.addWidget(self.y_axis_combo, 1)
+            row.addWidget(combo, 1)
 
         grid.addLayout(row, grid_row, 0, 1, 4)
         return grid_row + 1
 
-    def _yaxis_param_spec(self):
-        """Hook: (label, options, default, auto_replot) for the right-axis combo,
-        or None if the tab has no right-axis selector. Overridden by Ion/MSE."""
-        return None
-
-    def _y_param_text(self) -> str:
-        """Text of the selected Y-axis (right) combo item ('' if none)."""
-        combo = getattr(self, 'y_axis_combo', None)
-        return combo.currentText() if combo is not None else ''
-
-    def _set_y_param_text(self, text) -> None:
-        """Select the Y-axis (right) combo item whose text matches `text`."""
-        combo = getattr(self, 'y_axis_combo', None)
-        if combo is None:
-            return
-        idx = combo.findText(text)
-        if idx >= 0:
-            combo.setCurrentIndex(idx)
+    def _replot(self):
+        """Profile auto-replot dispatches R-space vs flux-space."""
+        self._on_plot_clicked()
 
     def _ensure_show_nodes_state(self) -> None:
         """Create the headless 'Show Nodes' toggle state holder. The toggle lives
@@ -261,7 +241,7 @@ class ProfileBaseTab(BaseTab):
             grid.addLayout(_label_button_row("R-shift", adjust_btn), grid_row, 0, 1, 4)
             grid_row += 1
 
-        channels_btn = QPushButton("Select / Deselect")
+        channels_btn = QPushButton("Select or Deselect")
         channels_btn.setToolTip("Select channels to enable/dim, and toggle node labels")
         channels_btn.clicked.connect(self._show_channel_selector)
         grid.addLayout(_label_button_row("Channels", channels_btn), grid_row, 0, 1, 4)
@@ -308,67 +288,151 @@ class ProfileBaseTab(BaseTab):
             return
 
         from ui.widgets.toggle_switch import ToggleSwitch
+        from PySide6.QtWidgets import (QTableWidget, QTableWidgetItem,
+                                       QHeaderView, QAbstractItemView)
+        entries = [self.selected_listbox.item(i).text()
+                   for i in range(self.selected_listbox.count())]
+
+        def _short(e):
+            parts = e.split('_', 1)
+            return parts[1] if len(parts) > 1 else e
+
         dialog = QDialog(self.frame)
-        dialog.setWindowTitle("Select / Deselect Channels")
-        dialog.setMinimumWidth(300)
+        dialog.setWindowTitle("Select or Deselect Channels")
+        dialog.setMinimumWidth(720)   # 2x the previous 360
+        dialog.resize(720, 780)       # ~1.5x taller window
         dlg_layout = QVBoxLayout(dialog)
 
-        hint = QLabel("Uncheck channels to dim them (gray) on the plot. "
-                      "You can also double-click a data point on the plot to toggle. "
-                      "Unchecked channels are excluded from fitting.")
+        hint = QLabel("Uncheck a cell to dim that channel (gray) and exclude it from "
+                      "fitting. The 'All' column applies to every timepoint at once; "
+                      "a per-timepoint column overrides it. Double-clicking a point on "
+                      "the plot toggles the 'All' (global) state.")
         hint.setWordWrap(True)
         dlg_layout.addWidget(hint)
 
-        # Show Nodes on/off toggle (draws channel node labels on the plot),
-        # synced to the headless show_channel_checkbox state holder.
+        # Select / Deselect all — above the table
+        sel_row = QHBoxLayout()
+        select_all_btn = QPushButton("Select All")
+        deselect_all_btn = QPushButton("Deselect All")
+        sel_row.addWidget(select_all_btn)
+        sel_row.addWidget(deselect_all_btn)
+        sel_row.addStretch()
+        dlg_layout.addLayout(sel_row)
+
+        # Table: rows = channels; columns = [Channel, All, <each timepoint>]
+        headers = ["Channel", "All"] + [_short(e) for e in entries]
+        table = QTableWidget(len(channel_info), len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setSelectionMode(QAbstractItemView.NoSelection)
+        # (no maximum height — the table stretches to fill the taller dialog and
+        # scrolls internally when there are many channels)
+
+        # QTableWidget isn't covered by the theme QSS, so style it explicitly to
+        # match the dark/light Data Preview tables (otherwise it renders white).
+        from ui.theme import ThemeManager
+        _dark = ThemeManager.current_theme == 'dark'
+        if _dark:
+            table.setStyleSheet(
+                "QTableWidget { background:#1e1e1e; color:#cccccc; gridline-color:#3c3c3c; }"
+                "QHeaderView::section { background:#2b2b2b; color:#cccccc; border:0px;"
+                " border-right:1px solid #3c3c3c; border-bottom:1px solid #3c3c3c; padding:3px; }"
+                "QTableCornerButton::section { background:#2b2b2b; border:0px; }")
+
+        # Emphasize the 'All' (global) column: bold header + tinted (solid) background
+        _all_tint = QColor(38, 60, 92) if _dark else QColor(224, 238, 255)
+        _all_hdr = table.horizontalHeaderItem(1)
+        _hf = _all_hdr.font()
+        _hf.setBold(True)
+        _all_hdr.setFont(_hf)
+        _all_hdr.setBackground(_all_tint)
+
+        row_keys = []
+        for r, (idx, label) in enumerate(channel_info):
+            row_keys.append(idx)
+            name_item = QTableWidgetItem(label)
+            name_item.setFlags(Qt.ItemIsEnabled)
+            table.setItem(r, 0, name_item)
+            all_on = idx not in self._disabled_channels
+            all_item = QTableWidgetItem()
+            all_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+            all_item.setCheckState(Qt.Checked if all_on else Qt.Unchecked)
+            all_item.setBackground(_all_tint)
+            table.setItem(r, 1, all_item)
+            for j, e in enumerate(entries):
+                ov = self._disabled_channels_by_entry.get(e)
+                on = all_on if ov is None else (idx not in ov)
+                it = QTableWidgetItem()
+                it.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled)
+                it.setCheckState(Qt.Checked if on else Qt.Unchecked)
+                table.setItem(r, 2 + j, it)
+
+        for j, e in enumerate(entries):
+            table.horizontalHeaderItem(2 + j).setToolTip(e)
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        dlg_layout.addWidget(table)
+
+        # 'All' column is a master: toggling it sets the row's timepoint cells to
+        # match. Guard against re-entrancy from programmatic setCheckState.
+        guard = [False]
+
+        def _on_item_changed(item):
+            if guard[0] or item.column() != 1:
+                return
+            r, st = item.row(), item.checkState()
+            guard[0] = True
+            for c in range(2, table.columnCount()):
+                table.item(r, c).setCheckState(st)
+            guard[0] = False
+        table.itemChanged.connect(_on_item_changed)
+
+        def _set_all(state):
+            guard[0] = True
+            for r in range(table.rowCount()):
+                for c in range(1, table.columnCount()):
+                    table.item(r, c).setCheckState(state)
+            guard[0] = False
+        select_all_btn.clicked.connect(lambda: _set_all(Qt.Checked))
+        deselect_all_btn.clicked.connect(lambda: _set_all(Qt.Unchecked))
+
+        # Show node-names toggle (synced to the headless show_channel_checkbox)
         self._ensure_show_nodes_state()
         sn_row = QHBoxLayout()
         show_nodes_toggle = ToggleSwitch()
         show_nodes_toggle.setChecked(self.show_channel_checkbox.isChecked(), animate=False)
         sn_row.addWidget(show_nodes_toggle)
-        sn_row.addWidget(QLabel("Show Nodes"))
+        sn_row.addWidget(QLabel("Show node names on plot"))
         sn_row.addStretch()
         dlg_layout.addLayout(sn_row)
 
-        # Scrollable area for checkboxes
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMaximumHeight(400)
-        cb_widget = QWidget()
-        cb_layout = QVBoxLayout(cb_widget)
-
-        checkboxes = []
-        for idx, label in channel_info:
-            cb = QCheckBox(label)
-            cb.setChecked(idx not in self._disabled_channels)
-            cb_layout.addWidget(cb)
-            checkboxes.append((idx, cb))
-
-        cb_layout.addStretch()
-        scroll.setWidget(cb_widget)
-        dlg_layout.addWidget(scroll)
-
-        # Button row (3 equal parts): Select All | Deselect All | Apply
+        # Bottom buttons: Close | Apply
         btn_row = QHBoxLayout()
-        select_all_btn = QPushButton("Select All")
-        select_all_btn.clicked.connect(
-            lambda: [cb.setChecked(True) for _, cb in checkboxes])
-        btn_row.addWidget(select_all_btn, 1)
-        deselect_all_btn = QPushButton("Deselect All")
-        deselect_all_btn.clicked.connect(
-            lambda: [cb.setChecked(False) for _, cb in checkboxes])
-        btn_row.addWidget(deselect_all_btn, 1)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.reject)
+        btn_row.addWidget(close_btn, 1)
         apply_btn = QPushButton("Apply")
         apply_btn.clicked.connect(dialog.accept)
         btn_row.addWidget(apply_btn, 1)
         dlg_layout.addLayout(btn_row)
 
         def _apply():
+            n = table.rowCount()
+            all_on = [table.item(r, 1).checkState() == Qt.Checked for r in range(n)]
             self._disabled_channels.clear()
-            for idx, cb in checkboxes:
-                if not cb.isChecked():
-                    self._disabled_channels.add(idx)
+            for r in range(n):
+                if not all_on[r]:
+                    self._disabled_channels.add(row_keys[r])
+            # Per-timepoint: store an override only when the column differs from All
+            for j, e in enumerate(entries):
+                col = 2 + j
+                col_on = [table.item(r, col).checkState() == Qt.Checked for r in range(n)]
+                if col_on == all_on:
+                    self._disabled_channels_by_entry.pop(e, None)
+                else:
+                    self._disabled_channels_by_entry[e] = {
+                        row_keys[r] for r in range(n) if not col_on[r]}
             # Update Show-Nodes state without its own redraw; one replot below.
             self.show_channel_checkbox.blockSignals(True)
             self.show_channel_checkbox.setChecked(show_nodes_toggle.isChecked())
@@ -379,13 +443,20 @@ class ProfileBaseTab(BaseTab):
         self._channel_selector_dialog = dialog
         dialog.show()
 
-    def _get_channel_mask(self, channel_keys: List[str]) -> np.ndarray:
+    def _get_channel_mask(self, channel_keys: List[str], entry=None) -> np.ndarray:
         """Return boolean mask: True = enabled, False = disabled (gray).
 
+        Uses the per-timepoint override for `entry` when one exists, otherwise
+        the global disabled set.
+
         Args:
-            channel_keys: List of channel key strings (e.g., ["CES_0", "CES_1", ...])
+            channel_keys: channel key strings (e.g., ["CES_0", "CES_1", ...])
+            entry: selected-timepoint string, for per-timepoint overrides
         """
-        return np.array([k not in self._disabled_channels for k in channel_keys])
+        disabled = self._disabled_channels
+        if entry is not None and entry in self._disabled_channels_by_entry:
+            disabled = self._disabled_channels_by_entry[entry]
+        return np.array([k not in disabled for k in channel_keys])
 
     @staticmethod
     def _parse_color_mode(text):
@@ -594,9 +665,10 @@ class ProfileBaseTab(BaseTab):
             return 0.0
 
     def _show_rshift_dialog(self) -> None:
-        """R-shift editor: one field per selected timepoint (in mm). Blank = no
-        shift. Values are session-only and applied (re-plot) on OK."""
-        from PySide6.QtWidgets import QLineEdit, QGridLayout
+        """R-shift editor (mm): a spreadsheet of the selected timepoints plus a
+        'Set all to' box. Default 0.0. Applied (re-plot) on Apply."""
+        from PySide6.QtWidgets import (QLineEdit, QTableWidget, QTableWidgetItem,
+                                       QHeaderView, QAbstractItemView)
         entries = [self.selected_listbox.item(i).text()
                    for i in range(self.selected_listbox.count())]
         if not entries:
@@ -604,56 +676,89 @@ class ProfileBaseTab(BaseTab):
                 "No timepoints selected.\nSelect data first.")
             return
 
+        def _short(e):
+            parts = e.split('_', 1)
+            return parts[1] if len(parts) > 1 else e
+
         dialog = QDialog(self.frame)
         dialog.setWindowTitle("R-shift [mm]")
         dialog.setMinimumWidth(360)
+        dialog.resize(380, 560)   # ~1.5x taller window
         dlg_layout = QVBoxLayout(dialog)
-        hint = QLabel("R-shift [mm] per timepoint (blank = 0).")
+        hint = QLabel("R-shift [mm] per timepoint (default 0.0). Double-click a "
+                      "cell to edit.")
         hint.setWordWrap(True)
         dlg_layout.addWidget(hint)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMaximumHeight(400)
-        form_widget = QWidget()
-        form = QGridLayout(form_widget)
-        form.setColumnStretch(0, 1)
-        form.setColumnStretch(1, 0)
-        fields = []
-        for r, entry in enumerate(entries):
-            form.addWidget(QLabel(entry), r, 0)
-            le = QLineEdit()
-            le.setFixedWidth(80)
-            le.setPlaceholderText("0")
-            override = self._entry_rshifts.get(entry)
-            if override is not None:
-                le.setText(str(override))
-            form.addWidget(le, r, 1)
-            fields.append((entry, le))
-        scroll.setWidget(form_widget)
-        dlg_layout.addWidget(scroll)
+        # One value written into every row ('all' appears once, here)
+        all_row = QHBoxLayout()
+        all_row.addWidget(QLabel("Set all to"))
+        all_edit = QLineEdit("0.0")
+        all_edit.setFixedWidth(80)
+        all_row.addWidget(all_edit)
+        fill_btn = QPushButton("Fill")
+        all_row.addWidget(fill_btn)
+        clear_btn = QPushButton("Clear")
+        all_row.addWidget(clear_btn)
+        all_row.addStretch()
+        dlg_layout.addLayout(all_row)
 
-        # Button row: Clear all (left half) | Apply (right half)
+        # Spreadsheet: rows = timepoints; columns = [Timepoint | R-shift [mm]]
+        table = QTableWidget(len(entries), 2)
+        table.setHorizontalHeaderLabels(["Timepoint", "R-shift [mm]"])
+        table.verticalHeader().setVisible(False)
+        table.setSelectionMode(QAbstractItemView.SingleSelection)
+        table.setEditTriggers(QAbstractItemView.DoubleClicked
+                              | QAbstractItemView.EditKeyPressed
+                              | QAbstractItemView.AnyKeyPressed)
+        # (no max height — table fills the taller dialog, scrolls when needed)
+        from ui.theme import ThemeManager
+        if ThemeManager.current_theme == 'dark':
+            table.setStyleSheet(
+                "QTableWidget { background:#1e1e1e; color:#cccccc; gridline-color:#3c3c3c; }"
+                "QHeaderView::section { background:#2b2b2b; color:#cccccc; border:0px;"
+                " border-right:1px solid #3c3c3c; border-bottom:1px solid #3c3c3c; padding:3px; }"
+                "QTableCornerButton::section { background:#2b2b2b; border:0px; }")
+        for r, entry in enumerate(entries):
+            name = QTableWidgetItem(_short(entry))
+            name.setFlags(Qt.ItemIsEnabled)
+            name.setToolTip(entry)
+            table.setItem(r, 0, name)
+            ov = self._entry_rshifts.get(entry)
+            val = QTableWidgetItem(str(ov) if ov is not None else "0.0")
+            val.setFlags(Qt.ItemIsEnabled | Qt.ItemIsEditable | Qt.ItemIsSelectable)
+            table.setItem(r, 1, val)
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        dlg_layout.addWidget(table)
+
+        def _fill(v):
+            for r in range(table.rowCount()):
+                table.item(r, 1).setText(v)
+        fill_btn.clicked.connect(lambda: _fill(all_edit.text().strip() or "0.0"))
+        clear_btn.clicked.connect(lambda: _fill("0.0"))
+
+        # Button row: Close (dismiss) | Apply
         btn_row = QHBoxLayout()
-        clear_btn = QPushButton("Clear all")
-        clear_btn.clicked.connect(lambda: [le.clear() for _, le in fields])
-        btn_row.addWidget(clear_btn, 1)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.reject)
+        btn_row.addWidget(close_btn, 1)
         apply_btn = QPushButton("Apply")
         apply_btn.clicked.connect(dialog.accept)
         btn_row.addWidget(apply_btn, 1)
         dlg_layout.addLayout(btn_row)
 
         def _apply():
-            for entry, le in fields:
-                txt = le.text().strip()
-                if txt == '':
-                    self._entry_rshifts.pop(entry, None)
-                    continue
+            for r, entry in enumerate(entries):
+                txt = table.item(r, 1).text().strip()
                 try:
-                    self._entry_rshifts[entry] = float(txt)
+                    val = float(txt) if txt else 0.0
                 except ValueError:
+                    val = 0.0
+                if val == 0.0:
                     self._entry_rshifts.pop(entry, None)
+                else:
+                    self._entry_rshifts[entry] = val
             self._on_plot_clicked()
         dialog.accepted.connect(_apply)
         self._rshift_dialog = dialog
